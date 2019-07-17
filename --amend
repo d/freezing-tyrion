@@ -1,0 +1,12 @@
+language: cpp
+
+dist: xenial
+group: edge
+
+# addons:
+#   apt:
+#     packages:
+#       ninja-build
+
+script:
+  cmake -GNinja -H. -Bbuild
