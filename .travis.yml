@@ -4,9 +4,12 @@ dist: xenial
 group: edge
 
 addons:
+  homebrew:
+    packages:
+      - ninja
   apt:
     packages:
-      ninja-build
+      - ninja-build
 
 os:
   - osx
