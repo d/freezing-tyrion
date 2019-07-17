@@ -4,21 +4,12 @@ dist: xenial
 group: edge
 
 addons:
-  homebrew:
-    update: true
-    packages:
-      - ninja
-      - cmake
   apt:
     packages:
       - ninja-build
 
 os:
-  - osx
   - linux
 
 script:
-  - cmake --version
-  - ninja --version
   - cmake -GNinja -H. -Bbuild
-  - cat build/CMakeCache.txt
