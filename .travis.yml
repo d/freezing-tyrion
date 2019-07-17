@@ -3,10 +3,12 @@ language: cpp
 dist: xenial
 group: edge
 
-addons:
-  apt:
-    packages:
-      ninja-build
+# addons:
+#   apt:
+#     packages:
+#       ninja-build
 
+before_install:
+  - ninja --version
 script:
-  cmake -GNinja -H. -Bbuild
+  - cmake -GNinja -H. -Bbuild
