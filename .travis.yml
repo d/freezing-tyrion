@@ -5,6 +5,7 @@ group: edge
 
 addons:
   homebrew:
+    update: true
     packages:
       - ninja
       - cmake
