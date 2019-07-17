@@ -10,3 +10,4 @@ addons:
 
 script:
   - cmake -GNinja -H. -Bbuild
+  - cat build/CMakeCache.txt
