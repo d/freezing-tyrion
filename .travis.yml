@@ -8,6 +8,10 @@ addons:
     packages:
       ninja-build
 
+os:
+  - osx
+  - linux
+
 script:
   - cmake -GNinja -H. -Bbuild
   - cat build/CMakeCache.txt
