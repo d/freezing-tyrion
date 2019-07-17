@@ -17,5 +17,7 @@ os:
   - linux
 
 script:
+  - cmake --version
+  - ninja --version
   - cmake -GNinja -H. -Bbuild
   - cat build/CMakeCache.txt
