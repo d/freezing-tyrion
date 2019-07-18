@@ -35,16 +35,16 @@ int main(int argc, const char** argv) {
   clang::tooling::ClangTool tool(parser.getCompilations(),
                                  parser.getSourcePathList());
 
-const auto kPassesTempToMemoizedRef = forEachArgumentWithParam(
-    expr(hasParent(materializeTemporaryExpr())).bind("Problem"),
-    parmVarDecl(equalsBoundNode("ParmVar")));
-const auto kForRefField = forField(hasType(references(qualType())));
-const auto kSpecialCtor =
-    cxxConstructorDecl(forEachConstructorInitializer(cxxCtorInitializer(
-        kForRefField,
-        withInitializer(declRefExpr(to(parmVarDecl().bind("ParmVar")))))));
-const auto kMatcher = exprWithCleanups(has(
-    cxxConstructExpr(hasDeclaration(kSpecialCtor), kPassesTempToMemoizedRef)));
+  const auto kPassesTempToMemoizedRef = forEachArgumentWithParam(
+      expr(hasParent(materializeTemporaryExpr())).bind("Problem"),
+      parmVarDecl(equalsBoundNode("ParmVar")));
+  const auto kForRefField = forField(hasType(references(qualType())));
+  const auto kSpecialCtor =
+      cxxConstructorDecl(forEachConstructorInitializer(cxxCtorInitializer(
+          kForRefField,
+          withInitializer(declRefExpr(to(parmVarDecl().bind("ParmVar")))))));
+  const auto kMatcher = exprWithCleanups(has(cxxConstructExpr(
+      hasDeclaration(kSpecialCtor), kPassesTempToMemoizedRef)));
 
   clang::ast_matchers::MatchFinder finder;
   Yolo yolo;
