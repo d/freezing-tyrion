@@ -13,3 +13,4 @@ os:
 
 script:
   - cmake -GNinja -H. -Bbuild
+  - ninja -C build
