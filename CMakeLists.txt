@@ -7,7 +7,19 @@ find_package(Clang REQUIRED CONFIG
     HINTS ${LLVM_INSTALL_PREFIX}/lib/cmake/clang
     )
 
+
 add_executable(ctors-saving-refs main.cc)
+
+if (NOT LLVM_ENABLE_RTTI)
+  if (CMAKE_COMPILER_ID STREQUAL GNU)
+    set_property(
+      TARGET ctors-saving-refs
+      APPEND_STRING
+      PROPERTY COMPILE_FLAGS
+      " -fno-rtti"
+    )
+  endif()
+endif()
 target_link_libraries(ctors-saving-refs clangASTMatchers clangTooling)
 target_include_directories(ctors-saving-refs
     PRIVATE
