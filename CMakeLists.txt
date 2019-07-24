@@ -6,8 +6,6 @@ find_package(LLVM REQUIRED CONFIG)
 find_package(Clang REQUIRED CONFIG
     HINTS ${LLVM_INSTALL_PREFIX}/lib/cmake/clang
     )
-list(APPEND CMAKE_MODULE_PATH ${LLVM_DIR})
-include(AddLLVM)
 
 add_executable(ctors-saving-refs main.cc)
 target_link_libraries(ctors-saving-refs clangASTMatchers clangTooling)
