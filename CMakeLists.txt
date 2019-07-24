@@ -11,7 +11,7 @@ find_package(Clang REQUIRED CONFIG
 add_executable(ctors-saving-refs main.cc)
 
 if (NOT LLVM_ENABLE_RTTI)
-  if (CMAKE_COMPILER_ID STREQUAL GNU)
+  if (CMAKE_CXX_COMPILER_ID STREQUAL GNU)
     set_property(
       TARGET ctors-saving-refs
       APPEND_STRING
