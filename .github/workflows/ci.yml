@@ -1,0 +1,14 @@
+name: Freezing Tyrion Build
+on:
+  - push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - name: configure
+        run: cmake -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -H. -Bbuild.release
+      - name: build
+        run: ninja -C build.release
+
