@@ -7,6 +7,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@master
+      - name: spy
+        run: free -m && nproc
       - name: configure
         run: cmake -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -H. -Bbuild.release
       - name: build
