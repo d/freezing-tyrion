@@ -10,8 +10,8 @@ jobs:
       - name: spy
         run: free -m && nproc
       - name: configure
-        run: cmake -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -H. -Bbuild.release
+        run: cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -H. -Bbuild.release
       - name: build
-        run: ninja -C build.release
+        run: make -C build.release
 
 
