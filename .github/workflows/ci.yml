@@ -11,9 +11,3 @@ jobs:
         run: free -m && nproc
       - name: hello
         uses: ./.github/actions/hello
-      - name: configure
-        run: cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -H. -Bbuild.release
-      - name: build
-        run: make -C build.release
-
-
