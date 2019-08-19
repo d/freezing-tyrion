@@ -9,6 +9,10 @@ jobs:
       - uses: actions/checkout@master
       - name: spy
         run: free -m && nproc
+      - name: explain why this job ran
+        uses: monacorp/action-name@master
+        with:
+          args: this was run due to a $
       - name: hello
         uses: ./.github/actions/hello
       - name: configure
