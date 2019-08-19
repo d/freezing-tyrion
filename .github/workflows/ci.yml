@@ -9,6 +9,8 @@ jobs:
       - uses: actions/checkout@master
       - name: spy
         run: free -m && nproc
+      - name: hello
+        uses: hello
       - name: configure
         run: cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -H. -Bbuild.release
       - name: build
