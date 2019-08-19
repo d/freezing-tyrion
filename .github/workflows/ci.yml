@@ -10,7 +10,7 @@ jobs:
       - name: spy
         run: free -m && nproc
       - name: hello
-        uses: .github/actions/hello
+        uses: ./.github/actions/hello
       - name: configure
         run: cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -H. -Bbuild.release
       - name: build
