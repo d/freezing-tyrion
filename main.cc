@@ -51,7 +51,7 @@ struct Yolo : MatchFinder::MatchCallback {
 
     auto var = result.Nodes.getNodeAs<clang::VarDecl>("Var");
 
-    std::string kString = var->getName();
+    std::string kString{var->getName()};
 
     const clang::SourceRange& range = temporary->getSourceRange();
     clang::TextDiagnostic TD(
