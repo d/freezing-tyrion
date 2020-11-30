@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+: "${CLANG_FORMAT:=clang-format}"
+
+# NUL-delimited list of files to format
+files_to_format() {
+	git ls-files -z '*.cc' '*.h'
+}
+
+fmt() {
+	files_to_format | parallel -P +0 -0 \
+		"${CLANG_FORMAT}" -i
+}
+
+chk() {
+	# --tty: enables colorful diagnostics
+	# --halt: fail as soon as we encounter the first formatting diagnostic
+	files_to_format | parallel -P +0 -0 \
+		--halt now,fail=1 --tty \
+		"${CLANG_FORMAT}" -dry-run -ferror-limit 1 -Werror
+}
+
+usage() {
+	printf >&2 "Usage: [CLANG_FORMAT=clang-format] %s (fmt|chk)\n" "$0"
+
+	return 1
+}
+
+_main() {
+	local cmd
+	cmd=${1:-}
+	case "${cmd}" in
+	fmt)
+		fmt
+		;;
+	chk)
+		chk
+		;;
+	*)
+		usage
+		;;
+	esac
+}
+
+_main "$@"

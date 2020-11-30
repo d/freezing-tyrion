@@ -11,13 +11,16 @@ addons:
         key_url: 'https://apt.llvm.org/llvm-snapshot.gpg.key'
     packages:
       - ninja-build
+      - parallel
       - llvm-dev
       - clang
+      - clang-format
       - libclang-dev
 
 os:
   - linux
 
 script:
+  - CLANG_FORMAT=/usr/bin/clang-format hack/fmt chk
   - cmake -GNinja -H. -Bbuild -DLLVM_ROOT=/usr
   - ninja -C build
