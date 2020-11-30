@@ -19,5 +19,5 @@ os:
   - linux
 
 script:
-  - cmake -GNinja -H. -Bbuild
+  - cmake -GNinja -H. -Bbuild -DLLVM_ROOT=/usr
   - ninja -C build
