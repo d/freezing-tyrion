@@ -1,12 +1,19 @@
 language: cpp
+cache: ccache
 
-dist: xenial
+dist: focal
 group: edge
 
 addons:
   apt:
+    sources:
+      - sourceline: 'deb http://apt.llvm.org/focal/ llvm-toolchain-focal main'
+        key_url: 'https://apt.llvm.org/llvm-snapshot.gpg.key'
     packages:
       - ninja-build
+      - llvm-dev
+      - clang
+      - libclang-dev
 
 os:
   - linux
