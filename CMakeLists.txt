@@ -7,7 +7,7 @@ find_package(Clang REQUIRED CONFIG
     HINTS ${LLVM_INSTALL_PREFIX}/lib/cmake/clang
     )
 MESSAGE(STATUS "LLVM version: " ${LLVM_CONSIDERED_VERSIONS})
-MESSAGE(STATUS "Clang version: " ${Clang_CONSIDERED_VERSIONS})
+MESSAGE(STATUS "Clang config: " ${Clang_CONSIDERED_CONFIGS})
 
 add_executable(ctors-saving-refs main.cc)
 
