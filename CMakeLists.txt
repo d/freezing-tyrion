@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.12)
 project(OrcaTidy CXX)
 
 set(CMAKE_CXX_STANDARD 14)
