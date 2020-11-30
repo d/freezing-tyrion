@@ -11,15 +11,6 @@ MESSAGE(STATUS "Clang config: " ${Clang_CONSIDERED_CONFIGS})
 
 add_executable(ctors-saving-refs main.cc)
 
-# FIXME: this seems to assume a GNU-like compiler, such as GCC, Intel, Clang
-if (NOT LLVM_ENABLE_RTTI)
-    set_property(
-      TARGET ctors-saving-refs
-      APPEND_STRING
-      PROPERTY COMPILE_FLAGS
-      " -fno-rtti"
-    )
-endif()
 target_link_libraries(ctors-saving-refs clangASTMatchers clangTooling)
 target_include_directories(ctors-saving-refs
     PRIVATE
