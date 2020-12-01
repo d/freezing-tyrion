@@ -5,49 +5,12 @@
 #include "clang/Frontend/TextDiagnostic.h"
 
 namespace Rofl {
-using clang::ast_matchers::anyOf;
-using clang::ast_matchers::anything;
-using clang::ast_matchers::cxxConstructExpr;
-using clang::ast_matchers::cxxConstructorDecl;
-using clang::ast_matchers::cxxCtorInitializer;
-using clang::ast_matchers::declRefExpr;
-using clang::ast_matchers::equalsBoundNode;
-using clang::ast_matchers::expr;
-using clang::ast_matchers::exprWithCleanups;
-using clang::ast_matchers::forEachArgumentWithParam;
-using clang::ast_matchers::forEachConstructorInitializer;
-using clang::ast_matchers::forField;
-using clang::ast_matchers::has;
-using clang::ast_matchers::hasDeclaration;
-using clang::ast_matchers::hasParent;
-using clang::ast_matchers::hasType;
-using clang::ast_matchers::MatchFinder;
-using clang::ast_matchers::materializeTemporaryExpr;
-using clang::ast_matchers::parmVarDecl;
-using clang::ast_matchers::qualType;
-using clang::ast_matchers::references;
-using clang::ast_matchers::to;
-using clang::ast_matchers::varDecl;
-using clang::ast_matchers::withInitializer;
-
-const auto kPassesTempToMemoizedRef = forEachArgumentWithParam(
-    expr(hasParent(materializeTemporaryExpr())).bind("Problem"),
-    parmVarDecl(equalsBoundNode("ParmVar")));
-const auto kForRefField = forField(hasType(references(qualType())));
-const auto kSpecialCtor =
-    cxxConstructorDecl(forEachConstructorInitializer(cxxCtorInitializer(
-        kForRefField,
-        withInitializer(declRefExpr(to(parmVarDecl().bind("ParmVar")))))));
-const auto kMatcher =
-    exprWithCleanups(has(cxxConstructExpr(hasDeclaration(kSpecialCtor),
-                                          kPassesTempToMemoizedRef)),
-                     anyOf(expr(hasParent(varDecl().bind("Var"))), anything()))
-        .bind("root");
+// NOLINTNEXTLINE(google-build-using-namespace)
+using namespace clang::ast_matchers;
 
 struct Yolo : MatchFinder::MatchCallback {
   void run(const MatchFinder::MatchResult& result) override {
     auto temporary = result.Nodes.getNodeAs<clang::Expr>("Problem");
-    auto root = result.Nodes.getNodeAs<clang::ExprWithCleanups>("root");
 
     auto var = result.Nodes.getNodeAs<clang::VarDecl>("Var");
 
@@ -76,6 +39,20 @@ class Fomo {
   Fomo()
       : frontendActionFactory_(
             clang::tooling::newFrontendActionFactory(&finder_)) {
+    const auto kPassesTempToMemoizedRef = forEachArgumentWithParam(
+        expr(hasParent(materializeTemporaryExpr())).bind("Problem"),
+        parmVarDecl(equalsBoundNode("ParmVar")));
+    const auto kForRefField = forField(hasType(references(qualType())));
+    const auto kSpecialCtor =
+        cxxConstructorDecl(forEachConstructorInitializer(cxxCtorInitializer(
+            kForRefField,
+            withInitializer(declRefExpr(to(parmVarDecl().bind("ParmVar")))))));
+    const auto kMatcher =
+        exprWithCleanups(
+            has(cxxConstructExpr(hasDeclaration(kSpecialCtor),
+                                 kPassesTempToMemoizedRef)),
+            anyOf(expr(hasParent(varDecl().bind("Var"))), anything()))
+            .bind("root");
     finder_.addMatcher(kMatcher, &yolo_);
   }
   clang::tooling::ToolAction* getFrontEndAction() {

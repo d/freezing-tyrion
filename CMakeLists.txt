@@ -9,7 +9,7 @@ find_package(Clang REQUIRED CONFIG
 MESSAGE(STATUS "LLVM version: " ${LLVM_CONSIDERED_VERSIONS})
 MESSAGE(STATUS "Clang config: " ${Clang_CONSIDERED_CONFIGS})
 
-add_executable(ctors-saving-refs main.cc)
+add_executable(ctors-saving-refs ConstructorsSavingReferences.cc)
 
 target_link_libraries(ctors-saving-refs clangASTMatchers clangTooling)
 target_include_directories(ctors-saving-refs
