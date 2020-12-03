@@ -9,68 +9,60 @@ namespace orca_tidy {
 // NOLINTNEXTLINE(google-build-using-namespace)
 using namespace clang::ast_matchers;
 
-typedef std::map<std::string, clang::tooling::Replacements> FileToReplacements;
-class RefPtrArrayAction {
-  class callback : public MatchFinder::MatchCallback {
-   private:
+using FileToReplacements = std::map<std::string, clang::tooling::Replacements>;
+
+class AnnotateAction {
+  class AnnotateASTConsumer : public clang::ASTConsumer {
     FileToReplacements& replacements_;
 
    public:
-    explicit callback(FileToReplacements& replacements)
+    explicit AnnotateASTConsumer(FileToReplacements& replacements)
         : replacements_(replacements) {}
 
-    void run(const MatchFinder::MatchResult& result) override {
-      if (auto t =
-              result.Nodes.getNodeAs<clang::TypedefNameDecl>("typedef_decl")) {
-        const auto& ref_array_typedef =
-            t->getTypeSourceInfo()
-                ->getTypeLoc()
-                .getAs<clang::TemplateSpecializationTypeLoc>();
-        const clang::TemplateArgumentLoc& element_type =
-            ref_array_typedef.getArgLoc(0);
+    void HandleTranslationUnit(clang::ASTContext& ast_context) override {
+      auto results =
+          match(cxxMemberCallExpr(
+                    callee(cxxMethodDecl(hasName("Release"))),
+                    on(memberExpr(member(fieldDecl().bind("owner_field")),
+                                  hasObjectExpression(cxxThisExpr()))),
+                    hasAncestor(cxxDestructorDecl())),
+                ast_context);
 
-        clang::ASTContext* context = result.Context;
-        clang::SourceManager* source_manager = result.SourceManager;
-        const clang::LangOptions& lang_opts = context->getLangOpts();
+      clang::SourceManager& source_manager = ast_context.getSourceManager();
+      const clang::LangOptions& lang_opts = ast_context.getLangOpts();
 
-        auto element_text =
-            clang::Lexer::getSourceText(clang::CharSourceRange::getTokenRange(
-                                            element_type.getSourceRange()),
-                                        *source_manager, lang_opts);
-        std::string new_text = ("CDynamicRefArray<" + element_text + ">").str();
+      for (auto bound_nodes : results) {
+        if (auto field_decl =
+                bound_nodes.getNodeAs<clang::FieldDecl>("owner_field")) {
+          auto field_type_loc = field_decl->getTypeSourceInfo()->getTypeLoc();
 
-        clang::tooling::Replacement replacement(
-            *source_manager,
-            clang::CharSourceRange::getTokenRange(
-                ref_array_typedef.getSourceRange()),
-            new_text, lang_opts);
-        llvm::cantFail(
-            replacements_[replacement.getFilePath().str()].add(replacement));
+          auto field_type_text =
+              clang::Lexer::getSourceText(clang::CharSourceRange::getTokenRange(
+                                              field_type_loc.getSourceRange()),
+                                          source_manager, lang_opts);
+          std::string new_text = ("gpos::owner<" + field_type_text + ">").str();
+
+          clang::tooling::Replacement annotation(
+              source_manager,
+              clang::CharSourceRange::getTokenRange(
+                  field_type_loc.getSourceRange()),
+              new_text, lang_opts);
+          std::string file_path = annotation.getFilePath().str();
+          llvm::cantFail(replacements_[file_path].add(annotation));
+        }
       }
     }
   };
 
  public:
+  AnnotateAction(FileToReplacements& replacements)
+      : replacements_(replacements) {}
   std::unique_ptr<clang::ASTConsumer> newASTConsumer() {
-    return finder_.newASTConsumer();
-  }
-  RefPtrArrayAction(FileToReplacements& replacements)
-      : callback_(replacements) {
-    auto ref_array_typedef =
-        typedefNameDecl(
-            hasType(qualType(hasDeclaration(classTemplateSpecializationDecl(
-                hasTemplateArgument(1, refersToDeclaration(functionDecl(
-                                           hasName("CleanupRelease")))),
-                hasSpecializedTemplate(
-                    classTemplateDecl(hasName("CDynamicPtrArray"))))))))
-            .bind("typedef_decl");
-
-    finder_.addMatcher(ref_array_typedef, &callback_);
+    return std::make_unique<AnnotateASTConsumer>(replacements_);
   }
 
  private:
-  MatchFinder finder_;
-  callback callback_;
+  FileToReplacements& replacements_;
 };
 
 static llvm::cl::OptionCategory orca_tidy_category("orca-annotate options");
@@ -89,10 +81,10 @@ extern "C" int main(int argc, const char* argv[]) {
   clang::tooling::RefactoringTool tool(parser.getCompilations(),
                                        parser.getSourcePathList());
 
-  orca_tidy::RefPtrArrayAction ref_ptr_array_action{tool.getReplacements()};
+  orca_tidy::AnnotateAction annotate_action{tool.getReplacements()};
   int exit_code;
   exit_code = tool.run(
-      clang::tooling::newFrontendActionFactory(&ref_ptr_array_action).get());
+      clang::tooling::newFrontendActionFactory(&annotate_action).get());
   if (exit_code != 0) {
     llvm::errs() << "failed to run tool.\n";
     return exit_code;
@@ -106,12 +98,15 @@ extern "C" int main(int argc, const char* argv[]) {
       return 1;
     }
 
-    // Export replacements.
+    // Export replacements_.
     clang::tooling::TranslationUnitReplacements tur;
     const auto& file_to_replacements = tool.getReplacements();
-    for (const auto& Entry : file_to_replacements)
-      tur.Replacements.insert(tur.Replacements.end(), Entry.second.begin(),
-                              Entry.second.end());
+    for (const auto& entry : file_to_replacements) {
+      auto file = entry.first;
+      const clang::tooling::Replacements& unclean_replacements = entry.second;
+      tur.Replacements.insert(tur.Replacements.end(),
+                              unclean_replacements.begin(), entry.second.end());
+    }
 
     llvm::yaml::Output yaml(os);
     yaml << tur;
