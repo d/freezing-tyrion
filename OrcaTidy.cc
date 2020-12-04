@@ -20,11 +20,14 @@ class AnnotateAction {
         : replacements_(replacements) {}
 
     void HandleTranslationUnit(clang::ASTContext& ast_context) override {
+      const auto owner_decl = typeAliasTemplateDecl(hasName("::gpos::owner"));
+      const auto is_owner_type = hasType(owner_decl);
       auto results =
           match(cxxMemberCallExpr(
                     callee(cxxMethodDecl(hasName("Release"))),
                     on(memberExpr(member(fieldDecl().bind("owner_field")),
-                                  hasObjectExpression(cxxThisExpr()))),
+                                  hasObjectExpression(cxxThisExpr()),
+                                  unless(is_owner_type))),
                     hasAncestor(cxxDestructorDecl())),
                 ast_context);
 
