@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -e -u -o pipefail
+
 : "${CLANG_FORMAT:=clang-format}"
 
 # NUL-delimited list of files to format

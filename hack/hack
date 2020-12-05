@@ -1,0 +1,75 @@
+#!/bin/bash
+
+set -e -u -o pipefail
+
+declare -i NCPU JOBS
+NCPU=$(getconf _NPROCESSORS_ONLN)
+JOBS=$((NCPU * 3 / 2))
+readonly NCPU JOBS
+
+# on my laptop, this is how I got both debug and release builds:
+# CXX=g++-9 LDFLAGS=-fuse-ld=lld hack/hack gen Debug build.gcc9.debug
+# CXX=g++-9 LDFLAGS=-fuse-ld=lld hack/hack gen RelWithDebInfo build.gcc9.release
+gen_build_system() {
+	local buildtype builddir
+	buildtype=$1
+	builddir=$2
+
+	cmake -GNinja -H. -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE="${buildtype}" -B"${builddir}"
+}
+
+# example:
+# hack/hack build build.gcc9.{debug,release}
+build() {
+	local builddir
+	for builddir in "$@"; do
+		ninja -j"${NCPU}" -l"${JOBS}" -C "${builddir}"
+	done
+}
+
+build_and_test() {
+	build "$@"
+
+	local builddir
+
+	for builddir in "$@"; do
+		(
+			set -e
+			cd "${builddir}"
+			ctest -j"${NCPU}" -l"${JOBS}"
+		)
+	done
+}
+
+usage() {
+	printf >&2 "Usage: %s [gen|build]\n" "$0"
+	printf >&2 "Usage: %s gen build_dir\n" "$0"
+	printf >&2 "  or : %s build build_dir...\n" "$0"
+}
+
+_main() {
+	local cmd
+	cmd=$1
+	shift
+
+	case "${cmd}" in
+	gen)
+		gen_build_system "$@"
+		;;
+	build)
+		build "$@"
+		;;
+	test)
+		build_and_test "$@"
+		;;
+	help)
+		usage
+		;;
+	*)
+		usage
+		exit 1
+		;;
+	esac
+}
+
+_main "$@"

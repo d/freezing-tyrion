@@ -22,5 +22,5 @@ os:
 
 script:
   - CLANG_FORMAT=/usr/bin/clang-format hack/fmt chk
-  - cmake -GNinja -H. -Bbuild -DLLVM_ROOT=/usr
-  - ninja -C build
+  - LLVM_ROOT=/usr hack/hack gen Debug build
+  - hack/hack test build
