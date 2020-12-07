@@ -6,7 +6,7 @@ set -e -u -o pipefail
 
 # NUL-delimited list of files to format
 files_to_format() {
-	git ls-files -z '*.cc' '*.h'
+	git ls-files -z ':!/vendor' '*.cc' '*.h'
 }
 
 fmt() {
