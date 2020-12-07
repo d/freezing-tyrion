@@ -50,11 +50,23 @@ class OrcaTidyTest : public ::testing::Test {
 
           return clang::tooling::CommonOptionsParser{argc, argv, category};
         }()),
-        tool_(parser_.getCompilations(), parser_.getSourcePathList()) {}
+        tool_(parser_.getCompilations(), parser_.getSourcePathList()) {
+    tool_.mapVirtualFile("/tmp/owner.h", R"C++(
+#ifndef GPOS_OWNER_H
+#define GPOS_OWNER_H
+      namespace gpos {
+      template <class T>
+      using owner = T;
+      }
+#endif
+    )C++");
+  }
 };
 
 TEST_F(OrcaTidyTest, FieldOwnRelease) {
   std::string code = R"C++(
+#include "owner.h"
+
     struct T {
       void Release();
     };
@@ -64,6 +76,8 @@ TEST_F(OrcaTidyTest, FieldOwnRelease) {
       ~R() { t->Release(); }
     };)C++",
               expected_changed_code = R"C++(
+#include "owner.h"
+
     struct T {
       void Release();
     };
@@ -71,6 +85,41 @@ TEST_F(OrcaTidyTest, FieldOwnRelease) {
     struct R {
       gpos::owner<T*> t;
       ~R() { t->Release(); }
+    };)C++";
+
+  TestBeforeAfter(code, expected_changed_code);
+}
+
+TEST_F(OrcaTidyTest, Idempotence) {
+  std::string code = R"C++(
+#include "owner.h"
+
+    struct T {
+      void Release();
+    };
+
+    struct R {
+      gpos::owner<T*> t;  // don't annotate me again
+      T* t2;
+      ~R() {
+        t->Release();
+        t2->Release();
+      }
+    };)C++",
+              expected_changed_code = R"C++(
+#include "owner.h"
+
+    struct T {
+      void Release();
+    };
+
+    struct R {
+      gpos::owner<T*> t;  // don't annotate me again
+      gpos::owner<T*> t2;
+      ~R() {
+        t->Release();
+        t2->Release();
+      }
     };)C++";
 
   TestBeforeAfter(code, expected_changed_code);
