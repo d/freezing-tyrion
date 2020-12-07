@@ -26,6 +26,9 @@ add_custom_command(
   BYPRODUCTS bin/ctors-saving-refs include
   COMMENT "work around a Clang idiosyncracy")
 
-add_executable(annotate OrcaTidy.cc)
-target_link_libraries(annotate clangTooling)
-target_include_directories(annotate PRIVATE ${LLVM_INCLUDE_DIR})
+add_library(orca_tidy STATIC OrcaTidy.cc)
+target_include_directories(orca_tidy PUBLIC ${LLVM_INCLUDE_DIR})
+target_link_libraries(orca_tidy PUBLIC clangTooling)
+
+add_executable(annotate OrcaTidyMain.cc)
+target_link_libraries(annotate orca_tidy)
