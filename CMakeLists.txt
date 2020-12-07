@@ -22,3 +22,15 @@ target_link_libraries(orca_tidy PUBLIC clangTooling)
 
 add_executable(annotate OrcaTidyMain.cc)
 target_link_libraries(annotate orca_tidy)
+
+set(INSTALL_GTEST
+    OFF
+    CACHE BOOL "")
+add_subdirectory(vendor/googletest EXCLUDE_FROM_ALL)
+
+add_executable(orca-tidy-test OrcaTidyTest.cc)
+target_link_libraries(orca-tidy-test orca_tidy gmock_main)
+
+include(GoogleTest)
+enable_testing()
+gtest_discover_tests(orca-tidy-test)
