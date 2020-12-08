@@ -51,6 +51,19 @@ class OrcaTidyTest : public ::testing::Test {
           return clang::tooling::CommonOptionsParser{argc, argv, category};
         }()),
         tool_(parser_.getCompilations(), parser_.getSourcePathList()) {
+    tool_.mapVirtualFile("/tmp/CRefCount.h", R"C++(
+#ifndef GPOS_CREFCOUNT_H
+#define GPOS_CREFCOUNT_H
+      namespace gpos {
+      template <class Derived>
+      struct CRefCount {
+        void Release();
+        void AddRef();
+      };
+      }  // namespace gpos
+#endif
+    )C++");
+
     tool_.mapVirtualFile("/tmp/owner.h", R"C++(
 #ifndef GPOS_OWNER_H
 #define GPOS_OWNER_H
@@ -65,22 +78,20 @@ class OrcaTidyTest : public ::testing::Test {
 
 TEST_F(OrcaTidyTest, FieldOwnRelease) {
   std::string code = R"C++(
+#include "CRefCount.h"
 #include "owner.h"
 
-    struct T {
-      void Release();
-    };
+    struct T : gpos::CRefCount<T> {};
 
     struct R {
       T* t;
       ~R() { t->Release(); }
     };)C++",
               expected_changed_code = R"C++(
+#include "CRefCount.h"
 #include "owner.h"
 
-    struct T {
-      void Release();
-    };
+    struct T : gpos::CRefCount<T> {};
 
     struct R {
       gpos::owner<T*> t;
@@ -92,11 +103,10 @@ TEST_F(OrcaTidyTest, FieldOwnRelease) {
 
 TEST_F(OrcaTidyTest, Idempotence) {
   std::string code = R"C++(
+#include "CRefCount.h"
 #include "owner.h"
 
-    struct T {
-      void Release();
-    };
+    struct T : gpos::CRefCount<T> {};
 
     struct R {
       gpos::owner<T*> t;  // don't annotate me again
@@ -107,11 +117,10 @@ TEST_F(OrcaTidyTest, Idempotence) {
       }
     };)C++",
               expected_changed_code = R"C++(
+#include "CRefCount.h"
 #include "owner.h"
 
-    struct T {
-      void Release();
-    };
+    struct T : gpos::CRefCount<T> {};
 
     struct R {
       gpos::owner<T*> t;  // don't annotate me again
