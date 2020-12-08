@@ -37,7 +37,7 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
     clang::SourceManager& source_manager = ast_context.getSourceManager();
     const clang::LangOptions& lang_opts = ast_context.getLangOpts();
 
-    for (auto bound_nodes : results) {
+    for (const auto& bound_nodes : results) {
       if (auto field_decl =
               bound_nodes.getNodeAs<clang::FieldDecl>("owner_field")) {
         auto field_type_loc = field_decl->getTypeSourceInfo()->getTypeLoc();
