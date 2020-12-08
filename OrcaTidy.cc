@@ -21,12 +21,17 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
   void HandleTranslationUnit(clang::ASTContext& ast_context) override {
     const auto owner_decl = typeAliasTemplateDecl(hasName("::gpos::owner"));
     const auto is_owner_type = hasType(owner_decl);
+    auto owner_field =
+        memberExpr(member(fieldDecl().bind("owner_field")),
+                   hasObjectExpression(cxxThisExpr()), unless(is_owner_type));
+    auto stmtInDtor = hasAncestor(cxxDestructorDecl());
     auto results = match(
-        cxxMemberCallExpr(callee(cxxMethodDecl(hasName("Release"))),
-                          on(memberExpr(member(fieldDecl().bind("owner_field")),
-                                        hasObjectExpression(cxxThisExpr()),
-                                        unless(is_owner_type))),
-                          hasAncestor(cxxDestructorDecl())),
+        callExpr(
+            anyOf(cxxMemberCallExpr(callee(cxxMethodDecl(hasName("Release"))),
+                                    on(owner_field)),
+                  callExpr(callee(functionDecl(hasName("SafeRelease"))),
+                           hasArgument(0, owner_field))),
+            stmtInDtor),
         ast_context);
 
     clang::SourceManager& source_manager = ast_context.getSourceManager();

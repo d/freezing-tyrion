@@ -60,6 +60,9 @@ class OrcaTidyTest : public ::testing::Test {
         void Release();
         void AddRef();
       };
+
+      template <class T>
+      void SafeRelease(CRefCount<T> *);
       }  // namespace gpos
 #endif
     )C++");
@@ -101,6 +104,33 @@ TEST_F(OrcaTidyTest, FieldOwnRelease) {
   TestBeforeAfter(code, expected_changed_code);
 }
 
+TEST_F(OrcaTidyTest, FieldOwnSafeRelease) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    struct R {
+      T* t;
+      ~R() { gpos::SafeRelease(t); }
+    };
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    struct R {
+      gpos::owner<T*> t;
+      ~R() { gpos::SafeRelease(t); }
+    };
+  )C++";
+
+  TestBeforeAfter(code, expected_changed_code);
+}
+
 TEST_F(OrcaTidyTest, Idempotence) {
   std::string code = R"C++(
 #include "CRefCount.h"
@@ -109,11 +139,13 @@ TEST_F(OrcaTidyTest, Idempotence) {
     struct T : gpos::CRefCount<T> {};
 
     struct R {
-      gpos::owner<T*> t;  // don't annotate me again
-      T* t2;
+      gpos::owner<T*> t;   // don't annotate me again
+      gpos::owner<T*> t2;  // don't annotate me again
+      T* t3;
       ~R() {
         t->Release();
-        t2->Release();
+        gpos::SafeRelease(t2);
+        t3->Release();
       }
     };)C++",
               expected_changed_code = R"C++(
@@ -123,11 +155,13 @@ TEST_F(OrcaTidyTest, Idempotence) {
     struct T : gpos::CRefCount<T> {};
 
     struct R {
-      gpos::owner<T*> t;  // don't annotate me again
-      gpos::owner<T*> t2;
+      gpos::owner<T*> t;   // don't annotate me again
+      gpos::owner<T*> t2;  // don't annotate me again
+      gpos::owner<T*> t3;
       ~R() {
         t->Release();
-        t2->Release();
+        gpos::SafeRelease(t2);
+        t3->Release();
       }
     };)C++";
 
