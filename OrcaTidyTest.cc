@@ -38,7 +38,7 @@ class OrcaTidyTest : public ::testing::Test {
     if (!changed_code) FAIL() << "failed applying replacements";
 
     // TODO: nicer matcher that formats before comparison
-    ASSERT_THAT(expected_changed_code, StrEq(*changed_code));
+    ASSERT_THAT(*changed_code, StrEq(expected_changed_code));
   }
 
  public:
@@ -73,7 +73,10 @@ class OrcaTidyTest : public ::testing::Test {
       namespace gpos {
       template <class T>
       using owner = T;
-      }
+
+      template <class T>
+      using pointer = T;
+      }  // namespace gpos
 #endif
     )C++");
   }
@@ -131,6 +134,33 @@ TEST_F(OrcaTidyTest, FieldOwnSafeRelease) {
   TestBeforeAfter(code, expected_changed_code);
 }
 
+TEST_F(OrcaTidyTest, FieldPoint) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    struct R {
+      T* t;
+      ~R() {}
+    };
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    struct R {
+      gpos::pointer<T*> t;
+      ~R() {}
+    };
+  )C++";
+
+  TestBeforeAfter(code, expected_changed_code);
+}
+
 TEST_F(OrcaTidyTest, Idempotence) {
   std::string code = R"C++(
 #include "CRefCount.h"
@@ -142,6 +172,8 @@ TEST_F(OrcaTidyTest, Idempotence) {
       gpos::owner<T*> t;   // don't annotate me again
       gpos::owner<T*> t2;  // don't annotate me again
       T* t3;
+      gpos::pointer<T*> t4;  // don't annotate me again
+      T* t5;
       ~R() {
         t->Release();
         gpos::SafeRelease(t2);
@@ -158,6 +190,8 @@ TEST_F(OrcaTidyTest, Idempotence) {
       gpos::owner<T*> t;   // don't annotate me again
       gpos::owner<T*> t2;  // don't annotate me again
       gpos::owner<T*> t3;
+      gpos::pointer<T*> t4;  // don't annotate me again
+      gpos::pointer<T*> t5;
       ~R() {
         t->Release();
         gpos::SafeRelease(t2);
