@@ -134,6 +134,31 @@ TEST_F(OrcaTidyTest, FieldOwnSafeRelease) {
   TestBeforeAfter(code, expected_changed_code);
 }
 
+TEST_F(OrcaTidyTest, ConstQualifiers) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    struct R {
+      const T* t;
+      ~R() {}
+    };)C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    struct R {
+      gpos::pointer<const T*> t;
+      ~R() {}
+    };)C++";
+
+  TestBeforeAfter(code, expected_changed_code);
+}
+
 TEST_F(OrcaTidyTest, FieldPoint) {
   std::string code = R"C++(
 #include "CRefCount.h"

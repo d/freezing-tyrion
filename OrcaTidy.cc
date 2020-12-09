@@ -64,8 +64,9 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
       auto field_decl = bound_nodes.getNodeAs<clang::FieldDecl>("field");
       if (auto record = llvm::dyn_cast<clang::CXXRecordDecl>(
               field_decl->getDeclContext());
-          record && record->getDestructor()->isDefined()) {
+          record && record->getDestructor()) {
         auto dtor = record->getDestructor();
+        if (!dtor->isDefined()) continue;
 
         auto reference_to_field =
             field_reference_for(equalsNode(field_decl), is_pointer_type);
@@ -81,19 +82,23 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
 
  private:
   void annotateField(const clang::FieldDecl* field_decl,
-                     const std::string& annotation,
+                     llvm::StringRef annotation,
                      const clang::SourceManager& source_manager,
                      const clang::LangOptions& lang_opts) {
     auto field_type_loc = field_decl->getTypeSourceInfo()->getTypeLoc();
+    clang::SourceRange type_range = field_type_loc.getSourceRange();
+    // HACK: pointer to qualified type (const T*) will miss the qualifiers
+    // (becoming T*), almost always, unless we do the following gross hack
+    if (type_range.getBegin() > field_decl->getBeginLoc())
+      type_range.setBegin(field_decl->getBeginLoc());
 
     auto field_type_text = clang::Lexer::getSourceText(
-        clang::CharSourceRange::getTokenRange(field_type_loc.getSourceRange()),
-        source_manager, lang_opts);
+        clang::CharSourceRange::getTokenRange(type_range), source_manager,
+        lang_opts);
     std::string new_text = (annotation + "<" + field_type_text + ">").str();
 
     clang::tooling::Replacement annotation_rep(
-        source_manager,
-        clang::CharSourceRange::getTokenRange(field_type_loc.getSourceRange()),
+        source_manager, clang::CharSourceRange::getTokenRange(type_range),
         new_text, lang_opts);
     std::string file_path = annotation_rep.getFilePath().str();
     llvm::cantFail(replacements_[file_path].add(annotation_rep));
