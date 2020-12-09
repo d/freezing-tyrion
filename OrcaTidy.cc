@@ -62,12 +62,13 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
 
     for (const auto& bound_nodes : results) {
       auto field_decl = bound_nodes.getNodeAs<clang::FieldDecl>("field");
-      if (auto record = llvm::dyn_cast<clang::CXXRecordDecl>(
-              field_decl->getDeclContext());
-          record && record->getDestructor()) {
-        auto dtor = record->getDestructor();
-        if (!dtor->isDefined()) continue;
+      auto record =
+          llvm::dyn_cast<clang::CXXRecordDecl>(field_decl->getDeclContext());
+      if (!record) continue;
+      auto dtor = record->getDestructor();
+      if (dtor && !dtor->isDefined() && !dtor->isDefaulted()) continue;
 
+      if (dtor) {
         auto reference_to_field =
             field_reference_for(equalsNode(field_decl), is_pointer_type);
         if (!match(decl(hasDescendant(
@@ -75,8 +76,9 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
                    *dtor, ast_context)
                  .empty())
           continue;
-        annotateField(field_decl, "gpos::pointer", source_manager, lang_opts);
-      };
+      }
+
+      annotateField(field_decl, "gpos::pointer", source_manager, lang_opts);
     }
   }
 

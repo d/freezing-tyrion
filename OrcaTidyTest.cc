@@ -166,6 +166,10 @@ TEST_F(OrcaTidyTest, FieldPoint) {
 
     struct T : gpos::CRefCount<T> {};
 
+    struct S {
+      T* t;
+    };
+
     struct R {
       T* t;
       ~R() {}
@@ -176,6 +180,10 @@ TEST_F(OrcaTidyTest, FieldPoint) {
 #include "owner.h"
 
     struct T : gpos::CRefCount<T> {};
+
+    struct S {
+      gpos::pointer<T*> t;
+    };
 
     struct R {
       gpos::pointer<T*> t;
