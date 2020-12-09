@@ -142,7 +142,11 @@ TEST_F(OrcaTidyTest, ConstQualifiers) {
     struct T : gpos::CRefCount<T> {};
 
     struct R {
-      const T* t;
+      const T* pc;
+      T* const cp;
+      mutable T* mp;
+      mutable const T* mcp;
+      const mutable T* mcp2;
       ~R() {}
     };)C++",
               expected_changed_code = R"C++(
@@ -152,7 +156,11 @@ TEST_F(OrcaTidyTest, ConstQualifiers) {
     struct T : gpos::CRefCount<T> {};
 
     struct R {
-      gpos::pointer<const T*> t;
+      gpos::pointer<const T*> pc;
+      gpos::pointer<T*> const cp;
+      mutable gpos::pointer<T*> mp;
+      mutable gpos::pointer<const T*> mcp;
+      mutable gpos::pointer<const T*> mcp2;
       ~R() {}
     };)C++";
 

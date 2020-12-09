@@ -89,18 +89,34 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
                      const clang::LangOptions& lang_opts) {
     auto field_type_loc = field_decl->getTypeSourceInfo()->getTypeLoc();
     clang::SourceRange type_range = field_type_loc.getSourceRange();
-    // HACK: pointer to qualified type (const T*) will miss the qualifiers
-    // (becoming T*), almost always, unless we do the following gross hack
-    if (type_range.getBegin() > field_decl->getBeginLoc())
-      type_range.setBegin(field_decl->getBeginLoc());
+    auto field_qual_type = field_decl->getType();
+    auto pointee_type = field_qual_type->getPointeeType();
 
+    const char* opt_mutable = field_decl->isMutable() ? "mutable " : "";
+    std::string pointee_cv, delim;
+    auto pointee_local_qualifiers = pointee_type.getLocalQualifiers();
+    if (pointee_local_qualifiers.hasConst()) {
+      pointee_cv = "const";
+      delim = " ";
+    }
+    if (pointee_local_qualifiers.hasVolatile()) {
+      pointee_cv += delim + "volatile";
+      delim = " ";
+    }
     auto field_type_text = clang::Lexer::getSourceText(
         clang::CharSourceRange::getTokenRange(type_range), source_manager,
         lang_opts);
-    std::string new_text = (annotation + "<" + field_type_text + ">").str();
+    std::string new_text = (opt_mutable + annotation + "<" + pointee_cv +
+                            delim + field_type_text + ">")
+                               .str();
 
+    // HACK: notice that the replacement range isn't just the type but it also
+    // extends to the beginning of the declarator. This is so that we cover the
+    // cases of "const mutable T*" or "mutable const volatile T*"
     clang::tooling::Replacement annotation_rep(
-        source_manager, clang::CharSourceRange::getTokenRange(type_range),
+        source_manager,
+        clang::CharSourceRange::getTokenRange(field_decl->getBeginLoc(),
+                                              field_type_loc.getEndLoc()),
         new_text, lang_opts);
     std::string file_path = annotation_rep.getFilePath().str();
     llvm::cantFail(replacements_[file_path].add(annotation_rep));
