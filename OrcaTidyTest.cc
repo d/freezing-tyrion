@@ -1,4 +1,5 @@
 #include <iterator>
+#include <utility>
 #include "OrcaTidy.h"
 #include "clang/Format/Format.h"
 #include "clang/Tooling/CommonOptionsParser.h"
@@ -18,7 +19,20 @@ class OrcaTidyTest : public ::testing::Test {
 
   auto& GetFileToReplaces() { return tool_.getReplacements(); }
 
-  void TestBeforeAfter(std::string code, std::string expected_changed_code) {
+  static std::string format(const std::string& code) {
+    auto style =
+        clang::format::getGoogleStyle(clang::format::FormatStyle::LK_Cpp);
+    auto format_changes = clang::format::reformat(
+        style, code, {{0, (unsigned int)code.size()}}, kSourceFilePath);
+
+    auto changed_code =
+        clang::tooling::applyAllReplacements(code, format_changes);
+    // FIXME: maybe a proper error / expected style code here?
+    if (!changed_code) std::terminate();
+    return changed_code.get();
+  }
+
+  std::string runToolOverCode(std::string code) {
     tool_.mapVirtualFile(kSourceFilePath, code);
 
     auto& file_to_replaces = GetFileToReplaces();
@@ -27,40 +41,20 @@ class OrcaTidyTest : public ::testing::Test {
     int exit_code =
         tool_.run(clang::tooling::newFrontendActionFactory(&action).get());
 
-    ASSERT_EQ(0, exit_code);
+    if (exit_code != 0) std::terminate();
 
-    ASSERT_THAT(file_to_replaces, SizeIs(1));
+    if (file_to_replaces.empty()) return code;
     const auto& replacements = file_to_replaces.begin()->second;
 
     auto changed_code =
         clang::tooling::applyAllReplacements(code, replacements);
+    if (!changed_code) std::terminate();
 
-    if (!changed_code) FAIL() << "failed applying replacements";
-    auto style =
-        clang::format::getGoogleStyle(clang::format::FormatStyle::LK_Cpp);
-    auto format_changes = clang::format::reformat(
-        style, *changed_code, {{0, (unsigned int)changed_code->size()}},
-        kSourceFilePath);
+    return changed_code.get();
+  }
 
-    changed_code =
-        clang::tooling::applyAllReplacements(*changed_code, format_changes);
-    if (!changed_code) FAIL() << "failed formatting changes";
-    code = std::move(changed_code.get());
-
-    format_changes = clang::format::reformat(
-        style, expected_changed_code,
-        {{0, (unsigned int)expected_changed_code.size()}}, kSourceFilePath);
-
-    auto formatted_expected_changed_code = clang::tooling::applyAllReplacements(
-        expected_changed_code, format_changes);
-
-    if (!formatted_expected_changed_code)
-      FAIL() << "failed formatting expected code";
-
-    expected_changed_code = std::move(formatted_expected_changed_code.get());
-
-    // TODO: nicer matcher that formats before comparison
-    ASSERT_THAT(code, StrEq(expected_changed_code));
+  std::string annotateAndFormat(std::string code) {
+    return format(runToolOverCode(std::move(code)));
   }
 
  public:
@@ -126,7 +120,9 @@ TEST_F(OrcaTidyTest, FieldOwnRelease) {
       ~R() { t->Release(); }
     };)C++";
 
-  TestBeforeAfter(code, expected_changed_code);
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(changed_code, format(expected_changed_code));
 }
 
 TEST_F(OrcaTidyTest, FieldOwnSafeRelease) {
@@ -153,7 +149,9 @@ TEST_F(OrcaTidyTest, FieldOwnSafeRelease) {
     };
   )C++";
 
-  TestBeforeAfter(code, expected_changed_code);
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(changed_code, format(expected_changed_code));
 }
 
 TEST_F(OrcaTidyTest, ConstQualifiers) {
@@ -186,7 +184,9 @@ TEST_F(OrcaTidyTest, ConstQualifiers) {
       ~R() {}
     };)C++";
 
-  TestBeforeAfter(code, expected_changed_code);
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(changed_code, format(expected_changed_code));
 }
 
 TEST_F(OrcaTidyTest, FieldPoint) {
@@ -221,7 +221,9 @@ TEST_F(OrcaTidyTest, FieldPoint) {
     };
   )C++";
 
-  TestBeforeAfter(code, expected_changed_code);
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(changed_code, format(expected_changed_code));
 }
 
 TEST_F(OrcaTidyTest, Idempotence) {
@@ -262,5 +264,7 @@ TEST_F(OrcaTidyTest, Idempotence) {
       }
     };)C++";
 
-  TestBeforeAfter(code, expected_changed_code);
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(changed_code, format(expected_changed_code));
 }
