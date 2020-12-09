@@ -1,5 +1,6 @@
 #include <iterator>
 #include "OrcaTidy.h"
+#include "clang/Format/Format.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Refactoring.h"
 
@@ -17,8 +18,7 @@ class OrcaTidyTest : public ::testing::Test {
 
   auto& GetFileToReplaces() { return tool_.getReplacements(); }
 
-  void TestBeforeAfter(const std::string& code,
-                       const std::string& expected_changed_code) {
+  void TestBeforeAfter(std::string code, std::string expected_changed_code) {
     tool_.mapVirtualFile(kSourceFilePath, code);
 
     auto& file_to_replaces = GetFileToReplaces();
@@ -36,15 +36,37 @@ class OrcaTidyTest : public ::testing::Test {
         clang::tooling::applyAllReplacements(code, replacements);
 
     if (!changed_code) FAIL() << "failed applying replacements";
+    auto style =
+        clang::format::getGoogleStyle(clang::format::FormatStyle::LK_Cpp);
+    auto format_changes = clang::format::reformat(
+        style, *changed_code, {{0, (unsigned int)changed_code->size()}},
+        kSourceFilePath);
+
+    changed_code =
+        clang::tooling::applyAllReplacements(*changed_code, format_changes);
+    if (!changed_code) FAIL() << "failed formatting changes";
+    code = std::move(changed_code.get());
+
+    format_changes = clang::format::reformat(
+        style, expected_changed_code,
+        {{0, (unsigned int)expected_changed_code.size()}}, kSourceFilePath);
+
+    auto formatted_expected_changed_code = clang::tooling::applyAllReplacements(
+        expected_changed_code, format_changes);
+
+    if (!formatted_expected_changed_code)
+      FAIL() << "failed formatting expected code";
+
+    expected_changed_code = std::move(formatted_expected_changed_code.get());
 
     // TODO: nicer matcher that formats before comparison
-    ASSERT_THAT(*changed_code, StrEq(expected_changed_code));
+    ASSERT_THAT(code, StrEq(expected_changed_code));
   }
 
  public:
   OrcaTidyTest()
       : parser_([] {
-          llvm::cl::OptionCategory category("my-tool_ options");
+          llvm::cl::OptionCategory category("my-tool options");
           const char* argv[] = {"annotate", kSourceFilePath, "--", "-xc++"};
           int argc = std::size(argv);
 
