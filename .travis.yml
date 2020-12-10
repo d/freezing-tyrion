@@ -9,12 +9,13 @@ addons:
     sources:
       - sourceline: 'deb http://apt.llvm.org/focal/ llvm-toolchain-focal main'
         key_url: 'https://apt.llvm.org/llvm-snapshot.gpg.key'
+      - sourceline: 'deb http://apt.llvm.org/focal/ llvm-toolchain-focal-11 main'
     packages:
       - ninja-build
       - parallel
       - llvm-dev
       - clang
-      - clang-format
+      - clang-format-11
       - libclang-dev
 
 os:
@@ -27,6 +28,6 @@ after_script:
   - ccache --show-stats
 
 script:
-  - CLANG_FORMAT=/usr/bin/clang-format hack/fmt chk
+  - CLANG_FORMAT=clang-format-11 hack/fmt chk
   - LLVM_ROOT=/usr LDFLAGS=-fuse-ld=lld hack/hack gen Debug build
   - hack/hack test build
