@@ -324,12 +324,25 @@ TEST_F(OrcaTidyTest, parmOwnRelease) {
     struct T : gpos::CRefCount<T> {};
     using S = T;
 
+    void OwnsParam(S* released, S*, int i);
+
     void OwnsParam(S* released, S* safe_released, int i) {
       if (i) {
         released->Release();
         gpos::SafeRelease(safe_released);
       }
     }
+
+    void AlsoOwnsParam(gpos::owner<S*> released, gpos::owner<S*> safe_released,
+                       int i) {
+      if (i) {
+        released->Release();
+      } else {
+        gpos::SafeRelease(safe_released);
+      }
+    }
+
+    void OwnsParam(S*, S*, int);  // can't change this one, too hard
   )C++",
               expected_changed_code = R"C++(
 #include "CRefCount.h"
@@ -338,12 +351,25 @@ TEST_F(OrcaTidyTest, parmOwnRelease) {
     struct T : gpos::CRefCount<T> {};
     using S = T;
 
+    void OwnsParam(gpos::owner<S*> released, gpos::owner<S*>, int i);
+
     void OwnsParam(gpos::owner<S*> released, gpos::owner<S*> safe_released, int i) {
       if (i) {
         released->Release();
         gpos::SafeRelease(safe_released);
       }
     }
+
+    void AlsoOwnsParam(gpos::owner<S*> released, gpos::owner<S*> safe_released,
+                       int i) {
+      if (i) {
+        released->Release();
+      } else {
+        gpos::SafeRelease(safe_released);
+      }
+    }
+
+    void OwnsParam(S*, S*, int);  // can't change this one, too hard
   )C++";
 
   auto changed_code = annotateAndFormat(code);

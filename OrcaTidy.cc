@@ -64,7 +64,7 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
     for (const auto& bound_nodes : results) {
       auto field_decl = bound_nodes.getNodeAs<clang::FieldDecl>("field");
       auto record =
-          llvm::dyn_cast<clang::CXXRecordDecl>(field_decl->getDeclContext());
+          llvm::cast<clang::CXXRecordDecl>(field_decl->getDeclContext());
       if (!record) continue;
       auto dtor = record->getDestructor();
       // destructor not visible in this translation unit, leave unannotated
@@ -96,25 +96,32 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
       annotateField(field_decl, "gpos::pointer", source_manager, lang_opts);
     }
 
-    for (const auto& bound_nodes : match(
-             releaseCallExpr(declRefExpr(to(parmVarDecl().bind("owner_parm")))),
-             ast_context)) {
+    for (const auto& bound_nodes :
+         match(releaseCallExpr(declRefExpr(
+                   to(parmVarDecl(unless(is_owner_type)).bind("owner_parm")))),
+               ast_context)) {
       auto owner_parm = bound_nodes.getNodeAs<clang::ParmVarDecl>("owner_parm");
+      auto function_scope_index = owner_parm->getFunctionScopeIndex();
 
-      auto source_range =
-          owner_parm->getTypeSourceInfo()->getTypeLoc().getSourceRange();
+      for (auto function = llvm::cast<clang::FunctionDecl>(
+               owner_parm->getParentFunctionOrMethod());
+           function; function = function->getPreviousDecl()) {
+        auto parm = function->getParamDecl(function_scope_index);
+        auto source_range =
+            parm->getTypeSourceInfo()->getTypeLoc().getSourceRange();
 
-      auto type_text = clang::Lexer::getSourceText(
-          clang::CharSourceRange::getTokenRange(source_range), source_manager,
-          lang_opts);
+        auto type_text = clang::Lexer::getSourceText(
+            clang::CharSourceRange::getTokenRange(source_range), source_manager,
+            lang_opts);
 
-      std::string new_text = ("gpos::owner<" + type_text + ">").str();
+        std::string new_text = ("gpos::owner<" + type_text + ">").str();
 
-      clang::tooling::Replacement replacement(
-          source_manager, clang::CharSourceRange::getTokenRange(source_range),
-          new_text, lang_opts);
-      std::string file_path = replacement.getFilePath().str();
-      llvm::cantFail(replacements_[file_path].add(replacement));
+        clang::tooling::Replacement replacement(
+            source_manager, clang::CharSourceRange::getTokenRange(source_range),
+            new_text, lang_opts);
+        std::string file_path = replacement.getFilePath().str();
+        llvm::cantFail(replacements_[file_path].add(replacement));
+      }
     }
   }
 
