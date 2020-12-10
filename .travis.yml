@@ -20,6 +20,12 @@ addons:
 os:
   - linux
 
+before_script:
+  - ccache --zero-stats
+
+after_script:
+  - ccache --show-stats
+
 script:
   - CLANG_FORMAT=/usr/bin/clang-format hack/fmt chk
   - LLVM_ROOT=/usr LDFLAGS=-fuse-ld=lld hack/hack gen Debug build
