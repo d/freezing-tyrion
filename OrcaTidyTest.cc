@@ -162,7 +162,7 @@ TEST_F(OrcaTidyTest, FieldOwnSafeRelease) {
   ASSERT_EQ(changed_code, format(expected_changed_code));
 }
 
-TEST_F(OrcaTidyTest, ConstQualifiers) {
+TEST_F(OrcaTidyTest, ConstQualifiersOnField) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
