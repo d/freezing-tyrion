@@ -126,7 +126,7 @@ TEST_F(OrcaTidyTest, FieldOwnRelease) {
 
   auto changed_code = annotateAndFormat(std::move(code));
 
-  ASSERT_EQ(changed_code, format(expected_changed_code));
+  ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
 TEST_F(OrcaTidyTest, FieldOwnSafeRelease) {
@@ -159,7 +159,7 @@ TEST_F(OrcaTidyTest, FieldOwnSafeRelease) {
 
   auto changed_code = annotateAndFormat(std::move(code));
 
-  ASSERT_EQ(changed_code, format(expected_changed_code));
+  ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
 TEST_F(OrcaTidyTest, ConstQualifiersOnField) {
@@ -194,7 +194,7 @@ TEST_F(OrcaTidyTest, ConstQualifiersOnField) {
 
   auto changed_code = annotateAndFormat(std::move(code));
 
-  ASSERT_EQ(changed_code, format(expected_changed_code));
+  ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
 TEST_F(OrcaTidyTest, FieldPoint) {
@@ -231,7 +231,7 @@ TEST_F(OrcaTidyTest, FieldPoint) {
 
   auto changed_code = annotateAndFormat(std::move(code));
 
-  ASSERT_EQ(changed_code, format(expected_changed_code));
+  ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
 TEST_F(OrcaTidyTest, FieldPointThroughTypedef) {
@@ -270,7 +270,7 @@ TEST_F(OrcaTidyTest, FieldPointThroughTypedef) {
 
   auto changed_code = annotateAndFormat(std::move(code));
 
-  ASSERT_EQ(changed_code, format(expected_changed_code));
+  ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
 TEST_F(OrcaTidyTest, Idempotence) {
@@ -313,7 +313,7 @@ TEST_F(OrcaTidyTest, Idempotence) {
 
   auto changed_code = annotateAndFormat(std::move(code));
 
-  ASSERT_EQ(changed_code, format(expected_changed_code));
+  ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
 TEST_F(OrcaTidyTest, parmOwnRelease) {
@@ -374,5 +374,5 @@ TEST_F(OrcaTidyTest, parmOwnRelease) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(changed_code, format(expected_changed_code));
+  ASSERT_EQ(format(expected_changed_code), changed_code);
 }
