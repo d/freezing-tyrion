@@ -37,8 +37,7 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
                                    hasArgument(0, reference_to_field));
       return callExpr(anyOf(release, safe_release));
     };
-    auto results =
-        match(callExpr(releaseCallExpr(owner_field), stmtInDtor), ast_context);
+    auto results = match(releaseCallExpr(owner_field), ast_context);
 
     clang::SourceManager& source_manager = ast_context.getSourceManager();
     const clang::LangOptions& lang_opts = ast_context.getLangOpts();
@@ -68,6 +67,7 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
           llvm::dyn_cast<clang::CXXRecordDecl>(field_decl->getDeclContext());
       if (!record) continue;
       auto dtor = record->getDestructor();
+      // destructor not visible in this translation unit, leave unannotated
       if (dtor && !dtor->isDefined() && !dtor->isDefaulted()) continue;
 
       if (dtor) {
@@ -76,6 +76,20 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
         if (!match(decl(hasDescendant(releaseCallExpr(reference_to_field))),
                    *dtor, ast_context)
                  .empty())
+          continue;
+
+        // Here's the tricky part, we don't release this field in the
+        // destructor, but there might still be a release in another method. Not
+        // every method is necessarily visible in this translation unit. (Like
+        // when the destructor is inline in the header).
+
+        // We try a best-effort search. If we still don't see releases, we
+        // proceed to recognize it as a pointer / observer.
+
+        // Theoretically it's not hard to imagine adversarial code breaking
+        // this. In those cases we'll need some fancy schmancy cross-TU trick.
+        // But we seem to be able to get away with this heuristic in ORCA.
+        if (!match(releaseCallExpr(reference_to_field), ast_context).empty())
           continue;
       }
 

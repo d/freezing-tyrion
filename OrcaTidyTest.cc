@@ -107,6 +107,8 @@ TEST_F(OrcaTidyTest, FieldOwnRelease) {
 
     struct R {
       T* t;
+      T* not_released_in_dtor;
+      void Cleanup() { not_released_in_dtor->Release(); }
       ~R() { t->Release(); }
     };)C++",
               expected_changed_code = R"C++(
@@ -117,6 +119,8 @@ TEST_F(OrcaTidyTest, FieldOwnRelease) {
 
     struct R {
       gpos::owner<T*> t;
+      gpos::owner<T*> not_released_in_dtor;
+      void Cleanup() { not_released_in_dtor->Release(); }
       ~R() { t->Release(); }
     };)C++";
 
@@ -134,6 +138,8 @@ TEST_F(OrcaTidyTest, FieldOwnSafeRelease) {
 
     struct R {
       T* t;
+      T* not_released_in_dtor;
+      void Cleanup() { gpos::SafeRelease(not_released_in_dtor); }
       ~R() { gpos::SafeRelease(t); }
     };
   )C++",
@@ -145,6 +151,8 @@ TEST_F(OrcaTidyTest, FieldOwnSafeRelease) {
 
     struct R {
       gpos::owner<T*> t;
+      gpos::owner<T*> not_released_in_dtor;
+      void Cleanup() { gpos::SafeRelease(not_released_in_dtor); }
       ~R() { gpos::SafeRelease(t); }
     };
   )C++";
