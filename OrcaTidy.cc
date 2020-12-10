@@ -31,10 +31,11 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
         field_reference_for(fieldDecl().bind("owner_field"), is_owner_type);
     auto stmtInDtor = hasAncestor(cxxDestructorDecl());
     auto releaseCallExpr = [](auto reference_to_field) {
-      return anyOf(cxxMemberCallExpr(callee(cxxMethodDecl(hasName("Release"))),
-                                     on(reference_to_field)),
-                   callExpr(callee(functionDecl(hasName("SafeRelease"))),
-                            hasArgument(0, reference_to_field)));
+      auto release = cxxMemberCallExpr(
+          callee(cxxMethodDecl(hasName("Release"))), on(reference_to_field));
+      auto safe_release = callExpr(callee(functionDecl(hasName("SafeRelease"))),
+                                   hasArgument(0, reference_to_field));
+      return callExpr(anyOf(release, safe_release));
     };
     auto results =
         match(callExpr(releaseCallExpr(owner_field), stmtInDtor), ast_context);
@@ -72,8 +73,7 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
       if (dtor) {
         auto reference_to_field =
             field_reference_for(equalsNode(field_decl), is_pointer_type);
-        if (!match(decl(hasDescendant(
-                       callExpr(releaseCallExpr(reference_to_field)))),
+        if (!match(decl(hasDescendant(releaseCallExpr(reference_to_field))),
                    *dtor, ast_context)
                  .empty())
           continue;
