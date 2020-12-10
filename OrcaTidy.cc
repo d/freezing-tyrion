@@ -56,7 +56,8 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
         hasType(typeAliasTemplateDecl(hasName("::gpos::pointer")));
 
     results = match(fieldDecl(unless(is_pointer_type),
-                              hasType(pointsTo(ref_count_record_decl)))
+                              hasType(pointsTo(hasCanonicalType(
+                                  hasDeclaration(ref_count_record_decl)))))
                         .bind("field"),
                     ast_context);
 

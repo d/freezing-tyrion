@@ -226,6 +226,45 @@ TEST_F(OrcaTidyTest, FieldPoint) {
   ASSERT_EQ(changed_code, format(expected_changed_code));
 }
 
+TEST_F(OrcaTidyTest, FieldPointThroughTypedef) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+
+    struct S {
+      U* t;
+    };
+
+    struct R {
+      U* t;
+      ~R() {}
+    };
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+
+    struct S {
+      gpos::pointer<U*> t;
+    };
+
+    struct R {
+      gpos::pointer<U*> t;
+      ~R() {}
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(changed_code, format(expected_changed_code));
+}
+
 TEST_F(OrcaTidyTest, Idempotence) {
   std::string code = R"C++(
 #include "CRefCount.h"
