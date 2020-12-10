@@ -315,3 +315,38 @@ TEST_F(OrcaTidyTest, Idempotence) {
 
   ASSERT_EQ(changed_code, format(expected_changed_code));
 }
+
+TEST_F(OrcaTidyTest, parmOwnRelease) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using S = T;
+
+    void OwnsParam(S* released, S* safe_released, int i) {
+      if (i) {
+        released->Release();
+        gpos::SafeRelease(safe_released);
+      }
+    }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using S = T;
+
+    void OwnsParam(gpos::owner<S*> released, gpos::owner<S*> safe_released, int i) {
+      if (i) {
+        released->Release();
+        gpos::SafeRelease(safe_released);
+      }
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(changed_code, format(expected_changed_code));
+}

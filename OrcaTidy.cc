@@ -95,6 +95,27 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
 
       annotateField(field_decl, "gpos::pointer", source_manager, lang_opts);
     }
+
+    for (const auto& bound_nodes : match(
+             releaseCallExpr(declRefExpr(to(parmVarDecl().bind("owner_parm")))),
+             ast_context)) {
+      auto owner_parm = bound_nodes.getNodeAs<clang::ParmVarDecl>("owner_parm");
+
+      auto source_range =
+          owner_parm->getTypeSourceInfo()->getTypeLoc().getSourceRange();
+
+      auto type_text = clang::Lexer::getSourceText(
+          clang::CharSourceRange::getTokenRange(source_range), source_manager,
+          lang_opts);
+
+      std::string new_text = ("gpos::owner<" + type_text + ">").str();
+
+      clang::tooling::Replacement replacement(
+          source_manager, clang::CharSourceRange::getTokenRange(source_range),
+          new_text, lang_opts);
+      std::string file_path = replacement.getFilePath().str();
+      llvm::cantFail(replacements_[file_path].add(replacement));
+    }
   }
 
  private:
