@@ -96,9 +96,18 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
       annotateField(field_decl, "gpos::pointer", source_manager, lang_opts);
     }
 
+    // N.B. we don't need to use the fully qualified name
+    // gpos::CRefCount::SafeRelease because
+    // 1. unqualified name matching is much faster
+    // 2. this leaves room for a CRTP implementation in the future
+    // 3. But hopefully with the introduction of smart pointers, SafeRelease
+    // will disappear...
     for (const auto& bound_nodes :
          match(releaseCallExpr(declRefExpr(
-                   to(parmVarDecl(unless(is_owner_type)).bind("owner_parm")))),
+                   to(parmVarDecl(unless(is_owner_type),
+                                  unless(hasDeclContext(
+                                      functionDecl(hasName("SafeRelease")))))
+                          .bind("owner_parm")))),
                ast_context)) {
       auto owner_parm = bound_nodes.getNodeAs<clang::ParmVarDecl>("owner_parm");
       auto function_scope_index = owner_parm->getFunctionScopeIndex();

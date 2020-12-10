@@ -324,6 +324,12 @@ TEST_F(OrcaTidyTest, parmOwnRelease) {
     struct T : gpos::CRefCount<T> {};
     using S = T;
 
+    // leave gpos::SafeRelease alone
+    template <class T>
+    void gpos::SafeRelease(CRefCount<T>* t) {
+      if (t) t->Release();
+    }
+
     void OwnsParam(S* released, S*, int i);
 
     void OwnsParam(S* released, S* safe_released, int i) {
@@ -350,6 +356,12 @@ TEST_F(OrcaTidyTest, parmOwnRelease) {
 
     struct T : gpos::CRefCount<T> {};
     using S = T;
+
+    // leave gpos::SafeRelease alone
+    template <class T>
+    void gpos::SafeRelease(CRefCount<T>* t) {
+      if (t) t->Release();
+    }
 
     void OwnsParam(gpos::owner<S*> released, gpos::owner<S*>, int i);
 
