@@ -118,25 +118,30 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
         auto parm = function->getParamDecl(function_scope_index);
         if (!match(parmVarDecl(is_owner_type), *parm, ast_context).empty())
           continue;
-        auto source_range =
-            parm->getTypeSourceInfo()->getTypeLoc().getSourceRange();
-
-        auto type_text = clang::Lexer::getSourceText(
-            clang::CharSourceRange::getTokenRange(source_range), source_manager,
-            lang_opts);
-
-        std::string new_text = ("gpos::owner<" + type_text + ">").str();
-
-        clang::tooling::Replacement replacement(
-            source_manager, clang::CharSourceRange::getTokenRange(source_range),
-            new_text, lang_opts);
-        std::string file_path = replacement.getFilePath().str();
-        llvm::cantFail(replacements_[file_path].add(replacement));
+        annotateVar(parm, "gpos::owner", source_manager, lang_opts);
       }
     }
   }
 
  private:
+  void annotateVar(const clang::VarDecl* var, llvm::StringRef annotation,
+                   const clang::SourceManager& source_manager,
+                   const clang::LangOptions& lang_opts) {
+    auto source_range = var->getTypeSourceInfo()->getTypeLoc().getSourceRange();
+
+    auto type_text = clang::Lexer::getSourceText(
+        clang::CharSourceRange::getTokenRange(source_range), source_manager,
+        lang_opts);
+
+    std::string new_text = (annotation + "<" + type_text + ">").str();
+
+    clang::tooling::Replacement replacement(
+        source_manager, clang::CharSourceRange::getTokenRange(source_range),
+        new_text, lang_opts);
+    std::string file_path = replacement.getFilePath().str();
+    llvm::cantFail(replacements_[file_path].add(replacement));
+  }
+
   void annotateField(const clang::FieldDecl* field_decl,
                      llvm::StringRef annotation,
                      const clang::SourceManager& source_manager,
