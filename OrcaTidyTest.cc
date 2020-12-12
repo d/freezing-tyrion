@@ -459,3 +459,38 @@ TEST_F(OrcaTidyTest, varOwnNew) {
 
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
+
+TEST_F(OrcaTidyTest, retOwnNew) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using S = T;
+    struct R {};
+
+    R* foo() { return new R; }  // not ref counted, leave me alone
+    S* bar();
+    gpos::owner<S*> bar();
+    S* bar() { return new S; }
+    gpos::owner<S*> annotated() { return new S; }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using S = T;
+    struct R {};
+
+    R* foo() { return new R; }  // not ref counted, leave me alone
+    gpos::owner<S*> bar();
+    gpos::owner<S*> bar();
+    gpos::owner<S*> bar() { return new S; }
+    gpos::owner<S*> annotated() { return new S; }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}

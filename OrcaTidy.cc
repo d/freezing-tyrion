@@ -22,16 +22,16 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
       : replacements_(replacements) {}
 
   void HandleTranslationUnit(clang::ASTContext& ast_context) override {
-    const auto owner_decl = typeAliasTemplateDecl(hasName("::gpos::owner"));
-    const auto is_owner_type = hasType(owner_decl);
+    auto owner_type = qualType(
+        hasDeclaration(typeAliasTemplateDecl(hasName("::gpos::owner"))));
     auto field_reference_for = [](auto field_matcher,
                                   auto has_excluded_annotation) {
       return memberExpr(member(field_matcher),
                         hasObjectExpression(cxxThisExpr()),
                         unless(has_excluded_annotation));
     };
-    auto owner_field =
-        field_reference_for(fieldDecl().bind("owner_field"), is_owner_type);
+    auto owner_field = field_reference_for(fieldDecl().bind("owner_field"),
+                                           hasType(owner_type));
     auto releaseCallExpr = [](auto reference_to_field) {
       auto release = cxxMemberCallExpr(
           callee(cxxMethodDecl(hasName("Release"))), on(reference_to_field));
@@ -57,12 +57,12 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
     auto is_pointer_type =
         hasType(typeAliasTemplateDecl(hasName("::gpos::pointer")));
 
-    auto has_ref_count_pointer_type = hasType(
-        pointsTo(hasCanonicalType(hasDeclaration(ref_count_record_decl))));
-    results =
-        match(fieldDecl(unless(is_pointer_type), has_ref_count_pointer_type)
-                  .bind("field"),
-              ast_context);
+    auto ref_count_pointer_type =
+        pointsTo(hasCanonicalType(hasDeclaration(ref_count_record_decl)));
+    results = match(
+        fieldDecl(unless(is_pointer_type), hasType(ref_count_pointer_type))
+            .bind("field"),
+        ast_context);
 
     for (const auto& bound_nodes : results) {
       auto field_decl = bound_nodes.getNodeAs<clang::FieldDecl>("field");
@@ -107,7 +107,7 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
     // will disappear...
     for (const auto& bound_nodes :
          match(releaseCallExpr(
-                   declRefExpr(to(varDecl(unless(is_owner_type),
+                   declRefExpr(to(varDecl(unless(hasType(owner_type)),
                                           unless(hasDeclContext(functionDecl(
                                               hasName("SafeRelease")))))
                                       .bind("owner_var")))),
@@ -120,7 +120,8 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
                  owner_parm->getParentFunctionOrMethod());
              function; function = function->getPreviousDecl()) {
           auto parm = function->getParamDecl(function_scope_index);
-          if (!match(parmVarDecl(is_owner_type), *parm, ast_context).empty())
+          if (!match(parmVarDecl(hasType(owner_type)), *parm, ast_context)
+                   .empty())
             continue;
           annotateVar(parm, kOwnerAnnotation, source_manager, lang_opts);
         }
@@ -130,22 +131,55 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
     }
 
     for (const auto& bound_nodes :
-         match(varDecl(hasInitializer(cxxNewExpr()), has_ref_count_pointer_type,
-                       unless(is_owner_type))
+         match(varDecl(hasInitializer(cxxNewExpr()),
+                       hasType(ref_count_pointer_type),
+                       unless(hasType(owner_type)))
                    .bind("owner_var"),
                ast_context)) {
       auto owner_var = bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
 
       annotateVar(owner_var, kOwnerAnnotation, source_manager, lang_opts);
     }
+
+    for (const auto& bound_nodes :
+         match(functionDecl(
+                   hasDescendant(returnStmt(hasReturnValue(cxxNewExpr()))),
+                   returns(ref_count_pointer_type))
+                   .bind("f"),
+               ast_context)) {
+      auto* f = bound_nodes.getNodeAs<clang::FunctionDecl>("f");
+
+      for (; f; f = f->getPreviousDecl()) {
+        auto rt = f->getReturnType();
+        if (!match(owner_type, rt, ast_context).empty()) continue;
+        annotateFunctionReturnType(f, kOwnerAnnotation, source_manager,
+                                   lang_opts);
+      }
+    }
   }
 
  private:
+  void annotateFunctionReturnType(const clang::FunctionDecl* f,
+                                  const char* annotation,
+                                  const clang::SourceManager& source_manager,
+                                  const clang::LangOptions& lang_opts) {
+    auto rt_loc = f->getFunctionTypeLoc().getReturnLoc();
+    annotateSourceRange(rt_loc.getSourceRange(), annotation, source_manager,
+                        lang_opts);
+  }
+
   void annotateVar(const clang::VarDecl* var, llvm::StringRef annotation,
                    const clang::SourceManager& source_manager,
                    const clang::LangOptions& lang_opts) {
     auto source_range = var->getTypeSourceInfo()->getTypeLoc().getSourceRange();
 
+    annotateSourceRange(source_range, annotation, source_manager, lang_opts);
+  }
+
+  void annotateSourceRange(clang::SourceRange source_range,
+                           const llvm::StringRef& annotation,
+                           const clang::SourceManager& source_manager,
+                           const clang::LangOptions& lang_opts) {
     auto type_text = clang::Lexer::getSourceText(
         clang::CharSourceRange::getTokenRange(source_range), source_manager,
         lang_opts);
