@@ -116,6 +116,8 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
                owner_parm->getParentFunctionOrMethod());
            function; function = function->getPreviousDecl()) {
         auto parm = function->getParamDecl(function_scope_index);
+        if (!match(parmVarDecl(is_owner_type), *parm, ast_context).empty())
+          continue;
         auto source_range =
             parm->getTypeSourceInfo()->getTypeLoc().getSourceRange();
 

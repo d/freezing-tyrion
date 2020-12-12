@@ -339,8 +339,8 @@ TEST_F(OrcaTidyTest, parmOwnRelease) {
       }
     }
 
-    void AlsoOwnsParam(gpos::owner<S*> released, gpos::owner<S*> safe_released,
-                       int i) {
+    void AlsoOwnsParam(gpos::owner<S*>, gpos::owner<S*>, int);
+    void AlsoOwnsParam(gpos::owner<S*> released, S* safe_released, int i) {
       if (i) {
         released->Release();
       } else {
@@ -372,6 +372,7 @@ TEST_F(OrcaTidyTest, parmOwnRelease) {
       }
     }
 
+    void AlsoOwnsParam(gpos::owner<S*>, gpos::owner<S*>, int);
     void AlsoOwnsParam(gpos::owner<S*> released, gpos::owner<S*> safe_released,
                        int i) {
       if (i) {
