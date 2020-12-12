@@ -11,6 +11,9 @@ using namespace clang::ast_matchers;
 
 using FileToReplacements = std::map<std::string, clang::tooling::Replacements>;
 
+static const char* const kOwnerAnnotation = "gpos::owner";
+static const char* const kPointerAnnotation = "gpos::pointer";
+
 class AnnotateASTConsumer : public clang::ASTConsumer {
   FileToReplacements& replacements_;
 
@@ -29,7 +32,6 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
     };
     auto owner_field =
         field_reference_for(fieldDecl().bind("owner_field"), is_owner_type);
-    auto stmtInDtor = hasAncestor(cxxDestructorDecl());
     auto releaseCallExpr = [](auto reference_to_field) {
       auto release = cxxMemberCallExpr(
           callee(cxxMethodDecl(hasName("Release"))), on(reference_to_field));
@@ -45,7 +47,7 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
     for (const auto& bound_nodes : results) {
       if (auto field_decl =
               bound_nodes.getNodeAs<clang::FieldDecl>("owner_field")) {
-        annotateField(field_decl, "gpos::owner", source_manager, lang_opts);
+        annotateField(field_decl, kOwnerAnnotation, source_manager, lang_opts);
       }
     }
 
@@ -55,11 +57,12 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
     auto is_pointer_type =
         hasType(typeAliasTemplateDecl(hasName("::gpos::pointer")));
 
-    results = match(fieldDecl(unless(is_pointer_type),
-                              hasType(pointsTo(hasCanonicalType(
-                                  hasDeclaration(ref_count_record_decl)))))
-                        .bind("field"),
-                    ast_context);
+    auto has_ref_count_pointer_type = hasType(
+        pointsTo(hasCanonicalType(hasDeclaration(ref_count_record_decl))));
+    results =
+        match(fieldDecl(unless(is_pointer_type), has_ref_count_pointer_type)
+                  .bind("field"),
+              ast_context);
 
     for (const auto& bound_nodes : results) {
       auto field_decl = bound_nodes.getNodeAs<clang::FieldDecl>("field");
@@ -93,7 +96,7 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
           continue;
       }
 
-      annotateField(field_decl, "gpos::pointer", source_manager, lang_opts);
+      annotateField(field_decl, kPointerAnnotation, source_manager, lang_opts);
     }
 
     // N.B. we don't need to use the fully qualified name
@@ -119,11 +122,21 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
           auto parm = function->getParamDecl(function_scope_index);
           if (!match(parmVarDecl(is_owner_type), *parm, ast_context).empty())
             continue;
-          annotateVar(parm, "gpos::owner", source_manager, lang_opts);
+          annotateVar(parm, kOwnerAnnotation, source_manager, lang_opts);
         }
       } else {
-        annotateVar(owner_var, "gpos::owner", source_manager, lang_opts);
+        annotateVar(owner_var, kOwnerAnnotation, source_manager, lang_opts);
       }
+    }
+
+    for (const auto& bound_nodes :
+         match(varDecl(hasInitializer(cxxNewExpr()), has_ref_count_pointer_type,
+                       unless(is_owner_type))
+                   .bind("owner_var"),
+               ast_context)) {
+      auto owner_var = bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
+
+      annotateVar(owner_var, kOwnerAnnotation, source_manager, lang_opts);
     }
   }
 
