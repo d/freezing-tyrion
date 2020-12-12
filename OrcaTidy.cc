@@ -14,14 +14,13 @@ using FileToReplacements = std::map<std::string, clang::tooling::Replacements>;
 static const char* const kOwnerAnnotation = "gpos::owner";
 static const char* const kPointerAnnotation = "gpos::pointer";
 
-class AnnotateASTConsumer : public clang::ASTConsumer {
+struct Annotator {
   FileToReplacements& replacements_;
+  clang::ASTContext& ast_context;
+  const clang::SourceManager& source_manager;
+  const clang::LangOptions& lang_opts;
 
- public:
-  explicit AnnotateASTConsumer(FileToReplacements& replacements)
-      : replacements_(replacements) {}
-
-  void HandleTranslationUnit(clang::ASTContext& ast_context) override {
+  void Annotate() {
     auto owner_type = qualType(
         hasDeclaration(typeAliasTemplateDecl(hasName("::gpos::owner"))));
     auto field_reference_for = [](auto field_matcher,
@@ -39,15 +38,12 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
                                    hasArgument(0, reference_to_field));
       return callExpr(anyOf(release, safe_release));
     };
-    auto results = match(releaseCallExpr(owner_field), ast_context);
 
-    clang::SourceManager& source_manager = ast_context.getSourceManager();
-    const clang::LangOptions& lang_opts = ast_context.getLangOpts();
-
-    for (const auto& bound_nodes : results) {
-      if (auto field_decl =
+    for (const auto& bound_nodes :
+         match(releaseCallExpr(owner_field), ast_context)) {
+      if (const auto* field_decl =
               bound_nodes.getNodeAs<clang::FieldDecl>("owner_field")) {
-        annotateField(field_decl, kOwnerAnnotation, source_manager, lang_opts);
+        AnnotateField(field_decl, kOwnerAnnotation);
       }
     }
 
@@ -59,17 +55,16 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
 
     auto ref_count_pointer_type =
         pointsTo(hasCanonicalType(hasDeclaration(ref_count_record_decl)));
-    results = match(
-        fieldDecl(unless(is_pointer_type), hasType(ref_count_pointer_type))
-            .bind("field"),
-        ast_context);
 
-    for (const auto& bound_nodes : results) {
-      auto field_decl = bound_nodes.getNodeAs<clang::FieldDecl>("field");
-      auto record =
+    for (const auto& bound_nodes : match(
+             fieldDecl(unless(is_pointer_type), hasType(ref_count_pointer_type))
+                 .bind("field"),
+             ast_context)) {
+      const auto* field_decl = bound_nodes.getNodeAs<clang::FieldDecl>("field");
+      const auto* record =
           llvm::cast<clang::CXXRecordDecl>(field_decl->getDeclContext());
       if (!record) continue;
-      auto dtor = record->getDestructor();
+      auto* dtor = record->getDestructor();
       // destructor not visible in this translation unit, leave unannotated
       if (dtor && !dtor->isDefined() && !dtor->isDefaulted()) continue;
 
@@ -96,7 +91,7 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
           continue;
       }
 
-      annotateField(field_decl, kPointerAnnotation, source_manager, lang_opts);
+      AnnotateField(field_decl, kPointerAnnotation);
     }
 
     // N.B. we don't need to use the fully qualified name
@@ -112,21 +107,23 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
                                               hasName("SafeRelease")))))
                                       .bind("owner_var")))),
                ast_context)) {
-      auto owner_var = bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
-      if (auto owner_parm = llvm::dyn_cast<clang::ParmVarDecl>(owner_var)) {
+      const auto* owner_var =
+          bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
+      if (const auto* owner_parm =
+              llvm::dyn_cast<clang::ParmVarDecl>(owner_var)) {
         auto function_scope_index = owner_parm->getFunctionScopeIndex();
 
-        for (auto function = llvm::cast<clang::FunctionDecl>(
+        for (const auto* function = llvm::cast<clang::FunctionDecl>(
                  owner_parm->getParentFunctionOrMethod());
              function; function = function->getPreviousDecl()) {
-          auto parm = function->getParamDecl(function_scope_index);
+          const auto* parm = function->getParamDecl(function_scope_index);
           if (!match(parmVarDecl(hasType(owner_type)), *parm, ast_context)
                    .empty())
             continue;
-          annotateVar(parm, kOwnerAnnotation, source_manager, lang_opts);
+          AnnotateVar(parm, kOwnerAnnotation);
         }
       } else {
-        annotateVar(owner_var, kOwnerAnnotation, source_manager, lang_opts);
+        AnnotateVar(owner_var, kOwnerAnnotation);
       }
     }
 
@@ -136,9 +133,10 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
                        unless(hasType(owner_type)))
                    .bind("owner_var"),
                ast_context)) {
-      auto owner_var = bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
+      const auto* owner_var =
+          bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
 
-      annotateVar(owner_var, kOwnerAnnotation, source_manager, lang_opts);
+      AnnotateVar(owner_var, kOwnerAnnotation);
     }
 
     for (const auto& bound_nodes :
@@ -147,39 +145,31 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
                    returns(ref_count_pointer_type))
                    .bind("f"),
                ast_context)) {
-      auto* f = bound_nodes.getNodeAs<clang::FunctionDecl>("f");
+      const auto* f = bound_nodes.getNodeAs<clang::FunctionDecl>("f");
 
       for (; f; f = f->getPreviousDecl()) {
         auto rt = f->getReturnType();
         if (!match(owner_type, rt, ast_context).empty()) continue;
-        annotateFunctionReturnType(f, kOwnerAnnotation, source_manager,
-                                   lang_opts);
+        AnnotateFunctionReturnType(f, kOwnerAnnotation);
       }
     }
   }
 
  private:
-  void annotateFunctionReturnType(const clang::FunctionDecl* f,
-                                  const char* annotation,
-                                  const clang::SourceManager& source_manager,
-                                  const clang::LangOptions& lang_opts) {
+  void AnnotateFunctionReturnType(const clang::FunctionDecl* f,
+                                  const char* annotation) {
     auto rt_loc = f->getFunctionTypeLoc().getReturnLoc();
-    annotateSourceRange(rt_loc.getSourceRange(), annotation, source_manager,
-                        lang_opts);
+    AnnotateSourceRange(rt_loc.getSourceRange(), annotation);
   }
 
-  void annotateVar(const clang::VarDecl* var, llvm::StringRef annotation,
-                   const clang::SourceManager& source_manager,
-                   const clang::LangOptions& lang_opts) {
+  void AnnotateVar(const clang::VarDecl* var, llvm::StringRef annotation) {
     auto source_range = var->getTypeSourceInfo()->getTypeLoc().getSourceRange();
 
-    annotateSourceRange(source_range, annotation, source_manager, lang_opts);
+    AnnotateSourceRange(source_range, annotation);
   }
 
-  void annotateSourceRange(clang::SourceRange source_range,
-                           const llvm::StringRef& annotation,
-                           const clang::SourceManager& source_manager,
-                           const clang::LangOptions& lang_opts) {
+  void AnnotateSourceRange(clang::SourceRange source_range,
+                           const llvm::StringRef& annotation) {
     auto type_text = clang::Lexer::getSourceText(
         clang::CharSourceRange::getTokenRange(source_range), source_manager,
         lang_opts);
@@ -193,10 +183,8 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
     llvm::cantFail(replacements_[file_path].add(replacement));
   }
 
-  void annotateField(const clang::FieldDecl* field_decl,
-                     llvm::StringRef annotation,
-                     const clang::SourceManager& source_manager,
-                     const clang::LangOptions& lang_opts) {
+  void AnnotateField(const clang::FieldDecl* field_decl,
+                     llvm::StringRef annotation) {
     auto field_type_loc = field_decl->getTypeSourceInfo()->getTypeLoc();
     clang::SourceRange type_range = field_type_loc.getSourceRange();
     auto field_qual_type = field_decl->getType();
@@ -228,6 +216,22 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
         new_text, lang_opts);
     std::string file_path = annotation_rep.getFilePath().str();
     llvm::cantFail(replacements_[file_path].add(annotation_rep));
+  }
+};
+
+class AnnotateASTConsumer : public clang::ASTConsumer {
+  FileToReplacements& replacements_;
+
+ public:
+  explicit AnnotateASTConsumer(FileToReplacements& replacements)
+      : replacements_(replacements) {}
+
+  void HandleTranslationUnit(clang::ASTContext& ast_context) override {
+    Annotator annotator{replacements_, ast_context,
+                        ast_context.getSourceManager(),
+                        ast_context.getLangOpts()};
+
+    annotator.Annotate();
   }
 };
 
