@@ -389,3 +389,36 @@ TEST_F(OrcaTidyTest, parmOwnRelease) {
 
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
+
+TEST_F(OrcaTidyTest, varOwnRelease) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using S = T;
+
+    void foo() {
+      S *s;
+
+      s->Release();
+    }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using S = T;
+
+    void foo() {
+      gpos::owner<S *> s;
+
+      s->Release();
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}

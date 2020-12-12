@@ -103,22 +103,26 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
     // 3. But hopefully with the introduction of smart pointers, SafeRelease
     // will disappear...
     for (const auto& bound_nodes :
-         match(releaseCallExpr(declRefExpr(
-                   to(parmVarDecl(unless(is_owner_type),
-                                  unless(hasDeclContext(
-                                      functionDecl(hasName("SafeRelease")))))
-                          .bind("owner_parm")))),
+         match(releaseCallExpr(
+                   declRefExpr(to(varDecl(unless(is_owner_type),
+                                          unless(hasDeclContext(functionDecl(
+                                              hasName("SafeRelease")))))
+                                      .bind("owner_var")))),
                ast_context)) {
-      auto owner_parm = bound_nodes.getNodeAs<clang::ParmVarDecl>("owner_parm");
-      auto function_scope_index = owner_parm->getFunctionScopeIndex();
+      auto owner_var = bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
+      if (auto owner_parm = llvm::dyn_cast<clang::ParmVarDecl>(owner_var)) {
+        auto function_scope_index = owner_parm->getFunctionScopeIndex();
 
-      for (auto function = llvm::cast<clang::FunctionDecl>(
-               owner_parm->getParentFunctionOrMethod());
-           function; function = function->getPreviousDecl()) {
-        auto parm = function->getParamDecl(function_scope_index);
-        if (!match(parmVarDecl(is_owner_type), *parm, ast_context).empty())
-          continue;
-        annotateVar(parm, "gpos::owner", source_manager, lang_opts);
+        for (auto function = llvm::cast<clang::FunctionDecl>(
+                 owner_parm->getParentFunctionOrMethod());
+             function; function = function->getPreviousDecl()) {
+          auto parm = function->getParamDecl(function_scope_index);
+          if (!match(parmVarDecl(is_owner_type), *parm, ast_context).empty())
+            continue;
+          annotateVar(parm, "gpos::owner", source_manager, lang_opts);
+        }
+      } else {
+        annotateVar(owner_var, "gpos::owner", source_manager, lang_opts);
       }
     }
   }
