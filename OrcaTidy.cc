@@ -50,16 +50,17 @@ struct Annotator {
     auto ref_count_record_decl = cxxRecordDecl(
         isSameOrDerivedFrom(cxxRecordDecl(hasMethod(hasName("Release")))));
 
-    auto is_pointer_type =
-        hasType(typeAliasTemplateDecl(hasName("::gpos::pointer")));
+    auto pointer_type = qualType(
+        hasDeclaration(typeAliasTemplateDecl(hasName("::gpos::pointer"))));
 
     auto ref_count_pointer_type =
         pointsTo(hasCanonicalType(hasDeclaration(ref_count_record_decl)));
 
-    for (const auto& bound_nodes : match(
-             fieldDecl(unless(is_pointer_type), hasType(ref_count_pointer_type))
-                 .bind("field"),
-             ast_context)) {
+    for (const auto& bound_nodes :
+         match(fieldDecl(unless(hasType(pointer_type)),
+                         hasType(ref_count_pointer_type))
+                   .bind("field"),
+               ast_context)) {
       const auto* field_decl = bound_nodes.getNodeAs<clang::FieldDecl>("field");
       const auto* record =
           llvm::cast<clang::CXXRecordDecl>(field_decl->getDeclContext());
@@ -70,7 +71,7 @@ struct Annotator {
 
       if (dtor) {
         auto reference_to_field =
-            field_reference_for(equalsNode(field_decl), is_pointer_type);
+            field_reference_for(equalsNode(field_decl), hasType(pointer_type));
         if (!match(decl(hasDescendant(releaseCallExpr(reference_to_field))),
                    *dtor, ast_context)
                  .empty())
