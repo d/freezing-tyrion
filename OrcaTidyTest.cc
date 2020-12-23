@@ -5,19 +5,11 @@
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Refactoring.h"
 
-#include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
-
-using ::testing::SizeIs;
-using ::testing::StrEq;
 
 class OrcaTidyTest : public ::testing::Test {
  protected:
-  clang::tooling::CommonOptionsParser parser_;
-  clang::tooling::RefactoringTool tool_;
   constexpr static const char* const kSourceFilePath = "/tmp/foo.cc";
-
-  auto& GetFileToReplaces() { return tool_.getReplacements(); }
 
   static std::string format(const std::string& code) {
     auto style =
@@ -32,16 +24,51 @@ class OrcaTidyTest : public ::testing::Test {
     return changed_code.get();
   }
 
-  std::string runToolOverCode(std::string code) {
-    tool_.mapVirtualFile(kSourceFilePath, code);
+  static std::string runToolOverCode(std::string code) {
+    std::map<std::string, clang::tooling::Replacements> file_to_replaces;
 
-    auto& file_to_replaces = GetFileToReplaces();
     orca_tidy::AnnotateAction action(file_to_replaces);
+    auto ast_consumer = action.newASTConsumer();
 
-    int exit_code =
-        tool_.run(clang::tooling::newFrontendActionFactory(&action).get());
+    const auto* kToolName = "annotate";
+    const char* kRefCountHContent = R"C++(
+#ifndef GPOS_CREFCOUNT_H
+#define GPOS_CREFCOUNT_H
+      namespace gpos {
+      template <class Derived>
+      struct CRefCount {
+        void Release();
+        void AddRef();
+      };
 
-    if (exit_code != 0) std::terminate();
+      template <class T>
+      void SafeRelease(CRefCount<T> *);
+      }  // namespace gpos
+#endif
+    )C++";
+
+    const char* kOwnerHContent = R"C++(
+#ifndef GPOS_OWNER_H
+#define GPOS_OWNER_H
+      namespace gpos {
+      template <class T>
+      using owner = T;
+
+      template <class T>
+      using pointer = T;
+      }  // namespace gpos
+#endif
+    )C++";
+
+    std::unique_ptr<clang::ASTUnit> ast_unit =
+        clang::tooling::buildASTFromCodeWithArgs(
+            code, {"-std=c++14"}, kSourceFilePath, kToolName,
+            std::make_shared<clang::PCHContainerOperations>(),
+            clang::tooling::getClangStripDependencyFileAdjuster(),
+            {{"/tmp/CRefCount.h", kRefCountHContent},
+             {"/tmp/owner.h", kOwnerHContent}});
+
+    ast_consumer->HandleTranslationUnit(ast_unit->getASTContext());
 
     if (file_to_replaces.empty()) return code;
     const auto& replacements = file_to_replaces.begin()->second;
@@ -58,44 +85,6 @@ class OrcaTidyTest : public ::testing::Test {
   }
 
  public:
-  OrcaTidyTest()
-      : parser_([] {
-          llvm::cl::OptionCategory category("my-tool options");
-          const char* argv[] = {"annotate", kSourceFilePath, "--", "-xc++"};
-          int argc = std::size(argv);
-
-          return clang::tooling::CommonOptionsParser{argc, argv, category};
-        }()),
-        tool_(parser_.getCompilations(), parser_.getSourcePathList()) {
-    tool_.mapVirtualFile("/tmp/CRefCount.h", R"C++(
-#ifndef GPOS_CREFCOUNT_H
-#define GPOS_CREFCOUNT_H
-      namespace gpos {
-      template <class Derived>
-      struct CRefCount {
-        void Release();
-        void AddRef();
-      };
-
-      template <class T>
-      void SafeRelease(CRefCount<T> *);
-      }  // namespace gpos
-#endif
-    )C++");
-
-    tool_.mapVirtualFile("/tmp/owner.h", R"C++(
-#ifndef GPOS_OWNER_H
-#define GPOS_OWNER_H
-      namespace gpos {
-      template <class T>
-      using owner = T;
-
-      template <class T>
-      using pointer = T;
-      }  // namespace gpos
-#endif
-    )C++");
-  }
 };
 
 TEST_F(OrcaTidyTest, FieldOwnRelease) {
