@@ -15,6 +15,7 @@ addons:
       - parallel
       - llvm-dev
       - clang
+      - libomp5-12 # FIXME: as a recommended package of clang-12, why isn't this installed by default? Would like to get rid of packages with a version on develop
       - clang-format-11
       - libclang-dev
 
