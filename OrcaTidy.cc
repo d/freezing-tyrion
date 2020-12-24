@@ -14,6 +14,18 @@ using FileToReplacements = std::map<std::string, clang::tooling::Replacements>;
 static const char* const kOwnerAnnotation = "gpos::owner";
 static const char* const kPointerAnnotation = "gpos::pointer";
 
+static auto AnnotationType(const char* name) {
+  return qualType(hasDeclaration(typeAliasTemplateDecl(hasName(name))));
+}
+
+__attribute__((const)) static auto OwnerType() {
+  return AnnotationType("::gpos::owner");
+}
+
+__attribute__((const)) static auto PointerType() {
+  return AnnotationType("::gpos::pointer");
+}
+
 struct Annotator {
   FileToReplacements& replacements_;
   clang::ASTContext& ast_context;
@@ -21,8 +33,6 @@ struct Annotator {
   const clang::LangOptions& lang_opts;
 
   void Annotate() {
-    auto owner_type = qualType(
-        hasDeclaration(typeAliasTemplateDecl(hasName("::gpos::owner"))));
     auto field_reference_for = [](auto field_matcher,
                                   auto has_excluded_annotation) {
       return memberExpr(member(field_matcher),
@@ -30,7 +40,7 @@ struct Annotator {
                         unless(has_excluded_annotation));
     };
     auto owner_field = field_reference_for(fieldDecl().bind("owner_field"),
-                                           hasType(owner_type));
+                                           hasType(OwnerType()));
     auto releaseCallExpr = [](auto reference_to_field) {
       auto release = cxxMemberCallExpr(
           callee(cxxMethodDecl(hasName("Release"))), on(reference_to_field));
@@ -50,14 +60,11 @@ struct Annotator {
     auto ref_count_record_decl = cxxRecordDecl(
         isSameOrDerivedFrom(cxxRecordDecl(hasMethod(hasName("Release")))));
 
-    auto pointer_type = qualType(
-        hasDeclaration(typeAliasTemplateDecl(hasName("::gpos::pointer"))));
-
     auto ref_count_pointer_type =
         pointsTo(hasCanonicalType(hasDeclaration(ref_count_record_decl)));
 
     for (const auto& bound_nodes :
-         match(fieldDecl(unless(hasType(pointer_type)),
+         match(fieldDecl(unless(hasType(PointerType())),
                          hasType(ref_count_pointer_type))
                    .bind("field"),
                ast_context)) {
@@ -71,7 +78,7 @@ struct Annotator {
 
       if (dtor) {
         auto reference_to_field =
-            field_reference_for(equalsNode(field_decl), hasType(pointer_type));
+            field_reference_for(equalsNode(field_decl), hasType(PointerType()));
         if (!match(decl(hasDescendant(releaseCallExpr(reference_to_field))),
                    *dtor, ast_context)
                  .empty())
@@ -103,7 +110,7 @@ struct Annotator {
     // will disappear...
     for (const auto& bound_nodes :
          match(releaseCallExpr(
-                   declRefExpr(to(varDecl(unless(hasType(owner_type)),
+                   declRefExpr(to(varDecl(unless(hasType(OwnerType())),
                                           unless(hasDeclContext(functionDecl(
                                               hasName("SafeRelease")))))
                                       .bind("owner_var")))),
@@ -118,7 +125,7 @@ struct Annotator {
                  owner_parm->getParentFunctionOrMethod());
              function; function = function->getPreviousDecl()) {
           const auto* parm = function->getParamDecl(function_scope_index);
-          if (!match(parmVarDecl(hasType(owner_type)), *parm, ast_context)
+          if (!match(parmVarDecl(hasType(OwnerType())), *parm, ast_context)
                    .empty())
             continue;
           AnnotateVar(parm, kOwnerAnnotation);
@@ -131,7 +138,7 @@ struct Annotator {
     for (const auto& bound_nodes :
          match(varDecl(hasInitializer(cxxNewExpr()),
                        hasType(ref_count_pointer_type),
-                       unless(hasType(owner_type)))
+                       unless(hasType(OwnerType())))
                    .bind("owner_var"),
                ast_context)) {
       const auto* owner_var =
@@ -150,7 +157,7 @@ struct Annotator {
 
       for (; f; f = f->getPreviousDecl()) {
         auto rt = f->getReturnType();
-        if (!match(owner_type, rt, ast_context).empty()) continue;
+        if (!match(OwnerType(), rt, ast_context).empty()) continue;
         AnnotateFunctionReturnType(f, kOwnerAnnotation);
       }
     }
