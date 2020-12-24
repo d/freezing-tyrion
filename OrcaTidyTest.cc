@@ -536,3 +536,52 @@ TEST_F(OrcaTidyTest, propRetOwnVar) {
 
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
+
+TEST_F(OrcaTidyTest, propRetOwnFunc) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using S = T;
+
+    gpos::owner<S*> F();
+
+    gpos::owner<S*> Unannotated(int);  // leave me alone
+    S* Unannotated(int);               // annotate me too
+    S* Unannotated(int i) {
+      if (i == 0) return F();
+      return nullptr;
+    }
+    gpos::owner<S*> Annotated(int i)  // leave me alone
+    {
+      if (i == 42) return F();
+      return nullptr;
+    }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using S = T;
+
+    gpos::owner<S*> F();
+
+    gpos::owner<S*> Unannotated(int);  // leave me alone
+    gpos::owner<S*> Unannotated(int);  // annotate me too
+    gpos::owner<S*> Unannotated(int i) {
+      if (i == 0) return F();
+      return nullptr;
+    }
+    gpos::owner<S*> Annotated(int i)  // leave me alone
+    {
+      if (i == 42) return F();
+      return nullptr;
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}

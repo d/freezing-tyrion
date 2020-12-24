@@ -162,7 +162,9 @@ struct Annotator {
     for (const auto& bound_nodes : match(
              functionDecl(
                  hasDescendant(returnStmt(hasReturnValue(ignoringParenImpCasts(
-                     declRefExpr(to(varDecl(hasType(OwnerType())))))))),
+                     anyOf(declRefExpr(to(varDecl(hasType(OwnerType())))),
+                           callExpr(
+                               callee(functionDecl(returns(OwnerType()))))))))),
                  returns(ref_count_pointer_type))
                  .bind("f"),
              ast_context)) {
