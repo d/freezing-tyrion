@@ -155,17 +155,34 @@ struct Annotator {
                ast_context)) {
       const auto* f = bound_nodes.getNodeAs<clang::FunctionDecl>("f");
 
-      for (; f; f = f->getPreviousDecl()) {
-        auto rt = f->getReturnType();
-        if (!match(OwnerType(), rt, ast_context).empty()) continue;
-        AnnotateFunctionReturnType(f, kOwnerAnnotation);
-      }
+      AnnotateFunctionReturnOwner(f);
+    }
+
+    // propagation rules
+    for (const auto& bound_nodes : match(
+             functionDecl(
+                 hasDescendant(returnStmt(hasReturnValue(ignoringParenImpCasts(
+                     declRefExpr(to(varDecl(hasType(OwnerType())))))))),
+                 returns(ref_count_pointer_type))
+                 .bind("f"),
+             ast_context)) {
+      const auto* f = bound_nodes.getNodeAs<clang::FunctionDecl>("f");
+
+      AnnotateFunctionReturnOwner(f);
     }
   }
 
  private:
+  void AnnotateFunctionReturnOwner(const clang::FunctionDecl* f) const {
+    for (; f; f = f->getPreviousDecl()) {
+      auto rt = f->getReturnType();
+      if (!match(OwnerType(), rt, ast_context).empty()) continue;
+      AnnotateFunctionReturnType(f, kOwnerAnnotation);
+    }
+  }
+
   void AnnotateFunctionReturnType(const clang::FunctionDecl* f,
-                                  const char* annotation) {
+                                  const char* annotation) const {
     auto rt_loc = f->getFunctionTypeLoc().getReturnLoc();
     AnnotateSourceRange(rt_loc.getSourceRange(), annotation);
   }
@@ -177,7 +194,7 @@ struct Annotator {
   }
 
   void AnnotateSourceRange(clang::SourceRange source_range,
-                           const llvm::StringRef& annotation) {
+                           const llvm::StringRef& annotation) const {
     auto type_text = clang::Lexer::getSourceText(
         clang::CharSourceRange::getTokenRange(source_range), source_manager,
         lang_opts);
@@ -192,7 +209,7 @@ struct Annotator {
   }
 
   void AnnotateField(const clang::FieldDecl* field_decl,
-                     llvm::StringRef annotation) {
+                     llvm::StringRef annotation) const {
     auto field_type_loc = field_decl->getTypeSourceInfo()->getTypeLoc();
     clang::SourceRange type_range = field_type_loc.getSourceRange();
     auto field_qual_type = field_decl->getType();
