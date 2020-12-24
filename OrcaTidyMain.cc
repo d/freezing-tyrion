@@ -4,22 +4,40 @@
 #include "clang/Tooling/ReplacementsYaml.h"
 #include "llvm/Support/CommandLine.h"
 
-static llvm::cl::OptionCategory orca_tidy_category("orca-annotate options");
-static llvm::cl::opt<std::string> export_fixes(
-    "export-fixes", llvm::cl::desc(R"(
-YAML file to store suggested fixes in. The
+namespace cl = llvm::cl;
+
+static cl::OptionCategory common_options("orca-annotate options");
+
+static cl::opt<std::string> export_fixes(
+    "export-fixes", cl::desc(R"(YAML file to store suggested fixes in. The
 stored fixes can be applied to the input source
 code with clang-apply-replacements.
 )"),
-    llvm::cl::value_desc("filename"), llvm::cl::cat(orca_tidy_category));
+    cl::value_desc("filename"), cl::cat(common_options),
+    cl::sub(*cl::AllSubCommands));
+
+static cl::SubCommand base("base");
+static cl::SubCommand propagate("propagate");
 
 int main(int argc, const char* argv[]) {
   clang::tooling::CommonOptionsParser parser(
-      argc, argv, orca_tidy_category, "A tool to annotate and rewrite ORCA");
+      argc, argv, common_options, "A tool to annotate and rewrite ORCA");
   clang::tooling::RefactoringTool tool(parser.getCompilations(),
                                        parser.getSourcePathList());
 
-  orca_tidy::AnnotateAction annotate_action{tool.getReplacements()};
+  orca_tidy::ActionOptions action_options;
+  if (*cl::TopLevelSubCommand) {
+    cl::PrintHelpMessage(false, true);
+    return 0;
+  }
+
+  if (base) {
+    action_options = {true, false};
+  } else if (propagate) {
+    action_options = {false, true};
+  }
+  orca_tidy::AnnotateAction annotate_action{tool.getReplacements(),
+                                            action_options};
   int exit_code;
   exit_code = tool.run(
       clang::tooling::newFrontendActionFactory(&annotate_action).get());
@@ -36,7 +54,7 @@ int main(int argc, const char* argv[]) {
       return 1;
     }
 
-    // Export replacements_.
+    // Export replacements.
     clang::tooling::TranslationUnitReplacements tur;
     const auto& file_to_replacements = tool.getReplacements();
     for (const auto& entry : file_to_replacements) {

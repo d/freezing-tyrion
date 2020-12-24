@@ -10,7 +10,13 @@
 class OrcaTidyTest : public ::testing::Test {
  protected:
   constexpr static const char* const kSourceFilePath = "/tmp/foo.cc";
+  const orca_tidy::ActionOptions action_options_;
 
+ public:
+  OrcaTidyTest(orca_tidy::ActionOptions action_options)
+      : action_options_(action_options) {}
+
+ protected:
   static std::string format(const std::string& code) {
     auto style =
         clang::format::getGoogleStyle(clang::format::FormatStyle::LK_Cpp);
@@ -24,10 +30,10 @@ class OrcaTidyTest : public ::testing::Test {
     return changed_code.get();
   }
 
-  static std::string runToolOverCode(std::string code) {
+  std::string runToolOverCode(std::string code) {
     std::map<std::string, clang::tooling::Replacements> file_to_replaces;
 
-    orca_tidy::AnnotateAction action(file_to_replaces);
+    orca_tidy::AnnotateAction action(file_to_replaces, action_options_);
     auto ast_consumer = action.newASTConsumer();
 
     const auto* kToolName = "annotate";
@@ -87,7 +93,15 @@ class OrcaTidyTest : public ::testing::Test {
  public:
 };
 
-TEST_F(OrcaTidyTest, FieldOwnRelease) {
+struct BaseTest : OrcaTidyTest {
+  BaseTest() : OrcaTidyTest({true, false}) {}
+};
+
+struct PropagateTest : OrcaTidyTest {
+  PropagateTest() : OrcaTidyTest({false, true}) {}
+};
+
+TEST_F(BaseTest, FieldOwnRelease) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -118,7 +132,7 @@ TEST_F(OrcaTidyTest, FieldOwnRelease) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(OrcaTidyTest, FieldOwnSafeRelease) {
+TEST_F(BaseTest, FieldOwnSafeRelease) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -151,7 +165,7 @@ TEST_F(OrcaTidyTest, FieldOwnSafeRelease) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(OrcaTidyTest, ConstQualifiersOnField) {
+TEST_F(BaseTest, ConstQualifiersOnField) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -186,7 +200,7 @@ TEST_F(OrcaTidyTest, ConstQualifiersOnField) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(OrcaTidyTest, FieldPoint) {
+TEST_F(BaseTest, FieldPoint) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -223,7 +237,7 @@ TEST_F(OrcaTidyTest, FieldPoint) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(OrcaTidyTest, FieldPointThroughTypedef) {
+TEST_F(BaseTest, FieldPointThroughTypedef) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -262,7 +276,7 @@ TEST_F(OrcaTidyTest, FieldPointThroughTypedef) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(OrcaTidyTest, Idempotence) {
+TEST_F(BaseTest, Idempotence) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -305,7 +319,7 @@ TEST_F(OrcaTidyTest, Idempotence) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(OrcaTidyTest, parmOwnRelease) {
+TEST_F(BaseTest, parmOwnRelease) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -379,7 +393,7 @@ TEST_F(OrcaTidyTest, parmOwnRelease) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(OrcaTidyTest, varOwnRelease) {
+TEST_F(BaseTest, varOwnRelease) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -412,7 +426,7 @@ TEST_F(OrcaTidyTest, varOwnRelease) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(OrcaTidyTest, varOwnNew) {
+TEST_F(BaseTest, varOwnNew) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -449,7 +463,7 @@ TEST_F(OrcaTidyTest, varOwnNew) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(OrcaTidyTest, retOwnNew) {
+TEST_F(BaseTest, retOwnNew) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -484,7 +498,7 @@ TEST_F(OrcaTidyTest, retOwnNew) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(OrcaTidyTest, propRetOwnVar) {
+TEST_F(PropagateTest, propRetOwnVar) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -537,7 +551,7 @@ TEST_F(OrcaTidyTest, propRetOwnVar) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(OrcaTidyTest, propRetOwnFunc) {
+TEST_F(PropagateTest, propRetOwnFunc) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"

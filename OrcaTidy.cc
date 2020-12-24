@@ -26,13 +26,46 @@ __attribute__((const)) static auto PointerType() {
   return AnnotationType("::gpos::pointer");
 }
 
+__attribute__((const)) static auto RefCountPointerType() {
+  auto ref_count_record_decl = cxxRecordDecl(
+      isSameOrDerivedFrom(cxxRecordDecl(hasMethod(hasName("Release")))));
+
+  auto ref_count_pointer_type =
+      pointsTo(hasCanonicalType(hasDeclaration(ref_count_record_decl)));
+  return ref_count_pointer_type;
+}
+
 struct Annotator {
-  FileToReplacements& replacements_;
+  ActionOptions action_options;
+  FileToReplacements& replacements;
   clang::ASTContext& ast_context;
   const clang::SourceManager& source_manager;
   const clang::LangOptions& lang_opts;
 
   void Annotate() {
+    if (action_options.Base) AnnotateBaseCases();
+
+    if (action_options.Propagate) Propagate();
+  }
+
+ private:
+  void Propagate() const {
+    for (const auto& bound_nodes : match(
+             functionDecl(
+                 hasDescendant(returnStmt(hasReturnValue(ignoringParenImpCasts(
+                     anyOf(declRefExpr(to(varDecl(hasType(OwnerType())))),
+                           callExpr(
+                               callee(functionDecl(returns(OwnerType()))))))))),
+                 returns(RefCountPointerType()))
+                 .bind("f"),
+             ast_context)) {
+      const auto* f = bound_nodes.getNodeAs<clang::FunctionDecl>("f");
+
+      AnnotateFunctionReturnOwner(f);
+    }
+  }
+
+  void AnnotateBaseCases() const {
     auto field_reference_for = [](auto field_matcher,
                                   auto has_excluded_annotation) {
       return memberExpr(member(field_matcher),
@@ -57,15 +90,9 @@ struct Annotator {
       }
     }
 
-    auto ref_count_record_decl = cxxRecordDecl(
-        isSameOrDerivedFrom(cxxRecordDecl(hasMethod(hasName("Release")))));
-
-    auto ref_count_pointer_type =
-        pointsTo(hasCanonicalType(hasDeclaration(ref_count_record_decl)));
-
     for (const auto& bound_nodes :
          match(fieldDecl(unless(hasType(PointerType())),
-                         hasType(ref_count_pointer_type))
+                         hasType(RefCountPointerType()))
                    .bind("field"),
                ast_context)) {
       const auto* field_decl = bound_nodes.getNodeAs<clang::FieldDecl>("field");
@@ -135,12 +162,11 @@ struct Annotator {
       }
     }
 
-    for (const auto& bound_nodes :
-         match(varDecl(hasInitializer(cxxNewExpr()),
-                       hasType(ref_count_pointer_type),
-                       unless(hasType(OwnerType())))
-                   .bind("owner_var"),
-               ast_context)) {
+    for (const auto& bound_nodes : match(varDecl(hasInitializer(cxxNewExpr()),
+                                                 hasType(RefCountPointerType()),
+                                                 unless(hasType(OwnerType())))
+                                             .bind("owner_var"),
+                                         ast_context)) {
       const auto* owner_var =
           bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
 
@@ -150,31 +176,15 @@ struct Annotator {
     for (const auto& bound_nodes :
          match(functionDecl(
                    hasDescendant(returnStmt(hasReturnValue(cxxNewExpr()))),
-                   returns(ref_count_pointer_type))
+                   returns(RefCountPointerType()))
                    .bind("f"),
                ast_context)) {
       const auto* f = bound_nodes.getNodeAs<clang::FunctionDecl>("f");
 
       AnnotateFunctionReturnOwner(f);
     }
-
-    // propagation rules
-    for (const auto& bound_nodes : match(
-             functionDecl(
-                 hasDescendant(returnStmt(hasReturnValue(ignoringParenImpCasts(
-                     anyOf(declRefExpr(to(varDecl(hasType(OwnerType())))),
-                           callExpr(
-                               callee(functionDecl(returns(OwnerType()))))))))),
-                 returns(ref_count_pointer_type))
-                 .bind("f"),
-             ast_context)) {
-      const auto* f = bound_nodes.getNodeAs<clang::FunctionDecl>("f");
-
-      AnnotateFunctionReturnOwner(f);
-    }
   }
 
- private:
   void AnnotateFunctionReturnOwner(const clang::FunctionDecl* f) const {
     for (; f; f = f->getPreviousDecl()) {
       auto rt = f->getReturnType();
@@ -189,7 +199,8 @@ struct Annotator {
     AnnotateSourceRange(rt_loc.getSourceRange(), annotation);
   }
 
-  void AnnotateVar(const clang::VarDecl* var, llvm::StringRef annotation) {
+  void AnnotateVar(const clang::VarDecl* var,
+                   llvm::StringRef annotation) const {
     auto source_range = var->getTypeSourceInfo()->getTypeLoc().getSourceRange();
 
     AnnotateSourceRange(source_range, annotation);
@@ -207,7 +218,7 @@ struct Annotator {
         source_manager, clang::CharSourceRange::getTokenRange(source_range),
         new_text, lang_opts);
     std::string file_path = replacement.getFilePath().str();
-    llvm::cantFail(replacements_[file_path].add(replacement));
+    llvm::cantFail(replacements[file_path].add(replacement));
   }
 
   void AnnotateField(const clang::FieldDecl* field_decl,
@@ -242,19 +253,21 @@ struct Annotator {
                                               field_type_loc.getEndLoc()),
         new_text, lang_opts);
     std::string file_path = annotation_rep.getFilePath().str();
-    llvm::cantFail(replacements_[file_path].add(annotation_rep));
+    llvm::cantFail(replacements[file_path].add(annotation_rep));
   }
 };
 
 class AnnotateASTConsumer : public clang::ASTConsumer {
   FileToReplacements& replacements_;
+  ActionOptions action_options_;
 
  public:
-  explicit AnnotateASTConsumer(FileToReplacements& replacements)
-      : replacements_(replacements) {}
+  explicit AnnotateASTConsumer(FileToReplacements& replacements,
+                               ActionOptions action_options)
+      : replacements_(replacements), action_options_(action_options) {}
 
   void HandleTranslationUnit(clang::ASTContext& ast_context) override {
-    Annotator annotator{replacements_, ast_context,
+    Annotator annotator{action_options_, replacements_, ast_context,
                         ast_context.getSourceManager(),
                         ast_context.getLangOpts()};
 
@@ -263,7 +276,7 @@ class AnnotateASTConsumer : public clang::ASTConsumer {
 };
 
 std::unique_ptr<clang::ASTConsumer> AnnotateAction::newASTConsumer() {
-  return std::make_unique<AnnotateASTConsumer>(replacements_);
+  return std::make_unique<AnnotateASTConsumer>(replacements_, action_options_);
 }
 
 }  // namespace orca_tidy
