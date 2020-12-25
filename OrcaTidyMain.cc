@@ -81,11 +81,10 @@ int main(int argc, const char* argv[]) {
     // Export replacements.
     tooling::TranslationUnitReplacements tur;
     const auto& file_to_replacements = tool.getReplacements();
-    for (const auto& entry : file_to_replacements) {
-      auto file = entry.first;
-      const tooling::Replacements& unclean_replacements = entry.second;
+    for (const auto& [file, unclean_replacements] : file_to_replacements) {
       tur.Replacements.insert(tur.Replacements.end(),
-                              unclean_replacements.begin(), entry.second.end());
+                              unclean_replacements.begin(),
+                              unclean_replacements.end());
     }
 
     llvm::yaml::Output yaml(os);
