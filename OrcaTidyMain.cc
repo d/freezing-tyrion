@@ -1,3 +1,4 @@
+#include "IncludeFixer.h"
 #include "OrcaTidy.h"
 
 #include "clang/Tooling/CommonOptionsParser.h"
@@ -5,6 +6,7 @@
 #include "llvm/Support/CommandLine.h"
 
 namespace cl = llvm::cl;
+namespace tooling = clang::tooling;
 
 static cl::OptionCategory common_options("orca-annotate options");
 
@@ -18,19 +20,10 @@ code with clang-apply-replacements.
 
 static cl::SubCommand base("base");
 static cl::SubCommand propagate("propagate");
+static cl::SubCommand fix_include("fix-include");
 
-int main(int argc, const char* argv[]) {
-  clang::tooling::CommonOptionsParser parser(
-      argc, argv, common_options, "A tool to annotate and rewrite ORCA");
-  clang::tooling::RefactoringTool tool(parser.getCompilations(),
-                                       parser.getSourcePathList());
-
+int AnnotateMain(clang::tooling::RefactoringTool& tool) {
   orca_tidy::ActionOptions action_options;
-  if (*cl::TopLevelSubCommand) {
-    cl::PrintHelpMessage(false, true);
-    return 0;
-  }
-
   if (base) {
     action_options = {true, false};
   } else if (propagate) {
@@ -38,13 +31,44 @@ int main(int argc, const char* argv[]) {
   }
   orca_tidy::AnnotateAction annotate_action{tool.getReplacements(),
                                             action_options};
-  int exit_code;
-  exit_code = tool.run(
+  return tool.run(
       clang::tooling::newFrontendActionFactory(&annotate_action).get());
+}
+
+int FixIncludeMain(tooling::RefactoringTool& tool) {
+  orca_tidy::IncludeFixerActionFactory include_fixer_factory(
+      tool.getReplacements());
+  if (export_fixes.empty()) {
+    return tool.runAndSave(&include_fixer_factory);
+  } else {
+    return tool.run(&include_fixer_factory);
+  }
+}
+
+int main(int argc, const char* argv[]) {
+  tooling::CommonOptionsParser parser(argc, argv, common_options,
+                                      "A tool to annotate and rewrite ORCA");
+  tooling::RefactoringTool tool(parser.getCompilations(),
+                                parser.getSourcePathList());
+
+  if (*cl::TopLevelSubCommand) {
+    cl::PrintHelpMessage(false, true);
+    return 0;
+  }
+
+  int exit_code = [&tool]() {
+    if (fix_include) {
+      return FixIncludeMain(tool);
+    } else {
+      return AnnotateMain(tool);
+    }
+  }();
+
   if (exit_code != 0) {
     llvm::errs() << "failed to run tool.\n";
     return exit_code;
   }
+
   if (!export_fixes.empty()) {
     std::error_code error_code;
     llvm::raw_fd_ostream os(export_fixes, error_code, llvm::sys::fs::OF_None);
@@ -55,11 +79,11 @@ int main(int argc, const char* argv[]) {
     }
 
     // Export replacements.
-    clang::tooling::TranslationUnitReplacements tur;
+    tooling::TranslationUnitReplacements tur;
     const auto& file_to_replacements = tool.getReplacements();
     for (const auto& entry : file_to_replacements) {
       auto file = entry.first;
-      const clang::tooling::Replacements& unclean_replacements = entry.second;
+      const tooling::Replacements& unclean_replacements = entry.second;
       tur.Replacements.insert(tur.Replacements.end(),
                               unclean_replacements.begin(), entry.second.end());
     }
@@ -69,5 +93,6 @@ int main(int argc, const char* argv[]) {
     os.close();
     return 0;
   }
+
   return 0;
 }
