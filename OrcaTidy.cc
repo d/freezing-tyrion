@@ -179,11 +179,26 @@ struct Annotator {
       }
     }
 
-    for (const auto& bound_nodes : match(varDecl(hasInitializer(cxxNewExpr()),
-                                                 hasType(RefCountPointerType()),
-                                                 unless(hasType(OwnerType())))
-                                             .bind("owner_var"),
-                                         ast_context)) {
+    for (const auto& bound_nodes : match(
+             varDecl(hasType(RefCountPointerType()),
+                     unless(hasType(OwnerType())), hasInitializer(cxxNewExpr()))
+                 .bind("owner_var"),
+             ast_context)) {
+      const auto* owner_var =
+          bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
+
+      AnnotateVar(owner_var, kOwnerAnnotation);
+    }
+
+    for (const auto& bound_nodes :
+         match(binaryOperator(
+                   hasOperatorName("="),
+                   hasOperands(
+                       declRefExpr(to(varDecl(hasType(RefCountPointerType()),
+                                              unless(hasType(OwnerType())))
+                                          .bind("owner_var"))),
+                       cxxNewExpr())),
+               ast_context)) {
       const auto* owner_var =
           bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
 

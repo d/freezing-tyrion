@@ -426,7 +426,7 @@ TEST_F(BaseTest, varOwnRelease) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(BaseTest, varOwnNew) {
+TEST_F(BaseTest, varOwnInitNew) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -455,6 +455,49 @@ TEST_F(BaseTest, varOwnNew) {
       gpos::owner<S *> s = new S;
 
       gpos::owner<S *> annotated = new S;
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
+
+TEST_F(BaseTest, varOwnAssignNew) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using S = T;
+    struct R {};
+
+    void foo() {
+      R *r;
+      r = new R;  // not ref-counted, leave me alone
+      S *s;
+      s = new S;
+
+      gpos::owner<S *> annotated;
+      annotated = new S;
+    }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using S = T;
+    struct R {};
+
+    void foo() {
+      R *r;
+      r = new R;  // not ref-counted, leave me alone
+      gpos::owner<S *> s;
+      s = new S;
+
+      gpos::owner<S *> annotated;
+      annotated = new S;
     }
   )C++";
 
