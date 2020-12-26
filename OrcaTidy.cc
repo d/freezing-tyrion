@@ -161,17 +161,11 @@ struct Annotator {
           bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
       if (const auto* owner_parm =
               llvm::dyn_cast<clang::ParmVarDecl>(owner_var)) {
-        auto function_scope_index = owner_parm->getFunctionScopeIndex();
+        auto parameter_index = owner_parm->getFunctionScopeIndex();
 
-        for (const auto* function = llvm::cast<clang::FunctionDecl>(
-                 owner_parm->getParentFunctionOrMethod());
-             function; function = function->getPreviousDecl()) {
-          const auto* parm = function->getParamDecl(function_scope_index);
-          if (!match(parmVarDecl(hasType(OwnerType())), *parm, ast_context)
-                   .empty())
-            continue;
-          AnnotateVarOwner(parm);
-        }
+        const auto* function = llvm::cast<clang::FunctionDecl>(
+            owner_parm->getParentFunctionOrMethod());
+        AnnotateParameterOwner(function, parameter_index);
       } else {
         AnnotateVarOwner(owner_var);
       }
@@ -212,6 +206,15 @@ struct Annotator {
       const auto* f = bound_nodes.getNodeAs<clang::FunctionDecl>("f");
 
       AnnotateFunctionReturnOwner(f);
+    }
+  }
+  void AnnotateParameterOwner(const clang::FunctionDecl* function,
+                              unsigned int parameter_index) const {
+    for (const auto* f = function; f; f = f->getPreviousDecl()) {
+      const auto* parm = f->getParamDecl(parameter_index);
+      if (!match(parmVarDecl(hasType(OwnerType())), *parm, ast_context).empty())
+        continue;
+      AnnotateVarOwner(parm);
     }
   }
 
