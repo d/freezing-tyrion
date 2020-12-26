@@ -52,11 +52,11 @@ struct Annotator {
   void Propagate() const {
     for (const auto& bound_nodes : match(
              functionDecl(
+                 returns(qualType(unless(OwnerType()), RefCountPointerType())),
                  hasDescendant(returnStmt(hasReturnValue(ignoringParenImpCasts(
                      anyOf(declRefExpr(to(varDecl(hasType(OwnerType())))),
                            callExpr(
-                               callee(functionDecl(returns(OwnerType()))))))))),
-                 returns(RefCountPointerType()))
+                               callee(functionDecl(returns(OwnerType()))))))))))
                  .bind("f"),
              ast_context)) {
       const auto* f = bound_nodes.getNodeAs<clang::FunctionDecl>("f");
