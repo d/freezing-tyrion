@@ -172,10 +172,10 @@ struct Annotator {
           if (!match(parmVarDecl(hasType(OwnerType())), *parm, ast_context)
                    .empty())
             continue;
-          AnnotateVar(parm, kOwnerAnnotation);
+          AnnotateVarOwner(parm);
         }
       } else {
-        AnnotateVar(owner_var, kOwnerAnnotation);
+        AnnotateVarOwner(owner_var);
       }
     }
 
@@ -187,7 +187,7 @@ struct Annotator {
       const auto* owner_var =
           bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
 
-      AnnotateVar(owner_var, kOwnerAnnotation);
+      AnnotateVarOwner(owner_var);
     }
 
     for (const auto& bound_nodes :
@@ -202,7 +202,7 @@ struct Annotator {
       const auto* owner_var =
           bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
 
-      AnnotateVar(owner_var, kOwnerAnnotation);
+      AnnotateVarOwner(owner_var);
     }
 
     for (const auto& bound_nodes :
@@ -215,6 +215,10 @@ struct Annotator {
 
       AnnotateFunctionReturnOwner(f);
     }
+  }
+
+  void AnnotateVarOwner(const clang::VarDecl* var) const {
+    AnnotateVar(var, kOwnerAnnotation);
   }
 
   void AnnotateFunctionReturnOwner(const clang::FunctionDecl* f) const {
