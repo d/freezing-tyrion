@@ -80,6 +80,27 @@ struct Annotator {
 
       AnnotateFunctionReturnOwner(m);
     }
+
+    for (const auto& bound_nodes :
+         match(cxxMethodDecl(
+                   isOverride(),
+                   forEachOverridden(
+                       cxxMethodDecl(hasAnyParameter(hasType(OwnerType())))
+                           .bind("base")))
+                   .bind("derived"),
+               ast_context)) {
+      const auto* derived_method =
+          bound_nodes.getNodeAs<clang::CXXMethodDecl>("derived");
+      const auto* base_method =
+          bound_nodes.getNodeAs<clang::CXXMethodDecl>("base");
+      for (const auto* base_param : base_method->parameters()) {
+        if (match(OwnerType(), base_param->getType(), ast_context).empty())
+          continue;
+        auto parameter_index = base_param->getFunctionScopeIndex();
+
+        AnnotateParameterOwner(derived_method, parameter_index);
+      }
+    }
   }
 
   void AnnotateBaseCases() const {
@@ -166,6 +187,17 @@ struct Annotator {
         const auto* function = llvm::cast<clang::FunctionDecl>(
             owner_parm->getParentFunctionOrMethod());
         AnnotateParameterOwner(function, parameter_index);
+
+        if (!match(cxxMethodDecl(isOverride()), *function, ast_context)
+                 .empty()) {
+          const auto* method = llvm::cast<clang::CXXMethodDecl>(function);
+          for (const auto* super_method : method->overridden_methods()) {
+            const auto* parm = super_method->getParamDecl(parameter_index);
+            if (!match(OwnerType(), parm->getType(), ast_context).empty())
+              continue;
+            AnnotateParameterOwner(super_method, parameter_index);
+          }
+        }
       } else {
         AnnotateVarOwner(owner_var);
       }

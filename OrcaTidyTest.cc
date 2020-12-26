@@ -393,6 +393,60 @@ TEST_F(BaseTest, parmOwnRelease) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
+TEST_F(BaseTest, parmVfunOwnRelease) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using S = T;
+
+    struct R {
+      virtual void OwnsParam(S*, gpos::owner<S*>, int);
+    };
+
+    struct U : R {
+      void OwnsParam(S* released, S*, int i) override;
+    };
+
+    void U::OwnsParam(S* released, S* safe_released, int i) {
+      if (i) {
+        released->Release();
+      } else {
+        gpos::SafeRelease(safe_released);
+      }
+    }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using S = T;
+
+    struct R {
+      virtual void OwnsParam(gpos::owner<S*>, gpos::owner<S*>, int);
+    };
+
+    struct U : R {
+      void OwnsParam(gpos::owner<S*> released, gpos::owner<S*>, int i) override;
+    };
+
+    void U::OwnsParam(gpos::owner<S*> released, gpos::owner<S*> safe_released,
+                      int i) {
+      if (i) {
+        released->Release();
+      } else {
+        gpos::SafeRelease(safe_released);
+      }
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
+
 TEST_F(BaseTest, varOwnRelease) {
   std::string code = R"C++(
 #include "CRefCount.h"
@@ -643,7 +697,7 @@ TEST_F(PropagateTest, propRetOwnFunc) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(PropagateTest, propVfunUp) {
+TEST_F(PropagateTest, propVfunRetUp) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -680,7 +734,7 @@ TEST_F(PropagateTest, propVfunUp) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(PropagateTest, propVfunDown) {
+TEST_F(PropagateTest, propVfunRetDown) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -709,6 +763,43 @@ TEST_F(PropagateTest, propVfunDown) {
 
     struct R : S {
       gpos::owner<U*> foo() override;
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
+
+TEST_F(PropagateTest, propVfunParmDown) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+
+    struct S {
+      virtual void foo(gpos::owner<U*>, gpos::owner<U*>);
+    };
+
+    struct R : S {
+      void foo(U* u, gpos::owner<U*> annotated) override;
+    };
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+
+    struct S {
+      virtual void foo(gpos::owner<U*>, gpos::owner<U*>);
+    };
+
+    struct R : S {
+      void foo(gpos::owner<U*> u, gpos::owner<U*> annotated) override;
     };
   )C++";
 
