@@ -63,6 +63,23 @@ struct Annotator {
 
       AnnotateFunctionReturnOwner(f);
     }
+
+    for (const auto& bound_nodes :
+         match(cxxMethodDecl(
+                   isOverride(),
+                   anyOf(cxxMethodDecl(
+                             returns(OwnerType()),
+                             forEachOverridden(
+                                 cxxMethodDecl(unless(returns(OwnerType())))
+                                     .bind("follow"))),
+                         cxxMethodDecl(unless(returns(OwnerType())),
+                                       forEachOverridden(returns(OwnerType())))
+                             .bind("follow"))),
+               ast_context)) {
+      const auto* m = bound_nodes.getNodeAs<clang::CXXMethodDecl>("follow");
+
+      AnnotateFunctionReturnOwner(m);
+    }
   }
 
   void AnnotateBaseCases() const {

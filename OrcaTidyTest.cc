@@ -599,3 +599,77 @@ TEST_F(PropagateTest, propRetOwnFunc) {
 
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
+
+TEST_F(PropagateTest, propVfunUp) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+
+    struct S {
+      virtual U* foo();
+    };
+
+    struct R : S {
+      gpos::owner<U*> foo() override;
+    };
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+
+    struct S {
+      virtual gpos::owner<U*> foo();
+    };
+
+    struct R : S {
+      gpos::owner<U*> foo() override;
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
+
+TEST_F(PropagateTest, propVfunDown) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+
+    struct S {
+      virtual gpos::owner<U*> foo();
+    };
+
+    struct R : S {
+      U* foo() override;
+    };
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+
+    struct S {
+      virtual gpos::owner<U*> foo();
+    };
+
+    struct R : S {
+      gpos::owner<U*> foo() override;
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
