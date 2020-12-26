@@ -153,11 +153,9 @@ struct Annotator {
     // 3. But hopefully with the introduction of smart pointers, SafeRelease
     // will disappear...
     for (const auto& bound_nodes :
-         match(releaseCallExpr(
-                   declRefExpr(to(varDecl(unless(hasType(OwnerType())),
-                                          unless(hasDeclContext(functionDecl(
-                                              hasName("SafeRelease")))))
-                                      .bind("owner_var")))),
+         match(releaseCallExpr(declRefExpr(
+                   to(varDecl(unless(hasType(OwnerType()))).bind("owner_var")),
+                   unless(forFunction(hasName("SafeRelease"))))),
                ast_context)) {
       const auto* owner_var =
           bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
@@ -179,11 +177,13 @@ struct Annotator {
       }
     }
 
-    for (const auto& bound_nodes : match(
-             varDecl(hasType(RefCountPointerType()),
-                     unless(hasType(OwnerType())), hasInitializer(cxxNewExpr()))
-                 .bind("owner_var"),
-             ast_context)) {
+    auto unowned_refcount_var =
+        varDecl(hasType(RefCountPointerType()), unless(hasType(OwnerType())));
+
+    for (const auto& bound_nodes :
+         match(varDecl(unowned_refcount_var.bind("owner_var"),
+                       hasInitializer(cxxNewExpr())),
+               ast_context)) {
       const auto* owner_var =
           bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
 
@@ -194,9 +194,7 @@ struct Annotator {
          match(binaryOperator(
                    hasOperatorName("="),
                    hasOperands(
-                       declRefExpr(to(varDecl(hasType(RefCountPointerType()),
-                                              unless(hasType(OwnerType())))
-                                          .bind("owner_var"))),
+                       declRefExpr(to(unowned_refcount_var.bind("owner_var"))),
                        cxxNewExpr())),
                ast_context)) {
       const auto* owner_var =
