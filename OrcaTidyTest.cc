@@ -615,7 +615,7 @@ TEST_F(BaseTest, retOwnNew) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(PropagateTest, propRetOwnVar) {
+TEST_F(PropagateTest, retOwnVar) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -668,7 +668,7 @@ TEST_F(PropagateTest, propRetOwnVar) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(PropagateTest, propRetOwnFunc) {
+TEST_F(PropagateTest, retOwnFunc) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -717,7 +717,7 @@ TEST_F(PropagateTest, propRetOwnFunc) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(PropagateTest, propVfunRetUp) {
+TEST_F(PropagateTest, vfunRetUp) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -754,7 +754,7 @@ TEST_F(PropagateTest, propVfunRetUp) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(PropagateTest, propVfunRetDown) {
+TEST_F(PropagateTest, vfunRetDown) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -791,7 +791,7 @@ TEST_F(PropagateTest, propVfunRetDown) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(PropagateTest, propVfunParmDown) {
+TEST_F(PropagateTest, vfunParmDown) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
