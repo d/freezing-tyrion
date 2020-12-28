@@ -487,11 +487,13 @@ TEST_F(BaseTest, varOwnInitNew) {
 
     struct T : gpos::CRefCount<T> {};
     using S = T;
+    struct U : S {};
     struct R {};
 
     void foo() {
       R *r = new R;  // not ref-counted, leave me alone
       S *s = new S;
+      S *implicitly_converted = new U;
 
       gpos::owner<S *> annotated = new S;
     }
@@ -502,11 +504,13 @@ TEST_F(BaseTest, varOwnInitNew) {
 
     struct T : gpos::CRefCount<T> {};
     using S = T;
+    struct U : S {};
     struct R {};
 
     void foo() {
       R *r = new R;  // not ref-counted, leave me alone
       gpos::owner<S *> s = new S;
+      gpos::owner<S *> implicitly_converted = new U;
 
       gpos::owner<S *> annotated = new S;
     }
@@ -523,7 +527,8 @@ TEST_F(BaseTest, varOwnAssignNew) {
 #include "owner.h"
 
     struct T : gpos::CRefCount<T> {};
-    using S = T;
+    using U = T;
+    struct S : U {};
     struct R {};
 
     void foo() {
@@ -532,6 +537,8 @@ TEST_F(BaseTest, varOwnAssignNew) {
       S *s;
       s = new S;
 
+      U *implicitly_converted;
+      implicitly_converted = new S;
       gpos::owner<S *> annotated;
       annotated = new S;
     }
@@ -541,7 +548,8 @@ TEST_F(BaseTest, varOwnAssignNew) {
 #include "owner.h"
 
     struct T : gpos::CRefCount<T> {};
-    using S = T;
+    using U = T;
+    struct S : U {};
     struct R {};
 
     void foo() {
@@ -550,6 +558,8 @@ TEST_F(BaseTest, varOwnAssignNew) {
       gpos::owner<S *> s;
       s = new S;
 
+      gpos::owner<U *> implicitly_converted;
+      implicitly_converted = new S;
       gpos::owner<S *> annotated;
       annotated = new S;
     }
@@ -566,7 +576,10 @@ TEST_F(BaseTest, retOwnNew) {
 #include "owner.h"
 
     struct T : gpos::CRefCount<T> {};
-    using S = T;
+    using U = T;
+
+    struct S : U {};
+
     struct R {};
 
     R* foo() { return new R; }  // not ref counted, leave me alone
@@ -574,13 +587,18 @@ TEST_F(BaseTest, retOwnNew) {
     gpos::owner<S*> bar();
     S* bar() { return new S; }
     gpos::owner<S*> annotated() { return new S; }
+
+    U* implicitly_cast() { return new S; }
   )C++",
               expected_changed_code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
 
     struct T : gpos::CRefCount<T> {};
-    using S = T;
+    using U = T;
+
+    struct S : U {};
+
     struct R {};
 
     R* foo() { return new R; }  // not ref counted, leave me alone
@@ -588,6 +606,8 @@ TEST_F(BaseTest, retOwnNew) {
     gpos::owner<S*> bar();
     gpos::owner<S*> bar() { return new S; }
     gpos::owner<S*> annotated() { return new S; }
+
+    gpos::owner<U*> implicitly_cast() { return new S; }
   )C++";
 
   auto changed_code = annotateAndFormat(code);

@@ -208,7 +208,7 @@ struct Annotator {
 
     for (const auto& bound_nodes :
          match(varDecl(unowned_refcount_var.bind("owner_var"),
-                       hasInitializer(cxxNewExpr())),
+                       hasInitializer(ignoringParenImpCasts(cxxNewExpr()))),
                ast_context)) {
       const auto* owner_var =
           bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
@@ -221,7 +221,7 @@ struct Annotator {
                    hasOperatorName("="),
                    hasOperands(
                        declRefExpr(to(unowned_refcount_var.bind("owner_var"))),
-                       cxxNewExpr())),
+                       ignoringParenImpCasts(cxxNewExpr()))),
                ast_context)) {
       const auto* owner_var =
           bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
@@ -230,9 +230,9 @@ struct Annotator {
     }
 
     for (const auto& bound_nodes :
-         match(functionDecl(
-                   hasDescendant(returnStmt(hasReturnValue(cxxNewExpr()))),
-                   returns(RefCountPointerType()))
+         match(functionDecl(returns(RefCountPointerType()),
+                            hasDescendant(returnStmt(hasReturnValue(
+                                ignoringParenImpCasts(cxxNewExpr())))))
                    .bind("f"),
                ast_context)) {
       const auto* f = bound_nodes.getNodeAs<clang::FunctionDecl>("f");
