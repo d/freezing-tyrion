@@ -582,6 +582,80 @@ TEST_F(BaseTest, varOwnAssignNew) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
+TEST_F(BaseTest, retPointField) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    struct S {};
+
+    struct R {
+      S* s;
+      gpos::owner<T*> t;
+
+      T* GetT() const { return t; }
+      ~R() { t->Release(); }
+    };
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    struct S {};
+
+    struct R {
+      S* s;
+      gpos::owner<T*> t;
+
+      gpos::pointer<T*> GetT() const { return t; }
+      ~R() { t->Release(); }
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
+
+TEST_F(BaseTest, retPointFieldQualifiers) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    struct R {
+      gpos::owner<T*> t;
+
+      const T* ConstQualified() { return t; }
+      T const* EastConstQualified() { return t; }
+      virtual T const* EastConstQualifiedVfun() { return t; }
+      ~R() { t->Release(); }
+    };
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    struct R {
+      gpos::owner<T*> t;
+
+      gpos::pointer<const T*> ConstQualified() { return t; }
+      gpos::pointer<T const*> EastConstQualified() { return t; }
+      virtual gpos::pointer<T const*> EastConstQualifiedVfun() { return t; }
+      ~R() { t->Release(); }
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
+
 TEST_F(BaseTest, retOwnNew) {
   std::string code = R"C++(
 #include "CRefCount.h"

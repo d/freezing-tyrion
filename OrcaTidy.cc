@@ -237,6 +237,21 @@ struct Annotator {
 
       AnnotateFunctionReturnOwner(f);
     }
+
+    for (const auto& bound_nodes :
+         match(cxxMethodDecl(hasDescendant(returnStmt(hasReturnValue(
+                                 ignoringParenImpCasts(field_reference_for(
+                                     fieldDecl(hasType(RefCountPointerType()))
+                                         .bind("field")))))),
+                             unless(hasDescendant(cxxMemberCallExpr(
+                                 callee(cxxMethodDecl(hasName("AddRef"))),
+                                 on(field_reference_for(
+                                     fieldDecl(equalsBoundNode("field"))))))))
+                   .bind("f"),
+               ast_context)) {
+      const auto* f = bound_nodes.getNodeAs<clang::CXXMethodDecl>("f");
+      AnnotateFunctionReturnPointer(f);
+    }
   }
 
   void AnnotateParameterOwner(const clang::FunctionDecl* function,
@@ -262,10 +277,49 @@ struct Annotator {
     }
   }
 
+  void AnnotateFunctionReturnPointer(const clang::FunctionDecl* f) const {
+    for (; f; f = f->getPreviousDecl()) {
+      auto rt = f->getReturnType();
+      if (!match(PointerType(), rt, ast_context).empty()) continue;
+      AnnotateFunctionReturnType(f, kPointerAnnotation);
+    }
+  }
+
   void AnnotateFunctionReturnType(const clang::FunctionDecl* f,
                                   const char* annotation) const {
-    auto rt_loc = f->getFunctionTypeLoc().getReturnLoc();
-    AnnotateSourceRange(rt_loc.getSourceRange(), annotation);
+    auto rt = f->getReturnType();
+    auto rt_range = f->getReturnTypeSourceRange();
+    if (rt->getPointeeType().isConstQualified()) {
+      FindConstTokenBefore(f->getSourceRange().getBegin(), rt_range);
+    }
+    AnnotateSourceRange(rt_range, annotation);
+  }
+
+  void FindConstTokenBefore(clang::SourceLocation begin_loc,
+                            clang::SourceRange& rt_range) const {
+    auto end_loc = rt_range.getEnd();
+    auto [file_id, offset] = source_manager.getDecomposedLoc(begin_loc);
+    auto start_of_file = source_manager.getLocForStartOfFile(file_id);
+    clang::Lexer raw_lexer(start_of_file, lang_opts,
+                           source_manager.getCharacterData(start_of_file),
+                           source_manager.getCharacterData(begin_loc),
+                           source_manager.getCharacterData(end_loc));
+    clang::Token token;
+    while (!raw_lexer.LexFromRawLexer(token)) {
+      if (!token.is(clang::tok::raw_identifier)) continue;
+      auto& identifier_info = ast_context.Idents.get(
+          llvm::StringRef(source_manager.getCharacterData(token.getLocation()),
+                          token.getLength()));
+      token.setIdentifierInfo(&identifier_info);
+      token.setKind(identifier_info.getTokenID());
+
+      if (!token.is(clang::tok::kw_const)) continue;
+      if (source_manager.isBeforeInTranslationUnit(token.getLocation(),
+                                                   rt_range.getBegin())) {
+        rt_range.setBegin(token.getLocation());
+        break;
+      }
+    }
   }
 
   void AnnotateVar(const clang::VarDecl* var,
