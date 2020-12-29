@@ -605,6 +605,13 @@ TEST_F(BaseTest, retPointField) {
       }
       ~R() { t->Release(); }
     };
+
+    struct U {
+      gpos::pointer<T*> p;
+    };
+    struct V : U {
+      T* GetP() { return p; }
+    };
   )C++",
               expected_changed_code = R"C++(
 #include "CRefCount.h"
@@ -627,6 +634,13 @@ TEST_F(BaseTest, retPointField) {
         return p;
       }
       ~R() { t->Release(); }
+    };
+
+    struct U {
+      gpos::pointer<T*> p;
+    };
+    struct V : U {
+      gpos::pointer<T*> GetP() { return p; }
     };
   )C++";
 
@@ -958,6 +972,14 @@ TEST_F(PropagateTest, retPointOwnField) {
       }
       ~R() { gpos::SafeRelease(t); }
     };
+
+    struct S : R {
+      T* GetT() {
+        gpos::SafeRelease(t);
+        t = CalculateT();
+        return t;
+      }
+    };
   )C++",
               expected_changed_code = R"C++(
 #include "CRefCount.h"
@@ -977,6 +999,14 @@ TEST_F(PropagateTest, retPointOwnField) {
         return t;
       }
       ~R() { gpos::SafeRelease(t); }
+    };
+
+    struct S : R {
+      gpos::pointer<T*> GetT() {
+        gpos::SafeRelease(t);
+        t = CalculateT();
+        return t;
+      }
     };
   )C++";
 

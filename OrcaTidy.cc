@@ -115,8 +115,9 @@ struct Annotator {
 
   static auto FieldReferenceFor(decltype(fieldDecl().bind("")) field_matcher)
       -> decltype(stmt()) {
-    return memberExpr(member(field_matcher),
-                      hasObjectExpression(cxxThisExpr()));
+    return memberExpr(
+        member(field_matcher),
+        hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
   }
 
   void AnnotateBaseCases() const {
