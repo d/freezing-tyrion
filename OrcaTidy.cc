@@ -87,13 +87,39 @@ struct Annotator {
         AnnotateParameterOwner(derived_method, parameter_index);
       }
     }
+
+    // Practical intuition: the lifetime of the field pointee is taken care of
+    // by the object (presumably in its destructor, or less commonly, in a clean
+    // up method). The newly assigned pointee is also owned by the "this"
+    // object, hence the caller receives no ownership.
+    //
+    // Theoretically, this is not foolproof, as adversarial code can
+    // perform excessive AddRef after assignment. A manual inspection of all
+    // occurrences of the following pattern in ORCA turns up no such usage.
+
+    for (const auto& bound_nodes :
+         match(returnStmt(
+                   hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
+                       fieldDecl(hasType(OwnerType())).bind("field")))),
+                   forFunction(cxxMethodDecl(hasDescendant(binaryOperator(
+                                                 hasLHS(FieldReferenceFor(
+                                                     equalsBoundNode("field"))),
+                                                 hasOperatorName("="))))
+                                   .bind("method"))),
+               ast_context)) {
+      const auto* method =
+          bound_nodes.getNodeAs<clang::CXXMethodDecl>("method");
+      AnnotateFunctionReturnPointer(method);
+    }
+  }
+
+  static auto FieldReferenceFor(decltype(fieldDecl().bind("")) field_matcher)
+      -> decltype(stmt()) {
+    return memberExpr(member(field_matcher),
+                      hasObjectExpression(cxxThisExpr()));
   }
 
   void AnnotateBaseCases() const {
-    auto field_reference_for = [](auto field_matcher) {
-      return memberExpr(member(field_matcher),
-                        hasObjectExpression(cxxThisExpr()));
-    };
     auto releaseCallExpr = [](auto reference_to_field) {
       auto release = cxxMemberCallExpr(
           callee(cxxMethodDecl(hasName("Release"), parameterCountIs(0))),
@@ -104,7 +130,7 @@ struct Annotator {
       return callExpr(anyOf(release, safe_release));
     };
 
-    auto owner_field = field_reference_for(
+    auto owner_field = FieldReferenceFor(
         fieldDecl(unless(hasType(OwnerType()))).bind("owner_field"));
     for (const auto& bound_nodes :
          match(releaseCallExpr(owner_field), ast_context)) {
@@ -131,7 +157,7 @@ struct Annotator {
       if (dtor && !dtor->isDefined() && !dtor->isDefaulted()) continue;
 
       if (dtor) {
-        auto reference_to_field = field_reference_for(equalsNode(field_decl));
+        auto reference_to_field = FieldReferenceFor(equalsNode(field_decl));
         if (!match(decl(hasDescendant(releaseCallExpr(reference_to_field))),
                    *dtor, ast_context)
                  .empty())
@@ -224,21 +250,20 @@ struct Annotator {
       AnnotateFunctionReturnOwner(f);
     }
 
-    for (const auto& bound_nodes :
-         match(cxxMethodDecl(
-                   hasDescendant(returnStmt(
-                       hasReturnValue(ignoringParenImpCasts(field_reference_for(
-                           fieldDecl(hasType(RefCountPointerType()))
-                               .bind("field")))))),
-                   unless(hasDescendant(stmt(anyOf(
-                       cxxMemberCallExpr(
-                           callee(cxxMethodDecl(hasName("AddRef"))),
-                           on(field_reference_for(equalsBoundNode("field")))),
-                       binaryOperator(hasOperatorName("="),
-                                      hasLHS(field_reference_for(
-                                          equalsBoundNode("field")))))))))
-                   .bind("f"),
-               ast_context)) {
+    for (const auto& bound_nodes : match(
+             cxxMethodDecl(
+                 hasDescendant(returnStmt(hasReturnValue(ignoringParenImpCasts(
+                     FieldReferenceFor(fieldDecl(hasType(RefCountPointerType()))
+                                           .bind("field")))))),
+                 unless(hasDescendant(stmt(
+                     anyOf(cxxMemberCallExpr(
+                               callee(cxxMethodDecl(hasName("AddRef"))),
+                               on(FieldReferenceFor(equalsBoundNode("field")))),
+                           binaryOperator(hasOperatorName("="),
+                                          hasLHS(FieldReferenceFor(
+                                              equalsBoundNode("field")))))))))
+                 .bind("f"),
+             ast_context)) {
       const auto* f = bound_nodes.getNodeAs<clang::CXXMethodDecl>("f");
       AnnotateFunctionReturnPointer(f);
     }

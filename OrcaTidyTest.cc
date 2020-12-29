@@ -937,3 +937,50 @@ TEST_F(PropagateTest, vfunParmDown) {
 
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
+
+TEST_F(PropagateTest, retPointOwnField) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    gpos::pointer<T*> CalculateT();
+    struct R {
+      gpos::owner<T*> t;
+
+      T* ComputeT() {
+        if (!t) {
+          t = CalculateT();
+          t->AddRef();
+        }
+        return t;
+      }
+      ~R() { gpos::SafeRelease(t); }
+    };
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    gpos::pointer<T*> CalculateT();
+    struct R {
+      gpos::owner<T*> t;
+
+      gpos::pointer<T*> ComputeT() {
+        if (!t) {
+          t = CalculateT();
+          t->AddRef();
+        }
+        return t;
+      }
+      ~R() { gpos::SafeRelease(t); }
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
