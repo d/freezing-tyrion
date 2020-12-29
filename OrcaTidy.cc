@@ -239,14 +239,18 @@ struct Annotator {
     }
 
     for (const auto& bound_nodes :
-         match(cxxMethodDecl(hasDescendant(returnStmt(hasReturnValue(
-                                 ignoringParenImpCasts(field_reference_for(
-                                     fieldDecl(hasType(RefCountPointerType()))
-                                         .bind("field")))))),
-                             unless(hasDescendant(cxxMemberCallExpr(
-                                 callee(cxxMethodDecl(hasName("AddRef"))),
-                                 on(field_reference_for(
-                                     fieldDecl(equalsBoundNode("field"))))))))
+         match(cxxMethodDecl(
+                   hasDescendant(returnStmt(
+                       hasReturnValue(ignoringParenImpCasts(field_reference_for(
+                           fieldDecl(hasType(RefCountPointerType()))
+                               .bind("field")))))),
+                   unless(hasDescendant(stmt(anyOf(
+                       cxxMemberCallExpr(
+                           callee(cxxMethodDecl(hasName("AddRef"))),
+                           on(field_reference_for(equalsBoundNode("field")))),
+                       binaryOperator(hasOperatorName("="),
+                                      hasLHS(field_reference_for(
+                                          equalsBoundNode("field")))))))))
                    .bind("f"),
                ast_context)) {
       const auto* f = bound_nodes.getNodeAs<clang::CXXMethodDecl>("f");

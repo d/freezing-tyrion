@@ -593,8 +593,16 @@ TEST_F(BaseTest, retPointField) {
     struct R {
       S* s;
       gpos::owner<T*> t;
+      gpos::pointer<T*> p;
 
       T* GetT() const { return t; }
+
+      // even though we don't AddRef, we should be conservative with the
+      // assignment
+      T* GetP() {
+        p = new T;
+        return p;
+      }
       ~R() { t->Release(); }
     };
   )C++",
@@ -608,8 +616,16 @@ TEST_F(BaseTest, retPointField) {
     struct R {
       S* s;
       gpos::owner<T*> t;
+      gpos::pointer<T*> p;
 
       gpos::pointer<T*> GetT() const { return t; }
+
+      // even though we don't AddRef, we should be conservative with the
+      // assignment
+      T* GetP() {
+        p = new T;
+        return p;
+      }
       ~R() { t->Release(); }
     };
   )C++";
