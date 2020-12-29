@@ -829,10 +829,12 @@ TEST_F(PropagateTest, vfunRetUp) {
 
     struct S {
       virtual U* foo();
+      virtual U* bar();
     };
 
     struct R : S {
       gpos::owner<U*> foo() override;
+      gpos::pointer<U*> bar() override;
     };
   )C++",
               expected_changed_code = R"C++(
@@ -844,10 +846,12 @@ TEST_F(PropagateTest, vfunRetUp) {
 
     struct S {
       virtual gpos::owner<U*> foo();
+      virtual gpos::pointer<U*> bar();
     };
 
     struct R : S {
       gpos::owner<U*> foo() override;
+      gpos::pointer<U*> bar() override;
     };
   )C++";
 
@@ -866,10 +870,12 @@ TEST_F(PropagateTest, vfunRetDown) {
 
     struct S {
       virtual gpos::owner<U*> foo();
+      virtual gpos::pointer<U*> bar();
     };
 
     struct R : S {
       U* foo() override;
+      U* bar() override;
     };
   )C++",
               expected_changed_code = R"C++(
@@ -881,10 +887,12 @@ TEST_F(PropagateTest, vfunRetDown) {
 
     struct S {
       virtual gpos::owner<U*> foo();
+      virtual gpos::pointer<U*> bar();
     };
 
     struct R : S {
       gpos::owner<U*> foo() override;
+      gpos::pointer<U*> bar() override;
     };
   )C++";
 

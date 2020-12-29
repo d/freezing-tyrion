@@ -64,22 +64,8 @@ struct Annotator {
       AnnotateFunctionReturnOwner(f);
     }
 
-    for (const auto& bound_nodes :
-         match(cxxMethodDecl(
-                   isOverride(),
-                   anyOf(cxxMethodDecl(
-                             returns(OwnerType()),
-                             forEachOverridden(
-                                 cxxMethodDecl(unless(returns(OwnerType())))
-                                     .bind("follow"))),
-                         cxxMethodDecl(unless(returns(OwnerType())),
-                                       forEachOverridden(returns(OwnerType())))
-                             .bind("follow"))),
-               ast_context)) {
-      const auto* m = bound_nodes.getNodeAs<clang::CXXMethodDecl>("follow");
-
-      AnnotateFunctionReturnOwner(m);
-    }
+    PropagateVirtualFunctionReturnType(OwnerType(), kOwnerAnnotation);
+    PropagateVirtualFunctionReturnType(PointerType(), kPointerAnnotation);
 
     for (const auto& bound_nodes :
          match(cxxMethodDecl(
@@ -273,20 +259,45 @@ struct Annotator {
     AnnotateVar(var, kOwnerAnnotation);
   }
 
-  void AnnotateFunctionReturnOwner(const clang::FunctionDecl* f) const {
-    for (; f; f = f->getPreviousDecl()) {
-      auto rt = f->getReturnType();
-      if (!match(OwnerType(), rt, ast_context).empty()) continue;
-      AnnotateFunctionReturnType(f, kOwnerAnnotation);
+  void PropagateVirtualFunctionReturnType(
+      const decltype(OwnerType())& annotation_matcher,
+      const char* const annotation) const {
+    for (const auto& bound_nodes : match(
+             cxxMethodDecl(
+                 isOverride(),
+                 anyOf(cxxMethodDecl(returns(annotation_matcher),
+                                     forEachOverridden(
+                                         cxxMethodDecl(unless(returns(
+                                                           annotation_matcher)))
+                                             .bind("follow"))),
+                       cxxMethodDecl(
+                           unless(returns(annotation_matcher)),
+                           forEachOverridden(returns(annotation_matcher)))
+                           .bind("follow"))),
+             ast_context)) {
+      const auto* m = bound_nodes.getNodeAs<clang::CXXMethodDecl>("follow");
+
+      AnnotateFunctionReturnType(m, annotation_matcher, annotation);
     }
   }
 
-  void AnnotateFunctionReturnPointer(const clang::FunctionDecl* f) const {
+  void AnnotateFunctionReturnType(const clang::FunctionDecl* f,
+                                  decltype(OwnerType())
+                                      const& annotation_matcher,
+                                  const char* annotation) const {
     for (; f; f = f->getPreviousDecl()) {
       auto rt = f->getReturnType();
-      if (!match(PointerType(), rt, ast_context).empty()) continue;
-      AnnotateFunctionReturnType(f, kPointerAnnotation);
+      if (!match(annotation_matcher, rt, ast_context).empty()) continue;
+      AnnotateFunctionReturnType(f, annotation);
     }
+  }
+
+  void AnnotateFunctionReturnOwner(const clang::FunctionDecl* f) const {
+    AnnotateFunctionReturnType(f, OwnerType(), kOwnerAnnotation);
+  }
+
+  void AnnotateFunctionReturnPointer(const clang::FunctionDecl* f) const {
+    AnnotateFunctionReturnType(f, PointerType(), kPointerAnnotation);
   }
 
   void AnnotateFunctionReturnType(const clang::FunctionDecl* f,
