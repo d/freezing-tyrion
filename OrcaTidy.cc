@@ -104,14 +104,10 @@ struct Annotator {
   }
 
   void AnnotateBaseCases() const {
-    auto field_reference_for = [](auto field_matcher,
-                                  auto has_excluded_annotation) {
+    auto field_reference_for = [](auto field_matcher) {
       return memberExpr(member(field_matcher),
-                        hasObjectExpression(cxxThisExpr()),
-                        unless(has_excluded_annotation));
+                        hasObjectExpression(cxxThisExpr()));
     };
-    auto owner_field = field_reference_for(fieldDecl().bind("owner_field"),
-                                           hasType(OwnerType()));
     auto releaseCallExpr = [](auto reference_to_field) {
       auto release = cxxMemberCallExpr(
           callee(cxxMethodDecl(hasName("Release"))), on(reference_to_field));
@@ -120,30 +116,34 @@ struct Annotator {
       return callExpr(anyOf(release, safe_release));
     };
 
+    auto owner_field = field_reference_for(
+        fieldDecl(unless(hasType(OwnerType()))).bind("owner_field"));
     for (const auto& bound_nodes :
          match(releaseCallExpr(owner_field), ast_context)) {
       if (const auto* field_decl =
               bound_nodes.getNodeAs<clang::FieldDecl>("owner_field")) {
-        AnnotateField(field_decl, kOwnerAnnotation);
+        AnnotateFieldOwner(field_decl);
       }
     }
 
-    for (const auto& bound_nodes :
-         match(fieldDecl(unless(hasType(PointerType())),
-                         hasType(RefCountPointerType()))
-                   .bind("field"),
-               ast_context)) {
+    for (const auto& bound_nodes : match(
+             fieldDecl(
+                 unless(hasType(PointerType())), hasType(RefCountPointerType()),
+                 hasDeclContext(
+                     cxxRecordDecl(
+                         optionally(hasMethod(cxxDestructorDecl().bind("d"))))
+                         .bind("record")))
+                 .bind("field"),
+             ast_context)) {
       const auto* field_decl = bound_nodes.getNodeAs<clang::FieldDecl>("field");
       const auto* record =
-          llvm::cast<clang::CXXRecordDecl>(field_decl->getDeclContext());
-      if (!record) continue;
-      auto* dtor = record->getDestructor();
+          bound_nodes.getNodeAs<clang::CXXRecordDecl>("record");
+      const auto* dtor = bound_nodes.getNodeAs<clang::CXXDestructorDecl>("d");
       // destructor not visible in this translation unit, leave unannotated
       if (dtor && !dtor->isDefined() && !dtor->isDefaulted()) continue;
 
       if (dtor) {
-        auto reference_to_field =
-            field_reference_for(equalsNode(field_decl), hasType(PointerType()));
+        auto reference_to_field = field_reference_for(equalsNode(field_decl));
         if (!match(decl(hasDescendant(releaseCallExpr(reference_to_field))),
                    *dtor, ast_context)
                  .empty())
@@ -164,7 +164,7 @@ struct Annotator {
           continue;
       }
 
-      AnnotateField(field_decl, kPointerAnnotation);
+      AnnotateFieldPointer(field_decl);
     }
 
     // N.B. we don't need to use the fully qualified name
@@ -174,9 +174,9 @@ struct Annotator {
     // 3. But hopefully with the introduction of smart pointers, SafeRelease
     // will disappear...
     for (const auto& bound_nodes :
-         match(releaseCallExpr(declRefExpr(
-                   to(varDecl(unless(hasType(OwnerType()))).bind("owner_var")),
-                   unless(forFunction(hasName("SafeRelease"))))),
+         match(releaseCallExpr(
+                   declRefExpr(to(varDecl().bind("owner_var")),
+                               unless(forFunction(hasName("SafeRelease"))))),
                ast_context)) {
       const auto* owner_var =
           bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
@@ -193,8 +193,6 @@ struct Annotator {
           const auto* method = llvm::cast<clang::CXXMethodDecl>(function);
           for (const auto* super_method : method->overridden_methods()) {
             const auto* parm = super_method->getParamDecl(parameter_index);
-            if (!match(OwnerType(), parm->getType(), ast_context).empty())
-              continue;
             AnnotateParameterOwner(super_method, parameter_index);
           }
         }
@@ -203,11 +201,10 @@ struct Annotator {
       }
     }
 
-    auto unowned_refcount_var =
-        varDecl(hasType(RefCountPointerType()), unless(hasType(OwnerType())));
+    auto refcount_var = varDecl(hasType(RefCountPointerType()));
 
     for (const auto& bound_nodes :
-         match(varDecl(unowned_refcount_var.bind("owner_var"),
+         match(varDecl(refcount_var.bind("owner_var"),
                        hasInitializer(ignoringParenImpCasts(cxxNewExpr()))),
                ast_context)) {
       const auto* owner_var =
@@ -219,9 +216,8 @@ struct Annotator {
     for (const auto& bound_nodes :
          match(binaryOperator(
                    hasOperatorName("="),
-                   hasOperands(
-                       declRefExpr(to(unowned_refcount_var.bind("owner_var"))),
-                       ignoringParenImpCasts(cxxNewExpr()))),
+                   hasOperands(declRefExpr(to(refcount_var.bind("owner_var"))),
+                               ignoringParenImpCasts(cxxNewExpr()))),
                ast_context)) {
       const auto* owner_var =
           bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
@@ -240,17 +236,19 @@ struct Annotator {
       AnnotateFunctionReturnOwner(f);
     }
   }
+
   void AnnotateParameterOwner(const clang::FunctionDecl* function,
                               unsigned int parameter_index) const {
     for (const auto* f = function; f; f = f->getPreviousDecl()) {
       const auto* parm = f->getParamDecl(parameter_index);
-      if (!match(parmVarDecl(hasType(OwnerType())), *parm, ast_context).empty())
-        continue;
       AnnotateVarOwner(parm);
     }
   }
 
   void AnnotateVarOwner(const clang::VarDecl* var) const {
+    if (!match(varDecl(hasType(OwnerType())), *var, ast_context).empty())
+      return;
+
     AnnotateVar(var, kOwnerAnnotation);
   }
 
@@ -288,6 +286,18 @@ struct Annotator {
         new_text, lang_opts);
     std::string file_path = replacement.getFilePath().str();
     llvm::cantFail(replacements[file_path].add(replacement));
+  }
+
+  void AnnotateFieldOwner(const clang::FieldDecl* field) const {
+    if (!match(fieldDecl(hasType(OwnerType())), *field, ast_context).empty())
+      return;
+    AnnotateField(field, kOwnerAnnotation);
+  }
+
+  void AnnotateFieldPointer(const clang::FieldDecl* field) const {
+    if (!match(fieldDecl(hasType(PointerType())), *field, ast_context).empty())
+      return;
+    AnnotateField(field, kPointerAnnotation);
   }
 
   void AnnotateField(const clang::FieldDecl* field_decl,
