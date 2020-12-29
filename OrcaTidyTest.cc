@@ -207,12 +207,18 @@ TEST_F(BaseTest, FieldPoint) {
 
     struct T : gpos::CRefCount<T> {};
 
+    struct U {
+      void Release(int*);
+    };
+
     struct S {
       T* t;
     };
 
     struct R {
+      U* u;  // not ref-counted, leave me alone
       T* t;
+      void bar(int* p) { u->Release(p); }
       ~R() {}
     };
   )C++",
@@ -222,12 +228,18 @@ TEST_F(BaseTest, FieldPoint) {
 
     struct T : gpos::CRefCount<T> {};
 
+    struct U {
+      void Release(int*);
+    };
+
     struct S {
       gpos::pointer<T*> t;
     };
 
     struct R {
+      U* u;  // not ref-counted, leave me alone
       gpos::pointer<T*> t;
+      void bar(int* p) { u->Release(p); }
       ~R() {}
     };
   )C++";

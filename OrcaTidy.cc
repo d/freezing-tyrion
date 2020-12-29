@@ -27,8 +27,8 @@ __attribute__((const)) static auto PointerType() {
 }
 
 __attribute__((const)) static auto RefCountPointerType() {
-  auto ref_count_record_decl = cxxRecordDecl(
-      isSameOrDerivedFrom(cxxRecordDecl(hasMethod(hasName("Release")))));
+  auto ref_count_record_decl = cxxRecordDecl(isSameOrDerivedFrom(cxxRecordDecl(
+      hasMethod(cxxMethodDecl(hasName("Release"), parameterCountIs(0))))));
 
   auto ref_count_pointer_type =
       pointsTo(hasCanonicalType(hasDeclaration(ref_count_record_decl)));
@@ -110,9 +110,11 @@ struct Annotator {
     };
     auto releaseCallExpr = [](auto reference_to_field) {
       auto release = cxxMemberCallExpr(
-          callee(cxxMethodDecl(hasName("Release"))), on(reference_to_field));
-      auto safe_release = callExpr(callee(functionDecl(hasName("SafeRelease"))),
-                                   hasArgument(0, reference_to_field));
+          callee(cxxMethodDecl(hasName("Release"), parameterCountIs(0))),
+          on(reference_to_field));
+      auto safe_release = callExpr(
+          callee(functionDecl(hasName("SafeRelease"), parameterCountIs(1))),
+          hasArgument(0, reference_to_field));
       return callExpr(anyOf(release, safe_release));
     };
 
