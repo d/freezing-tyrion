@@ -35,6 +35,12 @@ __attribute__((const)) static auto RefCountPointerType() {
   return ref_count_pointer_type;
 }
 
+static auto FieldReferenceFor(decltype(fieldDecl().bind(""))
+                                  const& field_matcher) {
+  return memberExpr(member(field_matcher),
+                    hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
+}
+
 struct Annotator {
   ActionOptions action_options;
   FileToReplacements& replacements;
@@ -113,13 +119,6 @@ struct Annotator {
     }
   }
 
-  static auto FieldReferenceFor(decltype(fieldDecl().bind("")) field_matcher)
-      -> decltype(stmt()) {
-    return memberExpr(
-        member(field_matcher),
-        hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
-  }
-
   void AnnotateBaseCases() const {
     auto releaseCallExpr = [](auto reference_to_field) {
       auto release = cxxMemberCallExpr(
@@ -141,18 +140,14 @@ struct Annotator {
       }
     }
 
-    for (const auto& bound_nodes : match(
-             fieldDecl(
-                 unless(hasType(PointerType())), hasType(RefCountPointerType()),
-                 hasDeclContext(
-                     cxxRecordDecl(
-                         optionally(hasMethod(cxxDestructorDecl().bind("d"))))
-                         .bind("record")))
-                 .bind("field"),
-             ast_context)) {
+    for (const auto& bound_nodes :
+         match(fieldDecl(unless(hasType(PointerType())),
+                         hasType(RefCountPointerType()),
+                         hasDeclContext(cxxRecordDecl(optionally(
+                             hasMethod(cxxDestructorDecl().bind("d"))))))
+                   .bind("field"),
+               ast_context)) {
       const auto* field_decl = bound_nodes.getNodeAs<clang::FieldDecl>("field");
-      const auto* record =
-          bound_nodes.getNodeAs<clang::CXXRecordDecl>("record");
       const auto* dtor = bound_nodes.getNodeAs<clang::CXXDestructorDecl>("d");
       // destructor not visible in this translation unit, leave unannotated
       if (dtor && !dtor->isDefined() && !dtor->isDefaulted()) continue;
@@ -307,10 +302,10 @@ struct Annotator {
     }
   }
 
-  void AnnotateFunctionReturnType(const clang::FunctionDecl* f,
-                                  decltype(OwnerType())
-                                      const& annotation_matcher,
-                                  const char* annotation) const {
+  void AnnotateFunctionReturnType(
+      const clang::FunctionDecl* f,
+      const decltype(OwnerType())& annotation_matcher,
+      const char* annotation) const {
     for (; f; f = f->getPreviousDecl()) {
       auto rt = f->getReturnType();
       if (!match(annotation_matcher, rt, ast_context).empty()) continue;
