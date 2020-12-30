@@ -1014,3 +1014,50 @@ TEST_F(PropagateTest, retPointOwnField) {
 
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
+
+TEST_F(PropagateTest, retPointPointField) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    gpos::owner<T*> MakeT();
+    gpos::pointer<T*> GetT();
+    struct R {
+      gpos::pointer<T*> t;
+    };
+
+    struct S : R {
+      T* GetT() { return t; }
+      T* CreateT() {
+        t = MakeT();
+        return t;
+      }
+    };
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    gpos::owner<T*> MakeT();
+    gpos::pointer<T*> GetT();
+    struct R {
+      gpos::pointer<T*> t;
+    };
+
+    struct S : R {
+      gpos::pointer<T*> GetT() { return t; }
+      T* CreateT() {
+        t = MakeT();
+        return t;
+      }
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}

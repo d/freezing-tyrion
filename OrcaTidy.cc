@@ -41,6 +41,11 @@ static auto FieldReferenceFor(decltype(fieldDecl().bind(""))
                     hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
 }
 
+static auto AddRefOn = [](auto expr_matcher) {
+  return cxxMemberCallExpr(callee(cxxMethodDecl(hasName("AddRef"))),
+                           on(expr_matcher));
+};
+
 struct Annotator {
   ActionOptions action_options;
   FileToReplacements& replacements;
@@ -113,6 +118,28 @@ struct Annotator {
                                                  hasOperatorName("="))))
                                    .bind("method"))),
                ast_context)) {
+      const auto* method =
+          bound_nodes.getNodeAs<clang::CXXMethodDecl>("method");
+      AnnotateFunctionReturnPointer(method);
+    }
+
+    for (const auto& bound_nodes : match(
+             returnStmt(
+                 hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
+                     fieldDecl(hasType(PointerType())).bind("field")))),
+                 forFunction(
+                     cxxMethodDecl(
+                         unless(hasDescendant(stmt(anyOf(
+                             AddRefOn(
+                                 FieldReferenceFor(equalsBoundNode("field"))),
+                             binaryOperator(
+                                 hasOperatorName("="),
+                                 hasOperands(FieldReferenceFor(
+                                                 equalsBoundNode("field")),
+                                             callExpr(callee(functionDecl(
+                                                 returns(OwnerType())))))))))))
+                         .bind("method"))),
+             ast_context)) {
       const auto* method =
           bound_nodes.getNodeAs<clang::CXXMethodDecl>("method");
       AnnotateFunctionReturnPointer(method);
@@ -251,13 +278,11 @@ struct Annotator {
                  hasDescendant(returnStmt(hasReturnValue(ignoringParenImpCasts(
                      FieldReferenceFor(fieldDecl(hasType(RefCountPointerType()))
                                            .bind("field")))))),
-                 unless(hasDescendant(stmt(
-                     anyOf(cxxMemberCallExpr(
-                               callee(cxxMethodDecl(hasName("AddRef"))),
-                               on(FieldReferenceFor(equalsBoundNode("field")))),
-                           binaryOperator(hasOperatorName("="),
-                                          hasLHS(FieldReferenceFor(
-                                              equalsBoundNode("field")))))))))
+                 unless(hasDescendant(stmt(anyOf(
+                     AddRefOn(FieldReferenceFor(equalsBoundNode("field"))),
+                     binaryOperator(hasOperatorName("="),
+                                    hasLHS(FieldReferenceFor(
+                                        equalsBoundNode("field")))))))))
                  .bind("f"),
              ast_context)) {
       const auto* f = bound_nodes.getNodeAs<clang::CXXMethodDecl>("f");
