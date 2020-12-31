@@ -41,7 +41,7 @@ static auto FieldReferenceFor(decltype(fieldDecl().bind(""))
                     hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
 }
 
-static auto AddRefOn = [](auto expr_matcher) {
+static auto AddRefOn(decltype(expr().bind("")) const& expr_matcher) {
   return cxxMemberCallExpr(callee(cxxMethodDecl(hasName("AddRef"))),
                            on(expr_matcher));
 };
