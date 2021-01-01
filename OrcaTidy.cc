@@ -35,8 +35,7 @@ __attribute__((const)) static auto RefCountPointerType() {
   return ref_count_pointer_type;
 }
 
-static auto FieldReferenceFor(decltype(fieldDecl().bind(""))
-                                  const& field_matcher) {
+static auto FieldReferenceFor(DeclarationMatcher const& field_matcher) {
   return memberExpr(member(field_matcher),
                     hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
 }
@@ -53,7 +52,7 @@ static auto ReleaseCallExpr(ExpressionMatcher const& reference_to_field) {
   return callExpr(anyOf(release, safe_release));
 };
 
-static auto AddRefOn(decltype(expr().bind("")) const& expr_matcher) {
+static auto AddRefOn(ExpressionMatcher const& expr_matcher) {
   return cxxMemberCallExpr(callee(cxxMethodDecl(hasName("AddRef"))),
                            on(expr_matcher));
 }
@@ -81,8 +80,8 @@ struct Annotator {
 
   void AnnotateBaseCases() const;
 
-  auto RefCountVarInitializedOrAssigned(decltype(ignoringParenImpCasts(expr()))
-                                            const& init_expr_matcher) const {
+  auto RefCountVarInitializedOrAssigned(
+      ExpressionMatcher const& init_expr_matcher) const {
     VarSet vars;
 
     auto refcount_var = varDecl(hasType(RefCountPointerType()));
@@ -119,9 +118,8 @@ struct Annotator {
     AnnotateVar(var, kOwnerAnnotation);
   }
 
-  void PropagateVirtualFunctionReturnType(
-      const decltype(OwnerType())& annotation_matcher,
-      const char* const annotation) const {
+  void PropagateVirtualFunctionReturnType(const TypeMatcher& annotation_matcher,
+                                          const char* const annotation) const {
     for (const auto& bound_nodes : match(
              cxxMethodDecl(
                  isOverride(),
@@ -141,10 +139,9 @@ struct Annotator {
     }
   }
 
-  void AnnotateFunctionReturnType(
-      const clang::FunctionDecl* f,
-      const decltype(OwnerType())& annotation_matcher,
-      const char* annotation) const {
+  void AnnotateFunctionReturnType(const clang::FunctionDecl* f,
+                                  const TypeMatcher& annotation_matcher,
+                                  const char* annotation) const {
     for (; f; f = f->getPreviousDecl()) {
       auto rt = f->getReturnType();
       if (!match(annotation_matcher, rt, ast_context).empty()) continue;
