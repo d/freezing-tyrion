@@ -41,6 +41,18 @@ static auto FieldReferenceFor(decltype(fieldDecl().bind(""))
                     hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
 }
 
+using ExpressionMatcher = decltype(ignoringParenImpCasts(anything()));
+
+static auto ReleaseCallExpr(ExpressionMatcher const& reference_to_field) {
+  auto release = cxxMemberCallExpr(
+      callee(cxxMethodDecl(hasName("Release"), parameterCountIs(0))),
+      on(reference_to_field));
+  auto safe_release = callExpr(
+      callee(functionDecl(hasName("SafeRelease"), parameterCountIs(1))),
+      hasArgument(0, reference_to_field));
+  return callExpr(anyOf(release, safe_release));
+};
+
 static auto AddRefOn(decltype(expr().bind("")) const& expr_matcher) {
   return cxxMemberCallExpr(callee(cxxMethodDecl(hasName("AddRef"))),
                            on(expr_matcher));
@@ -340,20 +352,10 @@ void Annotator::Propagate() const {
 }
 
 void Annotator::AnnotateBaseCases() const {
-  auto releaseCallExpr = [](auto reference_to_field) {
-    auto release = cxxMemberCallExpr(
-        callee(cxxMethodDecl(hasName("Release"), parameterCountIs(0))),
-        on(reference_to_field));
-    auto safe_release = callExpr(
-        callee(functionDecl(hasName("SafeRelease"), parameterCountIs(1))),
-        hasArgument(0, reference_to_field));
-    return callExpr(anyOf(release, safe_release));
-  };
-
   auto owner_field = FieldReferenceFor(
       fieldDecl(unless(hasType(OwnerType()))).bind("owner_field"));
   for (const auto& bound_nodes :
-       match(releaseCallExpr(owner_field), ast_context)) {
+       match(ReleaseCallExpr(owner_field), ast_context)) {
     if (const auto* field_decl =
             bound_nodes.getNodeAs<clang::FieldDecl>("owner_field")) {
       AnnotateFieldOwner(field_decl);
@@ -374,7 +376,7 @@ void Annotator::AnnotateBaseCases() const {
 
     if (dtor) {
       auto reference_to_field = FieldReferenceFor(equalsNode(field_decl));
-      if (!match(decl(hasDescendant(releaseCallExpr(reference_to_field))),
+      if (!match(decl(hasDescendant(ReleaseCallExpr(reference_to_field))),
                  *dtor, ast_context)
                .empty())
         continue;
@@ -390,7 +392,7 @@ void Annotator::AnnotateBaseCases() const {
       // Theoretically it's not hard to imagine adversarial code breaking
       // this. In those cases we'll need some fancy schmancy cross-TU trick.
       // But we seem to be able to get away with this heuristic in ORCA.
-      if (!match(releaseCallExpr(reference_to_field), ast_context).empty())
+      if (!match(ReleaseCallExpr(reference_to_field), ast_context).empty())
         continue;
     }
 
@@ -404,7 +406,7 @@ void Annotator::AnnotateBaseCases() const {
   // 3. But hopefully with the introduction of smart pointers, SafeRelease
   // will disappear...
   for (const auto& bound_nodes :
-       match(releaseCallExpr(
+       match(ReleaseCallExpr(
                  declRefExpr(to(varDecl().bind("owner_var")),
                              unless(forFunction(hasName("SafeRelease"))))),
              ast_context)) {
