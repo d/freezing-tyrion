@@ -44,7 +44,12 @@ static auto FieldReferenceFor(decltype(fieldDecl().bind(""))
 static auto AddRefOn(decltype(expr().bind("")) const& expr_matcher) {
   return cxxMemberCallExpr(callee(cxxMethodDecl(hasName("AddRef"))),
                            on(expr_matcher));
-};
+}
+
+using VarSet = llvm::DenseSet<const clang::VarDecl*>;
+AST_MATCHER_P(clang::VarDecl, IsInSet, VarSet, vars) {
+  return vars.contains(&Node);
+}
 
 struct Annotator {
   ActionOptions action_options;
@@ -63,6 +68,29 @@ struct Annotator {
   void Propagate() const;
 
   void AnnotateBaseCases() const;
+
+  auto RefCountVarInitializedOrAssigned(decltype(ignoringParenImpCasts(expr()))
+                                            const& init_expr_matcher) const {
+    VarSet vars;
+
+    auto refcount_var = varDecl(hasType(RefCountPointerType()));
+
+    for (const auto& bound_nodes :
+         match(binaryOperator(
+                   hasOperatorName("="),
+                   hasOperands(declRefExpr(to(refcount_var.bind("owner_var"))),
+                               ignoringParenImpCasts(init_expr_matcher))),
+               ast_context)) {
+      const auto* var = bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
+
+      vars.insert(var);
+    }
+
+    return varDecl(
+        anyOf(allOf(refcount_var,
+                    hasInitializer(ignoringParenImpCasts(init_expr_matcher))),
+              IsInSet(vars)));
+  }
 
   void AnnotateParameterOwner(const clang::FunctionDecl* function,
                               unsigned int parameter_index) const {
@@ -401,22 +429,9 @@ void Annotator::AnnotateBaseCases() const {
     }
   }
 
-  auto refcount_var = varDecl(hasType(RefCountPointerType()));
-
   for (const auto& bound_nodes :
-       match(varDecl(refcount_var.bind("owner_var"),
-                     hasInitializer(ignoringParenImpCasts(cxxNewExpr()))),
-             ast_context)) {
-    const auto* owner_var = bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
-
-    AnnotateVarOwner(owner_var);
-  }
-
-  for (const auto& bound_nodes :
-       match(binaryOperator(
-                 hasOperatorName("="),
-                 hasOperands(declRefExpr(to(refcount_var.bind("owner_var"))),
-                             ignoringParenImpCasts(cxxNewExpr()))),
+       match(varDecl(varDecl().bind("owner_var"),
+                     RefCountVarInitializedOrAssigned(cxxNewExpr())),
              ast_context)) {
     const auto* owner_var = bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
 
