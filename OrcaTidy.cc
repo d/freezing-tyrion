@@ -154,8 +154,7 @@ struct Annotator {
 
   void AnnotateVarOwner(const clang::VarDecl* var) const {
     for (const auto* v = var; v; v = v->getPreviousDecl()) {
-      if (!match(varDecl(hasType(OwnerType())), *v, ast_context).empty())
-        continue;
+      if (!match(OwnerType(), v->getType(), ast_context).empty()) continue;
 
       AnnotateVar(v, kOwnerAnnotation);
     }
@@ -260,14 +259,12 @@ struct Annotator {
   }
 
   void AnnotateFieldOwner(const clang::FieldDecl* field) const {
-    if (!match(fieldDecl(hasType(OwnerType())), *field, ast_context).empty())
-      return;
+    if (!match(OwnerType(), field->getType(), ast_context).empty()) return;
     AnnotateField(field, kOwnerAnnotation);
   }
 
   void AnnotateFieldPointer(const clang::FieldDecl* field) const {
-    if (!match(fieldDecl(hasType(PointerType())), *field, ast_context).empty())
-      return;
+    if (!match(PointerType(), field->getType(), ast_context).empty()) return;
     AnnotateField(field, kPointerAnnotation);
   }
 
