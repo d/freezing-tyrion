@@ -131,10 +131,12 @@ struct Annotator {
   }
 
   void AnnotateVarOwner(const clang::VarDecl* var) const {
-    if (!match(varDecl(hasType(OwnerType())), *var, ast_context).empty())
-      return;
+    for (const auto* v = var; v; v = v->getPreviousDecl()) {
+      if (!match(varDecl(hasType(OwnerType())), *v, ast_context).empty())
+        continue;
 
-    AnnotateVar(var, kOwnerAnnotation);
+      AnnotateVar(v, kOwnerAnnotation);
+    }
   }
 
   void PropagateVirtualFunctionReturnType(const TypeMatcher& annotation_matcher,

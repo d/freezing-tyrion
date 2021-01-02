@@ -481,11 +481,17 @@ TEST_F(BaseTest, varOwnRelease) {
     struct T : gpos::CRefCount<T> {};
     using S = T;
 
+    extern S* global_var;
+
+    S* global_var;
+
     void foo() {
-      S *s;
+      S* s;
 
       s->Release();
     }
+
+    void Shutdown() { global_var->Release(); }
   )C++",
               expected_changed_code = R"C++(
 #include "CRefCount.h"
@@ -494,11 +500,17 @@ TEST_F(BaseTest, varOwnRelease) {
     struct T : gpos::CRefCount<T> {};
     using S = T;
 
+    extern gpos::owner<S*> global_var;
+
+    gpos::owner<S*> global_var;
+
     void foo() {
-      gpos::owner<S *> s;
+      gpos::owner<S*> s;
 
       s->Release();
     }
+
+    void Shutdown() { global_var->Release(); }
   )C++";
 
   auto changed_code = annotateAndFormat(code);
