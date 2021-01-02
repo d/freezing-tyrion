@@ -58,8 +58,13 @@ static auto AddRefOn(ExpressionMatcher const& expr_matcher) {
 }
 
 using VarSet = llvm::DenseSet<const clang::VarDecl*>;
-AST_MATCHER_P(clang::VarDecl, IsInSet, VarSet, vars) {
-  return vars.contains(&Node);
+AST_MATCHER_P_OVERLOAD(clang::VarDecl, IsInSet, VarSet, nodes, 0) {
+  return nodes.contains(&Node);
+}
+
+using FieldSet = llvm::DenseSet<const clang::FieldDecl*>;
+AST_MATCHER_P_OVERLOAD(clang::FieldDecl, IsInSet, FieldSet, nodes, 1) {
+  return nodes.contains(&Node);
 }
 
 struct Annotator {
@@ -101,6 +106,20 @@ struct Annotator {
         anyOf(allOf(refcount_var,
                     hasInitializer(ignoringParenImpCasts(init_expr_matcher))),
               IsInSet(vars)));
+  }
+
+  auto FieldReleased() const {
+    FieldSet fields;
+
+    auto owner_field = FieldReferenceFor(fieldDecl().bind("owner_field"));
+    for (const auto& bound_nodes :
+         match(ReleaseCallExpr(owner_field), ast_context)) {
+      if (const auto* field =
+              bound_nodes.getNodeAs<clang::FieldDecl>("owner_field")) {
+        fields.insert(field);
+      }
+    }
+    return IsInSet(fields);
   }
 
   void AnnotateParameterOwner(const clang::FunctionDecl* function,
@@ -349,49 +368,37 @@ void Annotator::Propagate() const {
 }
 
 void Annotator::AnnotateBaseCases() const {
-  auto owner_field = FieldReferenceFor(
-      fieldDecl(unless(hasType(OwnerType()))).bind("owner_field"));
+  auto field_is_released = FieldReleased();
   for (const auto& bound_nodes :
-       match(ReleaseCallExpr(owner_field), ast_context)) {
-    if (const auto* field_decl =
-            bound_nodes.getNodeAs<clang::FieldDecl>("owner_field")) {
-      AnnotateFieldOwner(field_decl);
-    }
+       match(fieldDecl(field_is_released).bind("owner_field"), ast_context)) {
+    const auto* field = bound_nodes.getNodeAs<clang::FieldDecl>("owner_field");
+    AnnotateFieldOwner(field);
   }
 
+  // Intuitively, a field that isn't released anywhere is a pointer.
+  // Challenge: how do we know we've seen "everywhere" we can find?
+  // Heuristics:
+  // 1. If a class has no destructor, give up and assume the field in question
+  // is a pointer.
+  // 2. If a class has a destructor, but its definition isn't visible in the
+  // current translation unit, assume we haven't seen the main file yet, and
+  // punt.
+  // 3. Otherwise, we're either processing the main file, or we've seen the
+  // definition of the destructor. In either case, we hope it's good enough for
+  // us to see a Release() if there's any.
+  auto has_destructor_in_translation_unit =
+      hasMethod(cxxDestructorDecl(anyOf(hasAnyBody(stmt()), isDefaulted())));
+  auto has_no_destructor = unless(hasMethod(cxxDestructorDecl()));
   for (const auto& bound_nodes :
-       match(fieldDecl(
-                 unless(hasType(PointerType())), hasType(RefCountPointerType()),
-                 hasDeclContext(cxxRecordDecl(
-                     optionally(hasMethod(cxxDestructorDecl().bind("d"))))))
+       match(fieldDecl(unless(hasType(PointerType())),
+                       hasType(RefCountPointerType()),
+                       anyOf(hasDeclContext(cxxRecordDecl(has_no_destructor)),
+                             allOf(hasDeclContext(cxxRecordDecl(
+                                       has_destructor_in_translation_unit)),
+                                   unless(field_is_released))))
                  .bind("field"),
              ast_context)) {
     const auto* field_decl = bound_nodes.getNodeAs<clang::FieldDecl>("field");
-    const auto* dtor = bound_nodes.getNodeAs<clang::CXXDestructorDecl>("d");
-    // destructor not visible in this translation unit, leave unannotated
-    if (dtor && !dtor->isDefined() && !dtor->isDefaulted()) continue;
-
-    if (dtor) {
-      auto reference_to_field = FieldReferenceFor(equalsNode(field_decl));
-      if (!match(decl(hasDescendant(ReleaseCallExpr(reference_to_field))),
-                 *dtor, ast_context)
-               .empty())
-        continue;
-
-      // Here's the tricky part, we don't release this field in the
-      // destructor, but there might still be a release in another method. Not
-      // every method is necessarily visible in this translation unit. (Like
-      // when the destructor is inline in the header).
-
-      // We try a best-effort search. If we still don't see releases, we
-      // proceed to recognize it as a pointer / observer.
-
-      // Theoretically it's not hard to imagine adversarial code breaking
-      // this. In those cases we'll need some fancy schmancy cross-TU trick.
-      // But we seem to be able to get away with this heuristic in ORCA.
-      if (!match(ReleaseCallExpr(reference_to_field), ast_context).empty())
-        continue;
-    }
 
     AnnotateFieldPointer(field_decl);
   }

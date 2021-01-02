@@ -221,6 +221,13 @@ TEST_F(BaseTest, FieldPoint) {
       void bar(int* p) { u->Release(p); }
       ~R() {}
     };
+
+    struct DtorOutOfLine {
+      T* t;
+      ~DtorOutOfLine();
+    };
+
+    DtorOutOfLine::~DtorOutOfLine() {}
   )C++",
               expected_changed_code = R"C++(
 #include "CRefCount.h"
@@ -242,6 +249,13 @@ TEST_F(BaseTest, FieldPoint) {
       void bar(int* p) { u->Release(p); }
       ~R() {}
     };
+
+    struct DtorOutOfLine {
+      gpos::pointer<T*> t;
+      ~DtorOutOfLine();
+    };
+
+    DtorOutOfLine::~DtorOutOfLine() {}
   )C++";
 
   auto changed_code = annotateAndFormat(std::move(code));
