@@ -154,9 +154,7 @@ struct Annotator {
 
   void AnnotateVarOwner(const clang::VarDecl* var) const {
     for (const auto* v = var; v; v = v->getPreviousDecl()) {
-      if (!match(OwnerType(), v->getType(), ast_context).empty()) continue;
-
-      AnnotateVar(v, kOwnerAnnotation);
+      AnnotateVar(v, OwnerType(), kOwnerAnnotation);
     }
   }
 
@@ -237,7 +235,10 @@ struct Annotator {
   }
 
   void AnnotateVar(const clang::VarDecl* var,
+                   const TypeMatcher& annotation_matcher,
                    llvm::StringRef annotation) const {
+    if (!match(annotation_matcher, var->getType(), ast_context).empty()) return;
+
     auto source_range = var->getTypeSourceInfo()->getTypeLoc().getSourceRange();
 
     AnnotateSourceRange(source_range, annotation);
@@ -259,17 +260,19 @@ struct Annotator {
   }
 
   void AnnotateFieldOwner(const clang::FieldDecl* field) const {
-    if (!match(OwnerType(), field->getType(), ast_context).empty()) return;
-    AnnotateField(field, kOwnerAnnotation);
+    AnnotateField(field, OwnerType(), kOwnerAnnotation);
   }
 
   void AnnotateFieldPointer(const clang::FieldDecl* field) const {
-    if (!match(PointerType(), field->getType(), ast_context).empty()) return;
-    AnnotateField(field, kPointerAnnotation);
+    AnnotateField(field, PointerType(), kPointerAnnotation);
   }
 
   void AnnotateField(const clang::FieldDecl* field_decl,
+                     const TypeMatcher& annotation_matcher,
                      llvm::StringRef annotation) const {
+    if (!match(annotation_matcher, field_decl->getType(), ast_context).empty())
+      return;
+
     auto field_type_loc = field_decl->getTypeSourceInfo()->getTypeLoc();
     clang::SourceRange type_range = field_type_loc.getSourceRange();
     auto field_qual_type = field_decl->getType();
