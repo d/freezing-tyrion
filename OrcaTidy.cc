@@ -85,10 +85,40 @@ struct Annotator {
 
   void AnnotateBaseCases() const;
 
+  template <class Node, class Matcher>
+  llvm::SmallVector<const Node*> NodesFromMatch(Matcher matcher,
+                                                llvm::StringRef id) const {
+    llvm::SmallVector<const Node*> nodes;
+
+    llvm::transform(match(matcher, ast_context), std::back_inserter(nodes),
+                    [id](clang::ast_matchers::BoundNodes const& bound_nodes) {
+                      return bound_nodes.template getNodeAs<Node>(id);
+                    });
+
+    return nodes;
+  }
+
+  template <class NodeSet, class Matcher>
+  NodeSet NodeSetFromMatch(Matcher matcher, llvm::StringRef id) const {
+    using Node = std::remove_const_t<
+        std::remove_pointer_t<typename NodeSet::value_type>>;
+    auto nodes_from_match = NodesFromMatch<Node>(matcher, id);
+    NodeSet node_set{nodes_from_match.begin(), nodes_from_match.end()};
+    return node_set;
+  }
+
+  template <class Matcher>
+  VarSet VarSetFromMatch(Matcher matcher, llvm::StringRef id) const {
+    return NodeSetFromMatch<VarSet>(matcher, id);
+  }
+
+  template <class Matcher>
+  FieldSet FieldSetFromMatch(Matcher matcher, llvm::StringRef id) const {
+    return NodeSetFromMatch<FieldSet>(matcher, id);
+  }
+
   auto RefCountVarInitializedOrAssigned(
       ExpressionMatcher const& init_expr_matcher) const {
-    VarSet vars;
-
     // We're not quite ready to handle multiple-declaration yet, so here's a
     // best effort to walk (carefully) around them. Amazingly, this doesn't seem
     // to disrupt any of the base cases.
@@ -97,35 +127,21 @@ struct Annotator {
         varDecl(hasType(RefCountPointerType()),
                 unless(hasParent(declStmt(unless(declCountIs(1))))));
 
-    for (const auto& bound_nodes :
-         match(binaryOperator(
-                   hasOperatorName("="),
-                   hasOperands(declRefExpr(to(refcount_var.bind("owner_var"))),
-                               ignoringParenImpCasts(init_expr_matcher))),
-               ast_context)) {
-      const auto* var = bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
-
-      vars.insert(var);
-    }
-
-    return varDecl(
-        anyOf(allOf(refcount_var,
-                    hasInitializer(ignoringParenImpCasts(init_expr_matcher))),
-              IsInSet(vars)));
+    return varDecl(anyOf(
+        allOf(refcount_var,
+              hasInitializer(ignoringParenImpCasts(init_expr_matcher))),
+        IsInSet(VarSetFromMatch(
+            binaryOperator(
+                hasOperatorName("="),
+                hasOperands(declRefExpr(to(refcount_var.bind("owner_var"))),
+                            ignoringParenImpCasts(init_expr_matcher))),
+            "owner_var"))));
   }
 
   auto FieldReleased() const {
-    FieldSet fields;
-
-    auto owner_field = FieldReferenceFor(fieldDecl().bind("owner_field"));
-    for (const auto& bound_nodes :
-         match(ReleaseCallExpr(owner_field), ast_context)) {
-      if (const auto* field =
-              bound_nodes.getNodeAs<clang::FieldDecl>("owner_field")) {
-        fields.insert(field);
-      }
-    }
-    return IsInSet(fields);
+    return IsInSet(FieldSetFromMatch(
+        ReleaseCallExpr(FieldReferenceFor(fieldDecl().bind("owner_field"))),
+        "owner_field"));
   }
 
   void AnnotateParameterOwner(const clang::FunctionDecl* function,
