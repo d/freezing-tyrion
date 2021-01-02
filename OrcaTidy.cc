@@ -89,7 +89,13 @@ struct Annotator {
       ExpressionMatcher const& init_expr_matcher) const {
     VarSet vars;
 
-    auto refcount_var = varDecl(hasType(RefCountPointerType()));
+    // We're not quite ready to handle multiple-declaration yet, so here's a
+    // best effort to walk (carefully) around them. Amazingly, this doesn't seem
+    // to disrupt any of the base cases.
+
+    auto refcount_var =
+        varDecl(hasType(RefCountPointerType()),
+                unless(hasParent(declStmt(unless(declCountIs(1))))));
 
     for (const auto& bound_nodes :
          match(binaryOperator(
@@ -366,6 +372,17 @@ void Annotator::Propagate() const {
            ast_context)) {
     const auto* method = bound_nodes.getNodeAs<clang::CXXMethodDecl>("method");
     AnnotateFunctionReturnPointer(method);
+  }
+
+  for (const auto& bound_nodes :
+       match(varDecl(unless(hasType(OwnerType())),
+                     RefCountVarInitializedOrAssigned(
+                         callExpr(callee(functionDecl(returns(OwnerType()))))))
+                 .bind("owner_var"),
+             ast_context)) {
+    const auto* var = bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
+
+    AnnotateVarOwner(var);
   }
 }
 

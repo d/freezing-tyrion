@@ -1087,3 +1087,50 @@ TEST_F(PropagateTest, retPointPointField) {
 
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
+
+TEST_F(PropagateTest, varOwnInitAssignOwnFunc) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    gpos::owner<T *> MakeT(int);
+    gpos::pointer<T *> GetT();
+
+    struct R {
+      void foo(int i, int j) {
+        // multiple declarations here, leave them alone
+        T *a = MakeT(i), *b = MakeT(j);
+
+        T *var_init_own_func = MakeT(i);
+        T *var_assign_own_func = MakeT(i);
+        T *var_init_point_func = GetT();
+      }
+    };
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    gpos::owner<T *> MakeT(int);
+    gpos::pointer<T *> GetT();
+
+    struct R {
+      void foo(int i, int j) {
+        // multiple declarations here, leave them alone
+        T *a = MakeT(i), *b = MakeT(j);
+
+        gpos::owner<T *> var_init_own_func = MakeT(i);
+        gpos::owner<T *> var_assign_own_func = MakeT(i);
+        T *var_init_point_func = GetT();
+      }
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
