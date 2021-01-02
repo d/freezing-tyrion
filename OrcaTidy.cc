@@ -308,17 +308,15 @@ struct Annotator {
 };
 
 void Annotator::Propagate() const {
-  for (const auto& bound_nodes :
-       match(functionDecl(
-                 returns(qualType(unless(OwnerType()), RefCountPointerType())),
-                 hasDescendant(returnStmt(hasReturnValue(ignoringParenImpCasts(
-                     anyOf(declRefExpr(to(varDecl(hasType(OwnerType())))),
-                           callExpr(
-                               callee(functionDecl(returns(OwnerType()))))))))))
-                 .bind("f"),
-             ast_context)) {
-    const auto* f = bound_nodes.getNodeAs<clang::FunctionDecl>("f");
-
+  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+           functionDecl(
+               returns(qualType(unless(OwnerType()), RefCountPointerType())),
+               hasDescendant(returnStmt(hasReturnValue(ignoringParenImpCasts(
+                   anyOf(declRefExpr(to(varDecl(hasType(OwnerType())))),
+                         callExpr(
+                             callee(functionDecl(returns(OwnerType()))))))))))
+               .bind("f"),
+           "f")) {
     AnnotateFunctionReturnOwner(f);
   }
 
@@ -355,21 +353,20 @@ void Annotator::Propagate() const {
   // perform excessive AddRef after assignment. A manual inspection of all
   // occurrences of the following pattern in ORCA turns up no such usage.
 
-  for (const auto& bound_nodes :
-       match(returnStmt(
-                 hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
-                     fieldDecl(hasType(OwnerType())).bind("field")))),
-                 forFunction(cxxMethodDecl(hasDescendant(binaryOperator(
-                                               hasLHS(FieldReferenceFor(
-                                                   equalsBoundNode("field"))),
-                                               hasOperatorName("="))))
-                                 .bind("method"))),
-             ast_context)) {
-    const auto* method = bound_nodes.getNodeAs<clang::CXXMethodDecl>("method");
+  for (const auto* method : NodesFromMatch<clang::CXXMethodDecl>(
+           returnStmt(
+               hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
+                   fieldDecl(hasType(OwnerType())).bind("field")))),
+               forFunction(cxxMethodDecl(hasDescendant(binaryOperator(
+                                             hasLHS(FieldReferenceFor(
+                                                 equalsBoundNode("field"))),
+                                             hasOperatorName("="))))
+                               .bind("method"))),
+           "method")) {
     AnnotateFunctionReturnPointer(method);
   }
 
-  for (const auto& bound_nodes : match(
+  for (const auto* method : NodesFromMatch<clang::CXXMethodDecl>(
            returnStmt(
                hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
                    fieldDecl(hasType(PointerType())).bind("field")))),
@@ -385,28 +382,24 @@ void Annotator::Propagate() const {
                                    callExpr(callee(functionDecl(
                                        returns(OwnerType())))))))))))
                        .bind("method"))),
-           ast_context)) {
-    const auto* method = bound_nodes.getNodeAs<clang::CXXMethodDecl>("method");
+           "method")) {
     AnnotateFunctionReturnPointer(method);
   }
 
-  for (const auto& bound_nodes :
-       match(varDecl(unless(hasType(OwnerType())),
-                     RefCountVarInitializedOrAssigned(
-                         callExpr(callee(functionDecl(returns(OwnerType()))))))
-                 .bind("owner_var"),
-             ast_context)) {
-    const auto* var = bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
-
+  for (const auto* var : NodesFromMatch<clang::VarDecl>(
+           varDecl(unless(hasType(OwnerType())),
+                   RefCountVarInitializedOrAssigned(
+                       callExpr(callee(functionDecl(returns(OwnerType()))))))
+               .bind("owner_var"),
+           "owner_var")) {
     AnnotateVarOwner(var);
   }
 }
 
 void Annotator::AnnotateBaseCases() const {
   auto field_is_released = FieldReleased();
-  for (const auto& bound_nodes :
-       match(fieldDecl(field_is_released).bind("owner_field"), ast_context)) {
-    const auto* field = bound_nodes.getNodeAs<clang::FieldDecl>("owner_field");
+  for (const auto* field : NodesFromMatch<clang::FieldDecl>(
+           fieldDecl(field_is_released).bind("owner_field"), "owner_field")) {
     AnnotateFieldOwner(field);
   }
 
@@ -424,17 +417,15 @@ void Annotator::AnnotateBaseCases() const {
   auto has_destructor_in_translation_unit =
       hasMethod(cxxDestructorDecl(anyOf(hasAnyBody(stmt()), isDefaulted())));
   auto has_no_destructor = unless(hasMethod(cxxDestructorDecl()));
-  for (const auto& bound_nodes :
-       match(fieldDecl(unless(hasType(PointerType())),
-                       hasType(RefCountPointerType()),
-                       anyOf(hasDeclContext(cxxRecordDecl(has_no_destructor)),
-                             allOf(hasDeclContext(cxxRecordDecl(
-                                       has_destructor_in_translation_unit)),
-                                   unless(field_is_released))))
-                 .bind("field"),
-             ast_context)) {
-    const auto* field_decl = bound_nodes.getNodeAs<clang::FieldDecl>("field");
-
+  for (const auto* field_decl : NodesFromMatch<clang::FieldDecl>(
+           fieldDecl(unless(hasType(PointerType())),
+                     hasType(RefCountPointerType()),
+                     anyOf(hasDeclContext(cxxRecordDecl(has_no_destructor)),
+                           allOf(hasDeclContext(cxxRecordDecl(
+                                     has_destructor_in_translation_unit)),
+                                 unless(field_is_released))))
+               .bind("field"),
+           "field")) {
     AnnotateFieldPointer(field_decl);
   }
 
@@ -444,12 +435,11 @@ void Annotator::AnnotateBaseCases() const {
   // 2. this leaves room for a CRTP implementation in the future
   // 3. But hopefully with the introduction of smart pointers, SafeRelease
   // will disappear...
-  for (const auto& bound_nodes :
-       match(ReleaseCallExpr(
-                 declRefExpr(to(varDecl().bind("owner_var")),
-                             unless(forFunction(hasName("SafeRelease"))))),
-             ast_context)) {
-    const auto* owner_var = bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
+  for (const auto* owner_var : NodesFromMatch<clang::VarDecl>(
+           ReleaseCallExpr(
+               declRefExpr(to(varDecl().bind("owner_var")),
+                           unless(forFunction(hasName("SafeRelease"))))),
+           "owner_var")) {
     if (const auto* owner_parm =
             llvm::dyn_cast<clang::ParmVarDecl>(owner_var)) {
       auto parameter_index = owner_parm->getFunctionScopeIndex();
@@ -470,27 +460,23 @@ void Annotator::AnnotateBaseCases() const {
     }
   }
 
-  for (const auto& bound_nodes :
-       match(varDecl(varDecl().bind("owner_var"),
-                     RefCountVarInitializedOrAssigned(cxxNewExpr())),
-             ast_context)) {
-    const auto* owner_var = bound_nodes.getNodeAs<clang::VarDecl>("owner_var");
-
+  for (const auto* owner_var : NodesFromMatch<clang::VarDecl>(
+           varDecl(varDecl().bind("owner_var"),
+                   RefCountVarInitializedOrAssigned(cxxNewExpr())),
+           "owner_var")) {
     AnnotateVarOwner(owner_var);
   }
 
-  for (const auto& bound_nodes :
-       match(functionDecl(returns(RefCountPointerType()),
-                          hasDescendant(returnStmt(hasReturnValue(
-                              ignoringParenImpCasts(cxxNewExpr())))))
-                 .bind("f"),
-             ast_context)) {
-    const auto* f = bound_nodes.getNodeAs<clang::FunctionDecl>("f");
-
+  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+           functionDecl(returns(RefCountPointerType()),
+                        hasDescendant(returnStmt(hasReturnValue(
+                            ignoringParenImpCasts(cxxNewExpr())))))
+               .bind("f"),
+           "f")) {
     AnnotateFunctionReturnOwner(f);
   }
 
-  for (const auto& bound_nodes : match(
+  for (const auto* f : NodesFromMatch<clang::CXXMethodDecl>(
            cxxMethodDecl(
                hasDescendant(returnStmt(hasReturnValue(ignoringParenImpCasts(
                    FieldReferenceFor(fieldDecl(hasType(RefCountPointerType()))
@@ -501,8 +487,7 @@ void Annotator::AnnotateBaseCases() const {
                        hasOperatorName("="),
                        hasLHS(FieldReferenceFor(equalsBoundNode("field")))))))))
                .bind("f"),
-           ast_context)) {
-    const auto* f = bound_nodes.getNodeAs<clang::CXXMethodDecl>("f");
+           "f")) {
     AnnotateFunctionReturnPointer(f);
   }
 }
