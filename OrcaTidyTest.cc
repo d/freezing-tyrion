@@ -377,7 +377,7 @@ TEST_F(BaseTest, parmOwnRelease) {
       }
     }
 
-    void OwnsParam(S*, S*, int);  // can't change this one, too hard
+    void OwnsParam(gpos::owner<S*>, gpos::owner<S*>, int);
   )C++",
               expected_changed_code = R"C++(
 #include "CRefCount.h"
@@ -411,7 +411,7 @@ TEST_F(BaseTest, parmOwnRelease) {
       }
     }
 
-    void OwnsParam(S*, S*, int);  // can't change this one, too hard
+    void OwnsParam(gpos::owner<S*>, gpos::owner<S*>, int);
   )C++";
 
   auto changed_code = annotateAndFormat(code);

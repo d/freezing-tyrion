@@ -155,14 +155,14 @@ struct Annotator {
 
   void AnnotateParameterOwner(const clang::FunctionDecl* function,
                               unsigned int parameter_index) const {
-    for (const auto* f = function; f; f = f->getPreviousDecl()) {
+    for (const auto* f : function->redecls()) {
       const auto* parm = f->getParamDecl(parameter_index);
       AnnotateVarOwner(parm);
     }
   }
 
   void AnnotateVarOwner(const clang::VarDecl* var) const {
-    for (const auto* v = var; v; v = v->getPreviousDecl()) {
+    for (const auto* v : var->redecls()) {
       AnnotateVar(v, OwnerType(), kOwnerAnnotation);
     }
   }
@@ -188,10 +188,10 @@ struct Annotator {
     }
   }
 
-  void AnnotateFunctionReturnType(const clang::FunctionDecl* f,
+  void AnnotateFunctionReturnType(const clang::FunctionDecl* function,
                                   const TypeMatcher& annotation_matcher,
                                   const char* annotation) const {
-    for (; f; f = f->getPreviousDecl()) {
+    for (const auto* f : function->redecls()) {
       auto rt = f->getReturnType();
       if (!match(annotation_matcher, rt, ast_context).empty()) continue;
       AnnotateFunctionReturnType(f, annotation);
