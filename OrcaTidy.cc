@@ -67,6 +67,15 @@ AST_MATCHER_P_OVERLOAD(clang::FieldDecl, IsInSet, FieldSet, nodes, 1) {
   return nodes.contains(&Node);
 }
 
+using CXXMethodMatcher = decltype(isOverride());
+AST_MATCHER_P(clang::CXXMethodDecl, HasOverridden, CXXMethodMatcher,
+              inner_matcher) {
+  return llvm::any_of(Node.overridden_methods(),
+                      [=](const clang::CXXMethodDecl* m) {
+                        return inner_matcher.matches(*m, Finder, Builder);
+                      });
+}
+
 struct Annotator {
   ActionOptions action_options;
   FileToReplacements& replacements;
@@ -323,24 +332,19 @@ void Annotator::Propagate() const {
   PropagateVirtualFunctionReturnType(OwnerType(), kOwnerAnnotation);
   PropagateVirtualFunctionReturnType(PointerType(), kPointerAnnotation);
 
-  for (const auto& bound_nodes :
-       match(cxxMethodDecl(
-                 isOverride(),
-                 forEachOverridden(
-                     cxxMethodDecl(hasAnyParameter(hasType(OwnerType())))
-                         .bind("base")))
-                 .bind("derived"),
-             ast_context)) {
-    const auto* derived_method =
-        bound_nodes.getNodeAs<clang::CXXMethodDecl>("derived");
-    const auto* base_method =
-        bound_nodes.getNodeAs<clang::CXXMethodDecl>("base");
-    for (const auto* base_param : base_method->parameters()) {
-      if (match(OwnerType(), base_param->getType(), ast_context).empty())
-        continue;
-      auto parameter_index = base_param->getFunctionScopeIndex();
+  for (const auto* derived_method : NodesFromMatch<clang::CXXMethodDecl>(
+           cxxMethodDecl(isOverride(),
+                         HasOverridden(hasAnyParameter(hasType(OwnerType()))))
+               .bind("derived"),
+           "derived")) {
+    for (const auto* base_method : derived_method->overridden_methods()) {
+      for (const auto* base_param : base_method->parameters()) {
+        if (match(OwnerType(), base_param->getType(), ast_context).empty())
+          continue;
+        auto parameter_index = base_param->getFunctionScopeIndex();
 
-      AnnotateParameterOwner(derived_method, parameter_index);
+        AnnotateParameterOwner(derived_method, parameter_index);
+      }
     }
   }
 
