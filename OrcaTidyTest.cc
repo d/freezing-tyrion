@@ -622,10 +622,15 @@ TEST_F(BaseTest, varPointAddRefReturn) {
 
     U *foo(int i, bool b, S *param) {
       U *u = F();
+      static U *global_u = F();
       if (i < 42) {
         u->AddRef();
         return u;
       } else if (i < 44) {
+        if (!b) {
+          global_u->AddRef();
+          return global_u;
+        }
         param->AddRef();
         return param;
       }
@@ -656,10 +661,15 @@ TEST_F(BaseTest, varPointAddRefReturn) {
 
     U *foo(int i, bool b, gpos::pointer<S *> param) {
       gpos::pointer<U *> u = F();
+      static U *global_u = F();
       if (i < 42) {
         u->AddRef();
         return u;
       } else if (i < 44) {
+        if (!b) {
+          global_u->AddRef();
+          return global_u;
+        }
         param->AddRef();
         return param;
       }

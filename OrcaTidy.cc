@@ -492,8 +492,8 @@ void Annotator::AnnotateBaseCases() const {
 
   for (const auto* v : NodesFromMatch<clang::VarDecl>(
            returnStmt(returnStmt().bind("return"),
-                      hasReturnValue(ignoringParenImpCasts(
-                          declRefExpr(to(varDecl().bind("var"))))),
+                      hasReturnValue(ignoringParenImpCasts(declRefExpr(
+                          to(varDecl(hasLocalStorage()).bind("var"))))),
                       hasParent(compoundStmt(HasBoundStmtImmediatelyFollowing(
                           "return",
                           AddRefOn(declRefExpr(to(equalsBoundNode("var")))))))),
