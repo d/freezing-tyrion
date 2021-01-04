@@ -340,10 +340,11 @@ void Annotator::Propagate() const {
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
            functionDecl(
                returns(qualType(unless(OwnerType()), RefCountPointerType())),
-               hasDescendant(returnStmt(hasReturnValue(ignoringParenImpCasts(
-                   anyOf(declRefExpr(to(varDecl(hasType(OwnerType())))),
-                         callExpr(
-                             callee(functionDecl(returns(OwnerType()))))))))))
+               hasAnyBody(hasDescendant(
+                   returnStmt(hasReturnValue(ignoringParenImpCasts(anyOf(
+                       declRefExpr(to(varDecl(hasType(OwnerType())))),
+                       callExpr(
+                           callee(functionDecl(returns(OwnerType())))))))))))
                .bind("f"),
            "f")) {
     AnnotateFunctionReturnOwner(f);
@@ -381,11 +382,12 @@ void Annotator::Propagate() const {
            returnStmt(
                hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
                    fieldDecl(hasType(OwnerType())).bind("field")))),
-               forFunction(cxxMethodDecl(hasDescendant(binaryOperator(
-                                             hasLHS(FieldReferenceFor(
-                                                 equalsBoundNode("field"))),
-                                             hasOperatorName("="))))
-                               .bind("method"))),
+               forFunction(
+                   cxxMethodDecl(
+                       hasAnyBody(hasDescendant(binaryOperator(
+                           hasLHS(FieldReferenceFor(equalsBoundNode("field"))),
+                           hasOperatorName("=")))))
+                       .bind("method"))),
            "method")) {
     AnnotateFunctionReturnPointer(method);
   }
@@ -396,7 +398,7 @@ void Annotator::Propagate() const {
                    fieldDecl(hasType(PointerType())).bind("field")))),
                forFunction(
                    cxxMethodDecl(
-                       unless(hasDescendant(stmt(anyOf(
+                       unless(hasAnyBody(hasDescendant(stmt(anyOf(
                            AddRefOn(
                                FieldReferenceFor(equalsBoundNode("field"))),
                            binaryOperator(
@@ -404,7 +406,7 @@ void Annotator::Propagate() const {
                                hasOperands(
                                    FieldReferenceFor(equalsBoundNode("field")),
                                    callExpr(callee(functionDecl(
-                                       returns(OwnerType())))))))))))
+                                       returns(OwnerType()))))))))))))
                        .bind("method"))),
            "method")) {
     AnnotateFunctionReturnPointer(method);
@@ -508,8 +510,8 @@ void Annotator::AnnotateBaseCases() const {
 
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
            functionDecl(returns(RefCountPointerType()),
-                        hasDescendant(returnStmt(hasReturnValue(
-                            ignoringParenImpCasts(cxxNewExpr())))))
+                        hasAnyBody(hasDescendant(returnStmt(hasReturnValue(
+                            ignoringParenImpCasts(cxxNewExpr()))))))
                .bind("f"),
            "f")) {
     AnnotateFunctionReturnOwner(f);
@@ -517,14 +519,16 @@ void Annotator::AnnotateBaseCases() const {
 
   for (const auto* f : NodesFromMatch<clang::CXXMethodDecl>(
            cxxMethodDecl(
-               hasDescendant(returnStmt(hasReturnValue(ignoringParenImpCasts(
-                   FieldReferenceFor(fieldDecl(hasType(RefCountPointerType()))
-                                         .bind("field")))))),
-               unless(hasDescendant(stmt(anyOf(
-                   AddRefOn(FieldReferenceFor(equalsBoundNode("field"))),
-                   binaryOperator(
-                       hasOperatorName("="),
-                       hasLHS(FieldReferenceFor(equalsBoundNode("field")))))))))
+               hasAnyBody(stmt(
+                   hasDescendant(returnStmt(
+                       hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
+                           fieldDecl(hasType(RefCountPointerType()))
+                               .bind("field")))))),
+                   unless(hasDescendant(stmt(anyOf(
+                       AddRefOn(FieldReferenceFor(equalsBoundNode("field"))),
+                       binaryOperator(hasOperatorName("="),
+                                      hasLHS(FieldReferenceFor(
+                                          equalsBoundNode("field")))))))))))
                .bind("f"),
            "f")) {
     AnnotateFunctionReturnPointer(f);
