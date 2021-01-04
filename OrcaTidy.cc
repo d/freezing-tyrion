@@ -76,6 +76,25 @@ AST_MATCHER_P(clang::CXXMethodDecl, HasOverridden, CXXMethodMatcher,
                       });
 }
 
+AST_MATCHER_P2(clang::CompoundStmt, HasBoundStmtImmediatelyFollowing,
+               std::string, id, StatementMatcher, lhs) {
+  if (Node.size() < 2) return false;
+  StatementMatcher equals_bound_node = equalsBoundNode(id);
+
+  auto prev_range =
+      llvm::make_range(std::next(Node.body_rbegin()), Node.body_rend());
+  for (auto [prev_stmt, stmt] :
+       llvm::zip_first(prev_range, llvm::reverse(Node.body()))) {
+    auto builder = *Builder;
+    if (equals_bound_node.matches(*stmt, Finder, &builder) &&
+        lhs.matches(*prev_stmt, Finder, &builder)) {
+      *Builder = std::move(builder);
+      return true;
+    }
+  }
+  return false;
+}
+
 struct Annotator {
   ActionOptions action_options;
   FileToReplacements& replacements;
@@ -469,6 +488,17 @@ void Annotator::AnnotateBaseCases() const {
                    RefCountVarInitializedOrAssigned(cxxNewExpr())),
            "owner_var")) {
     AnnotateVarOwner(owner_var);
+  }
+
+  for (const auto* v : NodesFromMatch<clang::VarDecl>(
+           returnStmt(returnStmt().bind("return"),
+                      hasReturnValue(ignoringParenImpCasts(
+                          declRefExpr(to(varDecl().bind("var"))))),
+                      hasParent(compoundStmt(HasBoundStmtImmediatelyFollowing(
+                          "return",
+                          AddRefOn(declRefExpr(to(equalsBoundNode("var")))))))),
+           "var")) {
+    AnnotateVar(v, PointerType(), kPointerAnnotation);
   }
 
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(

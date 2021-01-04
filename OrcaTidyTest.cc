@@ -608,6 +608,80 @@ TEST_F(BaseTest, varOwnAssignNew) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
+TEST_F(BaseTest, varPointAddRefReturn) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+    struct S : T {};
+
+    U *F();
+    gpos::owner<S *> G(gpos::owner<U *>);
+
+    U *foo(int i, bool b, S *param) {
+      U *u = F();
+      if (i < 42) {
+        u->AddRef();
+        return u;
+      } else if (i < 44) {
+        param->AddRef();
+        return param;
+      }
+
+      // this is actually a pointer, but the code is a bit too clever for our
+      // dumb tool to recognize it
+      U *ambiguous_pointer = F();
+
+      // If we can do some fancy schmancy CFG analysis, we should see that there
+      // is a code path where we return ambiguous_pointer almost "right after"
+      // AddRef() (when we take the b == false branch in the conditional)
+      ambiguous_pointer->AddRef();
+      if (b) return G(ambiguous_pointer);
+
+      return ambiguous_pointer;
+    }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+    struct S : T {};
+
+    U *F();
+    gpos::owner<S *> G(gpos::owner<U *>);
+
+    U *foo(int i, bool b, gpos::pointer<S *> param) {
+      gpos::pointer<U *> u = F();
+      if (i < 42) {
+        u->AddRef();
+        return u;
+      } else if (i < 44) {
+        param->AddRef();
+        return param;
+      }
+
+      // this is actually a pointer, but the code is a bit too clever for our
+      // dumb tool to recognize it
+      U *ambiguous_pointer = F();
+
+      // If we can do some fancy schmancy CFG analysis, we should see that there
+      // is a code path where we return ambiguous_pointer almost "right after"
+      // AddRef() (when we take the b == false branch in the conditional)
+      ambiguous_pointer->AddRef();
+      if (b) return G(ambiguous_pointer);
+
+      return ambiguous_pointer;
+    }
+  )C++";
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
+
 TEST_F(BaseTest, retPointField) {
   std::string code = R"C++(
 #include "CRefCount.h"
