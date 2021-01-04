@@ -618,34 +618,20 @@ TEST_F(BaseTest, varPointAddRefReturn) {
     struct S : T {};
 
     U *F();
-    gpos::owner<S *> G(gpos::owner<U *>);
 
     U *foo(int i, bool b, S *param) {
       U *u = F();
-      static U *global_u = F();
+      U *null_checked = F();
+      if (null_checked) {
+        null_checked->AddRef();
+        return null_checked;
+      }
       if (i < 42) {
         u->AddRef();
         return u;
-      } else if (i < 44) {
-        if (!b) {
-          global_u->AddRef();
-          return global_u;
-        }
-        param->AddRef();
-        return param;
       }
-
-      // this is actually a pointer, but the code is a bit too clever for our
-      // dumb tool to recognize it
-      U *ambiguous_pointer = F();
-
-      // If we can do some fancy schmancy CFG analysis, we should see that there
-      // is a code path where we return ambiguous_pointer almost "right after"
-      // AddRef() (when we take the b == false branch in the conditional)
-      ambiguous_pointer->AddRef();
-      if (b) return G(ambiguous_pointer);
-
-      return ambiguous_pointer;
+      param->AddRef();
+      return param;
     }
   )C++",
               expected_changed_code = R"C++(
@@ -657,39 +643,114 @@ TEST_F(BaseTest, varPointAddRefReturn) {
     struct S : T {};
 
     U *F();
-    gpos::owner<S *> G(gpos::owner<U *>);
 
     U *foo(int i, bool b, gpos::pointer<S *> param) {
       gpos::pointer<U *> u = F();
-      static U *global_u = F();
+      gpos::pointer<U *> null_checked = F();
+      if (null_checked) {
+        null_checked->AddRef();
+        return null_checked;
+      }
       if (i < 42) {
         u->AddRef();
         return u;
-      } else if (i < 44) {
-        if (!b) {
-          global_u->AddRef();
-          return global_u;
-        }
-        param->AddRef();
-        return param;
       }
+      param->AddRef();
+      return param;
+    }
+  )C++";
 
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
+
+TEST_F(BaseTest, varPointAddRefReturnNegativeCases) {
+  std::string global_var = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    T* F();
+
+    gpos::pointer<T*> F();
+    gpos::owner<T*> G(gpos::owner<T*>);
+
+    T* foo(int i, bool b) {
+      static T* global_u = F();
+      global_u->AddRef();
+      return global_u;
+    }
+  )C++",
+              common_add_ref = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    T* F();
+
+    gpos::pointer<T*> F();
+    gpos::owner<T*> G(gpos::owner<T*>);
+
+    T* foo(int i, bool b) {
       // this is actually a pointer, but the code is a bit too clever for our
       // dumb tool to recognize it
-      U *ambiguous_pointer = F();
+      T* ambiguous_pointer = F();
 
-      // If we can do some fancy schmancy CFG analysis, we should see that there
-      // is a code path where we return ambiguous_pointer almost "right after"
-      // AddRef() (when we take the b == false branch in the conditional)
+      // If we can do some fancy schmancy CFG analysis, we should see that
+      // there is a code path where we return ambiguous_pointer almost "right
+      // after" AddRef() (when we take the b == false branch in the
+      // conditional)
       ambiguous_pointer->AddRef();
       if (b) return G(ambiguous_pointer);
 
       return ambiguous_pointer;
     }
-  )C++";
-  auto changed_code = annotateAndFormat(code);
+  )C++",
+              two_face = R"C++(
+#include <cstddef>
+#include "CRefCount.h"
+#include "owner.h"
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+    struct T : gpos::CRefCount<T> {};
+
+    gpos::pointer<T*> F(int);
+    gpos::owner<T*> G(int);
+
+    T* foo(int i) {
+      T* two_face;
+      if (i < 42) {
+        two_face = F(0);
+        // pointer phase
+        if (two_face != nullptr) {
+          two_face->AddRef();
+          return two_face;
+        }
+        two_face = F(1);
+        if (two_face) {
+          two_face->AddRef();
+          return two_face;
+        }
+      }
+      // pointers still
+      two_face = F(2);
+      if (NULL != two_face) {
+        two_face->AddRef();
+        return two_face;
+      }
+      // owner phase
+      two_face = G(42);
+      return two_face;
+    }
+  )C++";
+
+  for (const auto& code : {global_var, common_add_ref, two_face}) {
+    auto changed_code = annotateAndFormat(code);
+
+    ASSERT_EQ(format(code), changed_code);
+  }
 }
 
 TEST_F(BaseTest, retPointField) {

@@ -118,7 +118,8 @@ struct Annotator {
                                                 llvm::StringRef id) const {
     llvm::SmallVector<const Node*> nodes;
 
-    llvm::transform(match(matcher, ast_context), std::back_inserter(nodes),
+    auto matches = match(matcher, ast_context);
+    llvm::transform(matches, std::back_inserter(nodes),
                     [id](clang::ast_matchers::BoundNodes const& bound_nodes) {
                       return bound_nodes.template getNodeAs<Node>(id);
                     });
@@ -491,12 +492,16 @@ void Annotator::AnnotateBaseCases() const {
   }
 
   for (const auto* v : NodesFromMatch<clang::VarDecl>(
-           returnStmt(returnStmt().bind("return"),
-                      hasReturnValue(ignoringParenImpCasts(declRefExpr(
-                          to(varDecl(hasLocalStorage()).bind("var"))))),
-                      hasParent(compoundStmt(HasBoundStmtImmediatelyFollowing(
-                          "return",
-                          AddRefOn(declRefExpr(to(equalsBoundNode("var")))))))),
+           returnStmt(
+               returnStmt().bind("return"),
+               hasReturnValue(ignoringParenImpCasts(
+                   declRefExpr(to(varDecl(hasLocalStorage()).bind("var"))))),
+               unless(forFunction(hasAnyBody(hasDescendant(binaryOperator(
+                   hasOperatorName("="),
+                   hasLHS(declRefExpr(to(equalsBoundNode("var"))))))))),
+               hasParent(compoundStmt(HasBoundStmtImmediatelyFollowing(
+                   "return",
+                   AddRefOn(declRefExpr(to(equalsBoundNode("var")))))))),
            "var")) {
     AnnotateVar(v, PointerType(), kPointerAnnotation);
   }
