@@ -182,9 +182,11 @@ struct Annotator {
   }
 
   void AnnotateVarOwner(const clang::VarDecl* var) const {
-    for (const auto* v : var->redecls()) {
-      AnnotateVar(v, OwnerType(), kOwnerAnnotation);
-    }
+    AnnotateVar(var, OwnerType(), kOwnerAnnotation);
+  }
+
+  void AnnotateVarPointer(const clang::VarDecl* var) const {
+    AnnotateVar(var, PointerType(), kPointerAnnotation);
   }
 
   void PropagateVirtualFunctionReturnType(const TypeMatcher& annotation_matcher,
@@ -266,11 +268,13 @@ struct Annotator {
   void AnnotateVar(const clang::VarDecl* var,
                    const TypeMatcher& annotation_matcher,
                    llvm::StringRef annotation) const {
-    if (Match(annotation_matcher, var->getType())) return;
+    for (const auto* v : var->redecls()) {
+      if (Match(annotation_matcher, v->getType())) return;
 
-    auto source_range = var->getTypeSourceInfo()->getTypeLoc().getSourceRange();
+      auto source_range = v->getTypeSourceInfo()->getTypeLoc().getSourceRange();
 
-    AnnotateSourceRange(source_range, annotation);
+      AnnotateSourceRange(source_range, annotation);
+    }
   }
 
   void AnnotateSourceRange(clang::SourceRange source_range,
@@ -323,8 +327,8 @@ struct Annotator {
             .str();
 
     // HACK: notice that the replacement range isn't just the type but it also
-    // extends to the beginning of the declarator. This is so that we cover the
-    // cases of "const mutable T*" or "mutable const volatile T*"
+    // extends to the beginning of the declarator. This is so that we cover
+    // the cases of "const mutable T*" or "mutable const volatile T*"
     clang::tooling::Replacement annotation_rep(
         source_manager,
         clang::CharSourceRange::getTokenRange(field_decl->getBeginLoc(),
@@ -445,8 +449,8 @@ void Annotator::AnnotateBaseCases() const {
   // current translation unit, assume we haven't seen the main file yet, and
   // punt.
   // 3. Otherwise, we're either processing the main file, or we've seen the
-  // definition of the destructor. In either case, we hope it's good enough for
-  // us to see a Release() if there's any.
+  // definition of the destructor. In either case, we hope it's good enough
+  // for us to see a Release() if there's any.
   auto has_destructor_in_translation_unit =
       hasMethod(cxxDestructorDecl(anyOf(hasAnyBody(stmt()), isDefaulted())));
   auto has_no_destructor = unless(hasMethod(cxxDestructorDecl()));
@@ -512,7 +516,7 @@ void Annotator::AnnotateBaseCases() const {
                    "return",
                    AddRefOn(declRefExpr(to(equalsBoundNode("var")))))))),
            "var")) {
-    AnnotateVar(v, PointerType(), kPointerAnnotation);
+    AnnotateVarPointer(v);
   }
 
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
