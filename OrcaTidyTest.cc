@@ -1220,9 +1220,11 @@ TEST_F(PropagateTest, vfunRetDown) {
     };
 
     struct R : S {
-      U* foo() override;
+      gpos::owner<U*> foo() override;
       U* bar() override;
     };
+
+    U* S::foo() { return nullptr; }
   )C++",
               expected_changed_code = R"C++(
 #include "CRefCount.h"
@@ -1240,6 +1242,8 @@ TEST_F(PropagateTest, vfunRetDown) {
       gpos::owner<U*> foo() override;
       gpos::pointer<U*> bar() override;
     };
+
+    gpos::owner<U*> S::foo() { return nullptr; }
   )C++";
 
   auto changed_code = annotateAndFormat(code);

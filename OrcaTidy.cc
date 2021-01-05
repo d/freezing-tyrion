@@ -194,24 +194,24 @@ struct Annotator {
     }
   }
 
-  void PropagateVirtualFunctionReturnType(const TypeMatcher& annotation_matcher,
-                                          const char* const annotation) const {
+  void PropagateVirtualFunctionReturnTypes() const {
     for (const auto& bound_nodes : match(
              cxxMethodDecl(
                  isOverride(),
-                 anyOf(cxxMethodDecl(returns(annotation_matcher),
-                                     forEachOverridden(
-                                         cxxMethodDecl(unless(returns(
-                                                           annotation_matcher)))
-                                             .bind("follow"))),
-                       cxxMethodDecl(
-                           unless(returns(annotation_matcher)),
-                           forEachOverridden(returns(annotation_matcher)))
+                 anyOf(cxxMethodDecl(
+                           returns(qualType(AnnotatedType()).bind("rt")),
+                           forEachOverridden(cxxMethodDecl().bind("follow"))),
+                       cxxMethodDecl(HasOverridden(returns(
+                                         qualType(AnnotatedType()).bind("rt"))))
                            .bind("follow"))),
              ast_context)) {
       const auto* m = bound_nodes.getNodeAs<clang::CXXMethodDecl>("follow");
+      const auto* rt = bound_nodes.getNodeAs<clang::QualType>("rt");
 
-      AnnotateFunctionReturnType(m, annotation_matcher, annotation);
+      if (IsOwner(*rt))
+        AnnotateFunctionReturnType(m, OwnerType(), kOwnerAnnotation);
+      else if (IsPointer(*rt))
+        AnnotateFunctionReturnType(m, PointerType(), kPointerAnnotation);
     }
   }
 
@@ -385,8 +385,7 @@ void Annotator::Propagate() const {
     AnnotateFunctionReturnOwner(f);
   }
 
-  PropagateVirtualFunctionReturnType(OwnerType(), kOwnerAnnotation);
-  PropagateVirtualFunctionReturnType(PointerType(), kPointerAnnotation);
+  PropagateVirtualFunctionReturnTypes();
 
   for (const auto* derived_method : NodesFromMatch<clang::CXXMethodDecl>(
            cxxMethodDecl(isOverride(), HasOverridden(hasAnyParameter(
