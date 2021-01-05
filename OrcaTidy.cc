@@ -453,7 +453,10 @@ void Annotator::Propagate() const {
                        callExpr(callee(functionDecl(returns(OwnerType()))))))
                .bind("owner_var"),
            "owner_var")) {
-    AnnotateVarOwner(var);
+    if (const auto* p = llvm::dyn_cast<clang::ParmVarDecl>(var))
+      AnnotateParameter(p, OwnerType(), kOwnerAnnotation);
+    else
+      AnnotateVarOwner(var);
   }
 }
 

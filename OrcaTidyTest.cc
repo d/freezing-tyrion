@@ -1441,3 +1441,67 @@ TEST_F(PropagateTest, varOwnInitAssignOwnFunc) {
 
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
+
+TEST_F(PropagateTest, paramOwnInitAssignOwnFunc) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    gpos::owner<T *> MakeT(int i = 42);
+    gpos::pointer<T *> GetT();
+
+    struct R {
+      void foo(int i, int j, T *var_assign_own_func,
+               T *var_init_point_func = GetT(),
+               T *var_init_own_func = MakeT()) {
+        var_assign_own_func = MakeT(i);
+      }
+
+      virtual void bar(T *var_assign_own_func, T *var_init_own_func = MakeT());
+    };
+
+    struct Q : R {
+      void bar(T *var_assign_own_func, T *var_init_own_func = MakeT()) override;
+    };
+
+    void Q::bar(T *var_assign_own_func, T *var_init_own_func) {
+      var_assign_own_func = MakeT(0);
+    }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    gpos::owner<T *> MakeT(int i = 42);
+    gpos::pointer<T *> GetT();
+
+    struct R {
+      void foo(int i, int j, gpos::owner<T *> var_assign_own_func,
+               T *var_init_point_func = GetT(),
+               gpos::owner<T *> var_init_own_func = MakeT()) {
+        var_assign_own_func = MakeT(i);
+      }
+
+      virtual void bar(gpos::owner<T *> var_assign_own_func,
+                       gpos::owner<T *> var_init_own_func = MakeT());
+    };
+
+    struct Q : R {
+      void bar(gpos::owner<T *> var_assign_own_func,
+               gpos::owner<T *> var_init_own_func = MakeT()) override;
+    };
+
+    void Q::bar(gpos::owner<T *> var_assign_own_func,
+                gpos::owner<T *> var_init_own_func) {
+      var_assign_own_func = MakeT(0);
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
