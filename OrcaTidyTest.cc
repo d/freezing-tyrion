@@ -665,6 +665,64 @@ TEST_F(BaseTest, varPointAddRefReturn) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
+TEST_F(BaseTest, parmVfunPointAddRefReturn) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+
+    struct R {
+      virtual U* OwnsParam(U*, gpos::pointer<U*>, int);
+    };
+
+    struct S : R {
+      U* OwnsParam(U* p, U*, int i) override;
+    };
+
+    U* S::OwnsParam(U* p, U* annotated_in_base, int i) {
+      if (i) {
+        p->AddRef();
+        return p;
+      } else {
+        annotated_in_base->AddRef();
+        return annotated_in_base;
+      }
+    }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+
+    struct R {
+      virtual U* OwnsParam(gpos::pointer<U*>, gpos::pointer<U*>, int);
+    };
+
+    struct S : R {
+      U* OwnsParam(gpos::pointer<U*> p, gpos::pointer<U*>, int i) override;
+    };
+
+    U* S::OwnsParam(gpos::pointer<U*> p, gpos::pointer<U*> annotated_in_base,
+                    int i) {
+      if (i) {
+        p->AddRef();
+        return p;
+      } else {
+        annotated_in_base->AddRef();
+        return annotated_in_base;
+      }
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
+
 TEST_F(BaseTest, varPointAddRefReturnNegativeCases) {
   std::string global_var = R"C++(
 #include "CRefCount.h"

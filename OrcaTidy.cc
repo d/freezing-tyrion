@@ -14,16 +14,21 @@ using FileToReplacements = std::map<std::string, clang::tooling::Replacements>;
 static const char* const kOwnerAnnotation = "gpos::owner";
 static const char* const kPointerAnnotation = "gpos::pointer";
 
-static auto AnnotationType(const char* name) {
-  return qualType(hasDeclaration(typeAliasTemplateDecl(hasName(name))));
+using NamedMatcher = decltype(hasName(""));
+static auto AnnotationType(NamedMatcher named_matcher) {
+  return qualType(hasDeclaration(typeAliasTemplateDecl(named_matcher)));
 }
 
 __attribute__((const)) static auto OwnerType() {
-  return AnnotationType("::gpos::owner");
+  return AnnotationType(hasName("::gpos::owner"));
 }
 
 __attribute__((const)) static auto PointerType() {
-  return AnnotationType("::gpos::pointer");
+  return AnnotationType(hasName("::gpos::pointer"));
+}
+
+__attribute__((const)) static auto AnnotatedType() {
+  return AnnotationType(hasAnyName("::gpos::pointer", "::gpos::owner"));
 }
 
 __attribute__((const)) static auto RefCountPointerType() {
@@ -178,6 +183,14 @@ struct Annotator {
     for (const auto* f : function->redecls()) {
       const auto* parm = f->getParamDecl(parameter_index);
       AnnotateVarOwner(parm);
+    }
+  }
+
+  void AnnotateParameterPointer(const clang::FunctionDecl* function,
+                                unsigned int parameter_index) const {
+    for (const auto* f : function->redecls()) {
+      const auto* parm = f->getParamDecl(parameter_index);
+      AnnotateVarPointer(parm);
     }
   }
 
@@ -346,6 +359,14 @@ struct Annotator {
   bool IsOwner(const clang::QualType& type) const {
     return Match(OwnerType(), type);
   }
+
+  bool IsPointer(const clang::QualType& type) const {
+    return Match(PointerType(), type);
+  }
+
+  bool IsAnnotated(const clang::QualType& type) const {
+    return Match(AnnotatedType(), type);
+  }
 };
 
 void Annotator::Propagate() const {
@@ -488,7 +509,6 @@ void Annotator::AnnotateBaseCases() const {
       if (Match(cxxMethodDecl(isOverride()), *function)) {
         const auto* method = llvm::cast<clang::CXXMethodDecl>(function);
         for (const auto* super_method : method->overridden_methods()) {
-          const auto* parm = super_method->getParamDecl(parameter_index);
           AnnotateParameterOwner(super_method, parameter_index);
         }
       }
@@ -516,7 +536,19 @@ void Annotator::AnnotateBaseCases() const {
                    "return",
                    AddRefOn(declRefExpr(to(equalsBoundNode("var")))))))),
            "var")) {
-    AnnotateVarPointer(v);
+    if (const auto* p = llvm::dyn_cast<clang::ParmVarDecl>(v)) {
+      const auto* f =
+          llvm::cast<clang::FunctionDecl>(p->getParentFunctionOrMethod());
+      auto parameter_index = p->getFunctionScopeIndex();
+      AnnotateParameterPointer(f, parameter_index);
+
+      if (Match(cxxMethodDecl(isOverride()), *f)) {
+        const auto* m = llvm::cast<clang::CXXMethodDecl>(f);
+        for (const auto* o : m->overridden_methods())
+          AnnotateParameterPointer(o, parameter_index);
+      }
+    } else
+      AnnotateVarPointer(v);
   }
 
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
