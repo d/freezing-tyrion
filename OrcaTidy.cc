@@ -186,16 +186,8 @@ struct Annotator {
                                  const char* annotation) const {
     for (const auto* f : function->redecls()) {
       const auto* parm = f->getParamDecl(parameter_index);
-      AnnotateVar(parm, annotation_matcher, annotation);
+      AnnotateOneVar(parm, annotation_matcher, annotation);
     }
-  }
-
-  void AnnotateVarOwner(const clang::VarDecl* var) const {
-    AnnotateVar(var, OwnerType(), kOwnerAnnotation);
-  }
-
-  void AnnotateVarPointer(const clang::VarDecl* var) const {
-    AnnotateVar(var, PointerType(), kPointerAnnotation);
   }
 
   void PropagateVirtualFunctionReturnType(const TypeMatcher& annotation_matcher,
@@ -274,9 +266,9 @@ struct Annotator {
     }
   }
 
-  void AnnotateVar(const clang::VarDecl* var,
-                   const TypeMatcher& annotation_matcher,
-                   llvm::StringRef annotation) const {
+  void AnnotateOneVar(const clang::VarDecl* var,
+                      const TypeMatcher& annotation_matcher,
+                      llvm::StringRef annotation) const {
     for (const auto* v : var->redecls()) {
       if (Match(annotation_matcher, v->getType())) return;
 
@@ -367,6 +359,12 @@ struct Annotator {
   void AnnotateParameter(const clang::ParmVarDecl* p,
                          const TypeMatcher& annotation_matcher,
                          const char* annotation) const;
+  void AnnotateVarOwner(const clang::VarDecl* var) const;
+  void AnnotateVarPointer(const clang::VarDecl* v) const;
+
+  void AnnotateVar(const clang::VarDecl* v,
+                   const TypeMatcher& annotation_matcher,
+                   const char* annotation) const;
 };
 
 void Annotator::Propagate() const {
@@ -453,10 +451,7 @@ void Annotator::Propagate() const {
                        callExpr(callee(functionDecl(returns(OwnerType()))))))
                .bind("owner_var"),
            "owner_var")) {
-    if (const auto* p = llvm::dyn_cast<clang::ParmVarDecl>(var))
-      AnnotateParameter(p, OwnerType(), kOwnerAnnotation);
-    else
-      AnnotateVarOwner(var);
+    AnnotateVarOwner(var);
   }
 }
 
@@ -505,22 +500,14 @@ void Annotator::AnnotateBaseCases() const {
                declRefExpr(to(varDecl().bind("owner_var")),
                            unless(forFunction(hasName("SafeRelease"))))),
            "owner_var")) {
-    if (const auto* owner_parm =
-            llvm::dyn_cast<clang::ParmVarDecl>(owner_var)) {
-      AnnotateParameter(owner_parm, OwnerType(), kOwnerAnnotation);
-    } else {
-      AnnotateVarOwner(owner_var);
-    }
+    AnnotateVarOwner(owner_var);
   }
 
   for (const auto* owner_var : NodesFromMatch<clang::VarDecl>(
            varDecl(varDecl().bind("owner_var"),
                    RefCountVarInitializedOrAssigned(cxxNewExpr())),
            "owner_var")) {
-    if (const auto* p = llvm::dyn_cast<clang::ParmVarDecl>(owner_var))
-      AnnotateParameter(p, OwnerType(), kOwnerAnnotation);
-    else
-      AnnotateVarOwner(owner_var);
+    AnnotateVarOwner(owner_var);
   }
 
   for (const auto* v : NodesFromMatch<clang::VarDecl>(
@@ -535,10 +522,7 @@ void Annotator::AnnotateBaseCases() const {
                    "return",
                    AddRefOn(declRefExpr(to(equalsBoundNode("var")))))))),
            "var")) {
-    if (const auto* p = llvm::dyn_cast<clang::ParmVarDecl>(v)) {
-      AnnotateParameter(p, PointerType(), kPointerAnnotation);
-    } else
-      AnnotateVarPointer(v);
+    AnnotateVarPointer(v);
   }
 
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
@@ -565,6 +549,24 @@ void Annotator::AnnotateBaseCases() const {
                .bind("f"),
            "f")) {
     AnnotateFunctionReturnPointer(f);
+  }
+}
+
+void Annotator::AnnotateVarOwner(const clang::VarDecl* var) const {
+  AnnotateVar(var, OwnerType(), kOwnerAnnotation);
+}
+
+void Annotator::AnnotateVarPointer(const clang::VarDecl* v) const {
+  AnnotateVar(v, PointerType(), kPointerAnnotation);
+}
+
+void Annotator::AnnotateVar(const clang::VarDecl* v,
+                            const TypeMatcher& annotation_matcher,
+                            const char* annotation) const {
+  if (const auto* p = llvm::dyn_cast<clang::ParmVarDecl>(v)) {
+    AnnotateParameter(p, annotation_matcher, annotation);
+  } else {
+    AnnotateOneVar(v, annotation_matcher, annotation);
   }
 }
 
