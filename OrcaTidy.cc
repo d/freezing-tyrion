@@ -373,13 +373,12 @@ struct Annotator {
 
 void Annotator::Propagate() const {
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
-           functionDecl(
-               returns(qualType(unless(OwnerType()), RefCountPointerType())),
-               hasAnyBody(hasDescendant(
-                   returnStmt(hasReturnValue(ignoringParenImpCasts(anyOf(
-                       declRefExpr(to(varDecl(hasType(OwnerType())))),
-                       callExpr(
-                           callee(functionDecl(returns(OwnerType())))))))))))
+           functionDecl(returns(RefCountPointerType()),
+                        hasAnyBody(hasDescendant(returnStmt(
+                            hasReturnValue(ignoringParenImpCasts(anyOf(
+                                declRefExpr(to(varDecl(hasType(OwnerType())))),
+                                callExpr(callee(
+                                    functionDecl(returns(OwnerType())))))))))))
                .bind("f"),
            "f")) {
     AnnotateFunctionReturnOwner(f);
