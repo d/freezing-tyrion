@@ -387,16 +387,19 @@ void Annotator::Propagate() const {
   PropagateVirtualFunctionReturnType(PointerType(), kPointerAnnotation);
 
   for (const auto* derived_method : NodesFromMatch<clang::CXXMethodDecl>(
-           cxxMethodDecl(isOverride(),
-                         HasOverridden(hasAnyParameter(hasType(OwnerType()))))
+           cxxMethodDecl(isOverride(), HasOverridden(hasAnyParameter(
+                                           hasType(AnnotatedType()))))
                .bind("derived"),
            "derived")) {
     for (const auto* base_method : derived_method->overridden_methods()) {
       for (const auto* base_param : base_method->parameters()) {
-        if (!IsOwner(base_param->getType())) continue;
+        auto t = base_param->getType();
         auto parameter_index = base_param->getFunctionScopeIndex();
 
-        AnnotateParameterOwner(derived_method, parameter_index);
+        if (IsOwner(t))
+          AnnotateParameterOwner(derived_method, parameter_index);
+        else if (IsPointer(t))
+          AnnotateParameterPointer(derived_method, parameter_index);
       }
     }
   }

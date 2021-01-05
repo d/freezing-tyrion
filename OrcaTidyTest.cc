@@ -1153,11 +1153,11 @@ TEST_F(PropagateTest, vfunParmDown) {
     using U = T;
 
     struct S {
-      virtual void foo(gpos::owner<U*>, gpos::owner<U*>);
+      virtual void foo(gpos::owner<U*>, gpos::owner<U*>, gpos::pointer<U*>);
     };
 
     struct R : S {
-      void foo(U* u, gpos::owner<U*> annotated) override;
+      void foo(U* u, gpos::owner<U*> annotated, U* p) override;
     };
   )C++",
               expected_changed_code = R"C++(
@@ -1168,11 +1168,12 @@ TEST_F(PropagateTest, vfunParmDown) {
     using U = T;
 
     struct S {
-      virtual void foo(gpos::owner<U*>, gpos::owner<U*>);
+      virtual void foo(gpos::owner<U*>, gpos::owner<U*>, gpos::pointer<U*>);
     };
 
     struct R : S {
-      void foo(gpos::owner<U*> u, gpos::owner<U*> annotated) override;
+      void foo(gpos::owner<U*> u, gpos::owner<U*> annotated,
+               gpos::pointer<U*> p) override;
     };
   )C++";
 
