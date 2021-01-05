@@ -213,7 +213,7 @@ struct Annotator {
                                   const char* annotation) const {
     for (const auto* f : function->redecls()) {
       auto rt = f->getReturnType();
-      if (!match(annotation_matcher, rt, ast_context).empty()) continue;
+      if (Match(annotation_matcher, rt)) continue;
       AnnotateFunctionReturnType(f, annotation);
     }
   }
@@ -266,7 +266,7 @@ struct Annotator {
   void AnnotateVar(const clang::VarDecl* var,
                    const TypeMatcher& annotation_matcher,
                    llvm::StringRef annotation) const {
-    if (!match(annotation_matcher, var->getType(), ast_context).empty()) return;
+    if (Match(annotation_matcher, var->getType())) return;
 
     auto source_range = var->getTypeSourceInfo()->getTypeLoc().getSourceRange();
 
@@ -299,8 +299,7 @@ struct Annotator {
   void AnnotateField(const clang::FieldDecl* field_decl,
                      const TypeMatcher& annotation_matcher,
                      llvm::StringRef annotation) const {
-    if (!match(annotation_matcher, field_decl->getType(), ast_context).empty())
-      return;
+    if (Match(annotation_matcher, field_decl->getType())) return;
 
     auto field_type_loc = field_decl->getTypeSourceInfo()->getTypeLoc();
     clang::SourceRange type_range = field_type_loc.getSourceRange();
@@ -334,6 +333,15 @@ struct Annotator {
     std::string file_path = annotation_rep.getFilePath().str();
     llvm::cantFail(replacements[file_path].add(annotation_rep));
   }
+
+  template <class Matcher, class Node>
+  bool Match(Matcher matcher, const Node& node) const {
+    return !match(matcher, node, ast_context).empty();
+  }
+
+  bool IsOwner(const clang::QualType& type) const {
+    return Match(OwnerType(), type);
+  }
 };
 
 void Annotator::Propagate() const {
@@ -360,8 +368,7 @@ void Annotator::Propagate() const {
            "derived")) {
     for (const auto* base_method : derived_method->overridden_methods()) {
       for (const auto* base_param : base_method->parameters()) {
-        if (match(OwnerType(), base_param->getType(), ast_context).empty())
-          continue;
+        if (!IsOwner(base_param->getType())) continue;
         auto parameter_index = base_param->getFunctionScopeIndex();
 
         AnnotateParameterOwner(derived_method, parameter_index);
@@ -474,7 +481,7 @@ void Annotator::AnnotateBaseCases() const {
           owner_parm->getParentFunctionOrMethod());
       AnnotateParameterOwner(function, parameter_index);
 
-      if (!match(cxxMethodDecl(isOverride()), *function, ast_context).empty()) {
+      if (Match(cxxMethodDecl(isOverride()), *function)) {
         const auto* method = llvm::cast<clang::CXXMethodDecl>(function);
         for (const auto* super_method : method->overridden_methods()) {
           const auto* parm = super_method->getParamDecl(parameter_index);
