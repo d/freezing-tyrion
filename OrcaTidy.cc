@@ -472,7 +472,9 @@ void Annotator::Propagate() const {
 
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
            callExpr(forEachArgumentWithParam(
-                        ignoringParenImpCasts(cxxNewExpr()),
+                        ignoringParenImpCasts(
+                            anyOf(cxxNewExpr(), callExpr(callee(functionDecl(
+                                                    returns(OwnerType())))))),
                         parmVarDecl(hasType(qualType(RefCountPointerType(),
                                                      unless(OwnerType()))))
                             .bind("param")),

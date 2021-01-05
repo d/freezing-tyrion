@@ -1585,3 +1585,56 @@ TEST_F(PropagateTest, paramOwnNew) {
 
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
+
+TEST_F(PropagateTest, paramOwnFunc) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    struct S : T {};
+
+    template <class U, class CleanupFn>
+    struct R {
+      void jazz(U*);
+    };
+
+    gpos::owner<T*> F();
+    gpos::owner<S*> G();
+
+    void foo(T*, T*);
+
+    void bar() {
+      R<T, void> r;
+      r.jazz(G());
+      return foo(F(), G());
+    }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    struct S : T {};
+
+    template <class U, class CleanupFn>
+    struct R {
+      void jazz(U*);
+    };
+
+    gpos::owner<T*> F();
+    gpos::owner<S*> G();
+
+    void foo(gpos::owner<T*>, gpos::owner<T*>);
+
+    void bar() {
+      R<T, void> r;
+      r.jazz(G());
+      return foo(F(), G());
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
