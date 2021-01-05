@@ -647,6 +647,70 @@ TEST_F(BaseTest, varOwnAssignNew) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
+TEST_F(BaseTest, paramOwnAssignNew) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+    struct S : U {};
+
+    struct R {
+      virtual void foo(R *, S *, U *, gpos::owner<S *>);
+    };
+
+    struct Q : R {
+      void foo(R *, S *, U *, gpos::owner<S *>) override;
+    };
+
+    void Q::foo(R *r, S *s, U *implicitly_converted, gpos::owner<S *> annotated) {
+      r = new R;  // not ref-counted, leave me alone
+      s = new S;
+
+      implicitly_converted = new S;
+      annotated = new S;
+    }
+
+    void bar(U *u);
+
+    void bar(U *u) { u = new S; }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+    struct S : U {};
+
+    struct R {
+      virtual void foo(R *, gpos::owner<S *>, gpos::owner<U *>, gpos::owner<S *>);
+    };
+
+    struct Q : R {
+      void foo(R *, gpos::owner<S *>, gpos::owner<U *>, gpos::owner<S *>) override;
+    };
+
+    void Q::foo(R *r, gpos::owner<S *> s, gpos::owner<U *> implicitly_converted,
+                gpos::owner<S *> annotated) {
+      r = new R;  // not ref-counted, leave me alone
+      s = new S;
+
+      implicitly_converted = new S;
+      annotated = new S;
+    }
+
+    void bar(gpos::owner<U *> u);
+
+    void bar(gpos::owner<U *> u) { u = new S; }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
+
 TEST_F(BaseTest, varPointAddRefReturn) {
   std::string code = R"C++(
 #include "CRefCount.h"

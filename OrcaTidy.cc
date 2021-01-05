@@ -514,7 +514,10 @@ void Annotator::AnnotateBaseCases() const {
            varDecl(varDecl().bind("owner_var"),
                    RefCountVarInitializedOrAssigned(cxxNewExpr())),
            "owner_var")) {
-    AnnotateVarOwner(owner_var);
+    if (const auto* p = llvm::dyn_cast<clang::ParmVarDecl>(owner_var))
+      AnnotateParameter(p, OwnerType(), kOwnerAnnotation);
+    else
+      AnnotateVarOwner(owner_var);
   }
 
   for (const auto* v : NodesFromMatch<clang::VarDecl>(
