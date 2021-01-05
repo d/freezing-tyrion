@@ -469,6 +469,17 @@ void Annotator::Propagate() const {
            "owner_var")) {
     AnnotateVarOwner(var);
   }
+
+  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+           callExpr(forEachArgumentWithParam(
+                        ignoringParenImpCasts(cxxNewExpr()),
+                        parmVarDecl(hasType(qualType(RefCountPointerType(),
+                                                     unless(OwnerType()))))
+                            .bind("param")),
+                    unless(callee(functionDecl(isTemplateInstantiation())))),
+           "param")) {
+    AnnotateParameter(param, OwnerType(), kOwnerAnnotation);
+  }
 }
 
 void Annotator::AnnotateBaseCases() const {
