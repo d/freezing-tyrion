@@ -1505,3 +1505,32 @@ TEST_F(PropagateTest, paramOwnInitAssignOwnFunc) {
 
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
+
+TEST_F(PropagateTest, paramTypeAmongRedecls) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    // another TU annotated our params
+    void F(gpos::owner<T*>, gpos::pointer<T*>);
+
+    void F(T* p, T* q);
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    // another TU annotated our params
+    void F(gpos::owner<T*>, gpos::pointer<T*>);
+
+    void F(gpos::owner<T*> p, gpos::pointer<T*> q);
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}

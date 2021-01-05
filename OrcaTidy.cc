@@ -83,6 +83,10 @@ AST_MATCHER_P(clang::CXXMethodDecl, HasOverridden, CXXMethodMatcher,
                       });
 }
 
+AST_MATCHER(clang::FunctionDecl, HasRedecls) {
+  return Node.getFirstDecl() != Node.getMostRecentDecl();
+}
+
 AST_MATCHER_P2(clang::CompoundStmt, HasBoundStmtImmediatelyFollowing,
                std::string, id, StatementMatcher, lhs) {
   if (Node.size() < 2) return false;
@@ -399,6 +403,20 @@ void Annotator::Propagate() const {
         else if (IsPointer(t))
           AnnotateFunctionParameterPointer(derived_method, parameter_index);
       }
+    }
+  }
+
+  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+           functionDecl(HasRedecls(), hasAnyParameter(hasType(AnnotatedType())))
+               .bind("f"),
+           "f")) {
+    for (const auto* p : f->parameters()) {
+      auto t = p->getType();
+      auto parameter_index = p->getFunctionScopeIndex();
+      if (IsOwner(t))
+        AnnotateFunctionParameterOwner(f, parameter_index);
+      else if (IsPointer(t))
+        AnnotateFunctionParameterPointer(f, parameter_index);
     }
   }
 
