@@ -62,13 +62,8 @@ static auto AddRefOn(ExpressionMatcher const& expr_matcher) {
                            on(expr_matcher));
 }
 
-using VarSet = llvm::DenseSet<const clang::VarDecl*>;
-AST_MATCHER_P_OVERLOAD(clang::VarDecl, IsInSet, VarSet, nodes, 0) {
-  return nodes.contains(&Node);
-}
-
-using FieldSet = llvm::DenseSet<const clang::FieldDecl*>;
-AST_MATCHER_P_OVERLOAD(clang::FieldDecl, IsInSet, FieldSet, nodes, 1) {
+using DeclSet = llvm::DenseSet<const clang::Decl*>;
+AST_MATCHER_P(clang::Decl, IsInSet, DeclSet, nodes) {
   return nodes.contains(&Node);
 }
 
@@ -132,23 +127,11 @@ struct Annotator {
     return nodes;
   }
 
-  template <class NodeSet, class Matcher>
-  NodeSet NodeSetFromMatch(Matcher matcher, llvm::StringRef id) const {
-    using Node = std::remove_const_t<
-        std::remove_pointer_t<typename NodeSet::value_type>>;
-    auto nodes_from_match = NodesFromMatch<Node>(matcher, id);
-    NodeSet node_set{nodes_from_match.begin(), nodes_from_match.end()};
+  template <class Matcher>
+  DeclSet DeclSetFromMatch(Matcher matcher, llvm::StringRef id) const {
+    auto nodes_from_match = NodesFromMatch<clang::Decl>(matcher, id);
+    DeclSet node_set{nodes_from_match.begin(), nodes_from_match.end()};
     return node_set;
-  }
-
-  template <class Matcher>
-  VarSet VarSetFromMatch(Matcher matcher, llvm::StringRef id) const {
-    return NodeSetFromMatch<VarSet>(matcher, id);
-  }
-
-  template <class Matcher>
-  FieldSet FieldSetFromMatch(Matcher matcher, llvm::StringRef id) const {
-    return NodeSetFromMatch<FieldSet>(matcher, id);
   }
 
   auto RefCountVarInitializedOrAssigned(
@@ -164,7 +147,7 @@ struct Annotator {
     return varDecl(anyOf(
         allOf(refcount_var,
               hasInitializer(ignoringParenImpCasts(init_expr_matcher))),
-        IsInSet(VarSetFromMatch(
+        IsInSet(DeclSetFromMatch(
             binaryOperator(
                 hasOperatorName("="),
                 hasOperands(declRefExpr(to(refcount_var.bind("owner_var"))),
@@ -173,7 +156,7 @@ struct Annotator {
   }
 
   auto FieldReleased() const {
-    return IsInSet(FieldSetFromMatch(
+    return IsInSet(DeclSetFromMatch(
         ReleaseCallExpr(FieldReferenceFor(fieldDecl().bind("owner_field"))),
         "owner_field"));
   }
