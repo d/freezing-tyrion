@@ -1785,3 +1785,68 @@ TEST_F(PropagateTest, paramOwnFunc) {
 
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
+
+TEST_F(PropagateTest, varMoveOwnTailCall) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    struct S : T {};
+
+    bool F(gpos::owner<T*>);
+    bool G(gpos::owner<S*>);
+    bool foo(int, S*, S*);
+
+    bool foo(int i, S* s, S* added_ref) {
+      T* t = nullptr;
+      switch (i) {
+        default:
+          return F(s);
+        case 42:
+          return G(s);
+        case 41: {
+          added_ref->AddRef();
+          bool b = G(added_ref);
+          if (b)
+            return F(added_ref);
+          else
+            return F(t);
+        }
+      }
+    }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    struct S : T {};
+
+    bool F(gpos::owner<T*>);
+    bool G(gpos::owner<S*>);
+    bool foo(int, gpos::owner<S*>, S*);
+
+    bool foo(int i, gpos::owner<S*> s, S* added_ref) {
+      gpos::owner<T*> t = nullptr;
+      switch (i) {
+        default:
+          return F(std::move(s));
+        case 42:
+          return G(std::move(s));
+        case 41: {
+          added_ref->AddRef();
+          bool b = G(added_ref);
+          if (b)
+            return F(added_ref);
+          else
+            return F(std::move(t));
+        }
+      }
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}

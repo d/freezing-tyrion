@@ -8,8 +8,9 @@
 namespace orca_tidy {
 // NOLINTNEXTLINE(google-build-using-namespace)
 using namespace clang::ast_matchers;
+namespace tooling = clang::tooling;
 
-using FileToReplacements = std::map<std::string, clang::tooling::Replacements>;
+using FileToReplacements = std::map<std::string, tooling::Replacements>;
 
 static const char* const kOwnerAnnotation = "gpos::owner";
 static const char* const kPointerAnnotation = "gpos::pointer";
@@ -353,15 +354,14 @@ struct Annotator {
 
   void AnnotateSourceRange(clang::SourceRange source_range,
                            const llvm::StringRef& annotation) const {
-    auto type_text = clang::Lexer::getSourceText(
-        clang::CharSourceRange::getTokenRange(source_range), source_manager,
-        lang_opts);
+    auto range = clang::CharSourceRange::getTokenRange(source_range);
+    auto type_text =
+        clang::Lexer::getSourceText(range, source_manager, lang_opts);
 
     std::string new_text = (annotation + "<" + type_text + ">").str();
 
-    clang::tooling::Replacement replacement(
-        source_manager, clang::CharSourceRange::getTokenRange(source_range),
-        new_text, lang_opts);
+    tooling::Replacement replacement(source_manager, range, new_text,
+                                     lang_opts);
     std::string file_path = replacement.getFilePath().str();
     CantFail(replacements[file_path].add(replacement));
   }
@@ -403,7 +403,7 @@ struct Annotator {
     // HACK: notice that the replacement range isn't just the type but it also
     // extends to the beginning of the declarator. This is so that we cover
     // the cases of "const mutable T*" or "mutable const volatile T*"
-    clang::tooling::Replacement annotation_rep(
+    tooling::Replacement annotation_rep(
         source_manager,
         clang::CharSourceRange::getTokenRange(field_decl->getBeginLoc(),
                                               field_type_loc.getEndLoc()),
@@ -438,6 +438,7 @@ struct Annotator {
   void AnnotateVar(const clang::VarDecl* v,
                    const TypeMatcher& annotation_matcher,
                    const char* annotation) const;
+  void MoveSourceRange(clang::SourceRange source_range) const;
 };
 
 void Annotator::Propagate() const {
@@ -548,6 +549,33 @@ void Annotator::Propagate() const {
            "param")) {
     AnnotateParameter(param, OwnerType(), kOwnerAnnotation);
   }
+
+  for (const auto& bound_nodes : match(
+           returnStmt(
+               hasReturnValue(
+                   ignoringParenImpCasts(callExpr(forEachArgumentWithParamType(
+                       expr(expr().bind("arg"),
+                            ignoringParenImpCasts(declRefExpr(to(varDecl(
+                                varDecl().bind("var"), hasLocalStorage()))))),
+                       OwnerType())))),
+               forFunction(unless(hasDescendant(
+                   AddRefOn(declRefExpr(to(equalsBoundNode("var")))))))),
+           ast_context)) {
+    const auto* var = bound_nodes.getNodeAs<clang::VarDecl>("var");
+    AnnotateVarOwner(var);
+
+    const auto* arg = bound_nodes.getNodeAs<clang::Expr>("arg");
+    MoveSourceRange(arg->getSourceRange());
+  }
+}
+
+void Annotator::MoveSourceRange(clang::SourceRange source_range) const {
+  auto range = clang::CharSourceRange::getTokenRange(source_range);
+  auto arg_text = clang::Lexer::getSourceText(range, source_manager, lang_opts);
+  std::string new_arg = ("std::move(" + arg_text + ")").str();
+  tooling::Replacement replacement(source_manager, range, new_arg, lang_opts);
+  llvm::cantFail(
+      replacements[replacement.getFilePath().str()].add(replacement));
 }
 
 void Annotator::AnnotateBaseCases() const {
