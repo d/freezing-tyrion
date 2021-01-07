@@ -302,6 +302,45 @@ TEST_F(BaseTest, FieldPointThroughTypedef) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
+TEST_F(BaseTest, fieldPointExcludeTemplate) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    template <class U>
+    struct S {
+      T* released;
+      T* not_released;
+
+      ~S() { released->Release(); }
+    };
+
+    void f(S<T>*) {}
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    template <class U>
+    struct S {
+      gpos::owner<T*> released;
+      T* not_released;
+
+      ~S() { released->Release(); }
+    };
+
+    void f(S<T>*) {}
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
+
 TEST_F(BaseTest, Idempotence) {
   std::string code = R"C++(
 #include "CRefCount.h"

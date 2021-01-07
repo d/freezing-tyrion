@@ -479,7 +479,8 @@ void Annotator::AnnotateBaseCases() const {
       hasMethod(cxxDestructorDecl(anyOf(hasAnyBody(stmt()), isDefaulted())));
   auto has_no_destructor = unless(hasMethod(cxxDestructorDecl()));
   for (const auto* field_decl : NodesFromMatch<clang::FieldDecl>(
-           fieldDecl(unless(hasType(PointerType())),
+           fieldDecl(unless(hasDeclContext(
+                         recordDecl(hasParent(classTemplateDecl())))),
                      hasType(RefCountPointerType()),
                      anyOf(hasDeclContext(cxxRecordDecl(has_no_destructor)),
                            allOf(hasDeclContext(cxxRecordDecl(
