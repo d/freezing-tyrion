@@ -462,8 +462,7 @@ void Annotator::Propagate() const {
   }
 
   for (const auto* var : NodesFromMatch<clang::VarDecl>(
-           varDecl(unless(hasType(OwnerType())),
-                   RefCountVarInitializedOrAssigned(
+           varDecl(RefCountVarInitializedOrAssigned(
                        callExpr(callee(functionDecl(returns(OwnerType()))))))
                .bind("owner_var"),
            "owner_var")) {
@@ -471,14 +470,13 @@ void Annotator::Propagate() const {
   }
 
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
-           callExpr(forEachArgumentWithParam(
-                        ignoringParenImpCasts(
-                            anyOf(cxxNewExpr(), callExpr(callee(functionDecl(
-                                                    returns(OwnerType())))))),
-                        parmVarDecl(hasType(qualType(RefCountPointerType(),
-                                                     unless(OwnerType()))))
-                            .bind("param")),
-                    unless(callee(functionDecl(isTemplateInstantiation())))),
+           callExpr(
+               forEachArgumentWithParam(
+                   ignoringParenImpCasts(anyOf(
+                       cxxNewExpr(),
+                       callExpr(callee(functionDecl(returns(OwnerType())))))),
+                   parmVarDecl(hasType(RefCountPointerType())).bind("param")),
+               unless(callee(functionDecl(isTemplateInstantiation())))),
            "param")) {
     AnnotateParameter(param, OwnerType(), kOwnerAnnotation);
   }
