@@ -1071,6 +1071,10 @@ TEST_F(PropagateTest, retOwnVar) {
     struct T : gpos::CRefCount<T> {};
     using S = T;
 
+    gpos::owner<S*> global;
+
+    // returns pointer
+    S* GetGlobal() { return global; }
     S* Unannotated();               // annotate me too
     gpos::owner<S*> Unannotated();  // leave me alone
 
@@ -1094,6 +1098,10 @@ TEST_F(PropagateTest, retOwnVar) {
     struct T : gpos::CRefCount<T> {};
     using S = T;
 
+    gpos::owner<S*> global;
+
+    // returns pointer
+    S* GetGlobal() { return global; }
     gpos::owner<S*> Unannotated();  // annotate me too
     gpos::owner<S*> Unannotated();  // leave me alone
 

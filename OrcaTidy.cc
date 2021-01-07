@@ -384,7 +384,8 @@ void Annotator::Propagate() const {
            functionDecl(returns(RefCountPointerType()),
                         hasAnyBody(hasDescendant(returnStmt(
                             hasReturnValue(ignoringParenImpCasts(anyOf(
-                                declRefExpr(to(varDecl(hasType(OwnerType())))),
+                                declRefExpr(to(varDecl(hasLocalStorage(),
+                                                       hasType(OwnerType())))),
                                 callExpr(callee(
                                     functionDecl(returns(OwnerType())))))))))))
                .bind("f"),
