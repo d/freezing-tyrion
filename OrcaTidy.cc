@@ -132,15 +132,24 @@ struct Annotator {
 
   void AnnotateBaseCases() const;
 
-  template <class Node, class Matcher>
-  llvm::SmallVector<const Node*> NodesFromMatch(Matcher matcher,
-                                                llvm::StringRef id) const {
-    llvm::SmallVector<const Node*> nodes;
+  template <class... Nodes, class... IDs>
+  static auto GetNode(const BoundNodes& bound_nodes, IDs... ids) {
+    if constexpr (sizeof...(ids) == 1)
+      return bound_nodes.template getNodeAs<Nodes...>(ids...);
+    else
+      return std::tuple{bound_nodes.template getNodeAs<Nodes>(ids)...};
+  }
+
+  template <class... Nodes, class Matcher, class... Ids>
+  auto NodesFromMatch(Matcher matcher, Ids... ids) const {
+    llvm::SmallVector<decltype(GetNode<Nodes...>(std::declval<BoundNodes>(),
+                                                 ids...))>
+        nodes;
 
     auto matches = match(matcher, ast_context);
     llvm::transform(matches, std::back_inserter(nodes),
-                    [id](clang::ast_matchers::BoundNodes const& bound_nodes) {
-                      return bound_nodes.template getNodeAs<Node>(id);
+                    [ids...](const BoundNodes& bound_nodes) {
+                      return GetNode<Nodes...>(bound_nodes, ids...);
                     });
 
     return nodes;
