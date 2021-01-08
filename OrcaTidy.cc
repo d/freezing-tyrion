@@ -624,6 +624,18 @@ void Annotator::AnnotateBaseCases() const {
   }
 
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+           returnStmt(returnStmt().bind("return"),
+                      hasReturnValue(ignoringParenImpCasts(
+                          FieldReferenceFor(fieldDecl().bind("field")))),
+                      hasParent(compoundStmt(HasBoundStmtImmediatelyFollowing(
+                          "return", AddRefOn(FieldReferenceFor(
+                                        equalsBoundNode("field")))))),
+                      forFunction(functionDecl().bind("f"))),
+           "f")) {
+    AnnotateFunctionReturnOwner(f);
+  }
+
+  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
            functionDecl(returns(RefCountPointerType()),
                         hasAnyBody(hasDescendant(returnStmt(hasReturnValue(
                             ignoringParenImpCasts(cxxNewExpr()))))))

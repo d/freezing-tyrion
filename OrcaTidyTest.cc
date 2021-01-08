@@ -711,7 +711,7 @@ TEST_F(BaseTest, paramOwnAssignNew) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
-TEST_F(BaseTest, retOwnAddRefReturn) {
+TEST_F(BaseTest, retOwnAddRefReturnVar) {
   std::string code = R"C++(
 #include "CRefCount.h"
 #include "owner.h"
@@ -753,6 +753,67 @@ TEST_F(BaseTest, retOwnAddRefReturn) {
     }
 
     U *NotSure(gpos::pointer<S *> s) {
+      s->AddRef();
+      F(s);
+      return s;
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
+
+TEST_F(BaseTest, retOwnAddRefReturnField) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+    struct S : T {};
+
+    struct R {
+      gpos::pointer<S *> s;
+      U *GetT();
+      U *NotSure();
+    };
+
+    void F(U *);
+
+    U *R::GetT() {
+      s->AddRef();
+      return s;
+    }
+
+    U *R::NotSure() {
+      s->AddRef();
+      F(s);
+      return s;
+    }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+    struct S : T {};
+
+    struct R {
+      gpos::pointer<S *> s;
+      gpos::owner<U *> GetT();
+      U *NotSure();
+    };
+
+    void F(U *);
+
+    gpos::owner<U *> R::GetT() {
+      s->AddRef();
+      return s;
+    }
+
+    U *R::NotSure() {
       s->AddRef();
       F(s);
       return s;
