@@ -47,6 +47,13 @@ static void CantFail(llvm::Error error) noexcept {
   std::terminate();
 }
 
+template <class Range>
+static auto MakeVector(Range&& range) {
+  llvm::SmallVector<typename decltype(range.begin())::value_type> nodes(
+      range.begin(), range.end());
+  return nodes;
+}
+
 static auto FieldReferenceFor(DeclarationMatcher const& field_matcher) {
   return memberExpr(member(field_matcher),
                     hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
@@ -192,15 +199,11 @@ struct Annotator {
   /// \endcode
   template <class... Nodes, class Matcher, class... Ids>
   auto NodesFromMatch(Matcher matcher, Ids... ids) const {
-    llvm::SmallVector<decltype(GetNode<Nodes...>(std::declval<BoundNodes>(),
-                                                 ids...))>
-        nodes;
-
     auto matches = match(matcher, ast_context);
-    llvm::transform(matches, std::back_inserter(nodes),
-                    [ids...](const BoundNodes& bound_nodes) {
-                      return GetNode<Nodes...>(bound_nodes, ids...);
-                    });
+    auto nodes = MakeVector(
+        llvm::map_range(matches, [ids...](const BoundNodes& bound_nodes) {
+          return GetNode<Nodes...>(bound_nodes, ids...);
+        }));
 
     return nodes;
   }
@@ -602,19 +605,22 @@ void Annotator::AnnotateBaseCases() const {
     AnnotateVarOwner(owner_var);
   }
 
-  for (const auto* v : NodesFromMatch<clang::VarDecl>(
-           returnStmt(
-               returnStmt().bind("return"),
-               hasReturnValue(ignoringParenImpCasts(
-                   declRefExpr(to(varDecl(hasLocalStorage()).bind("var"))))),
-               unless(forFunction(hasAnyBody(hasDescendant(binaryOperator(
-                   hasOperatorName("="),
-                   hasLHS(declRefExpr(to(equalsBoundNode("var"))))))))),
-               hasParent(compoundStmt(HasBoundStmtImmediatelyFollowing(
-                   "return",
-                   AddRefOn(declRefExpr(to(equalsBoundNode("var")))))))),
-           "var")) {
-    AnnotateVarPointer(v);
+  for (auto [v, f] : NodesFromMatch<clang::VarDecl, clang::FunctionDecl>(
+           returnStmt(returnStmt().bind("return"),
+                      hasReturnValue(ignoringParenImpCasts(
+                          declRefExpr(to(varDecl().bind("var"))))),
+                      hasParent(compoundStmt(HasBoundStmtImmediatelyFollowing(
+                          "return",
+                          AddRefOn(declRefExpr(to(equalsBoundNode("var"))))))),
+                      forFunction(functionDecl().bind("f"))),
+           "var", "f")) {
+    AnnotateFunctionReturnOwner(f);
+    if (v->hasLocalStorage() &&
+        Match(functionDecl(hasAnyBody(unless(hasDescendant(
+                  binaryOperator(hasOperatorName("="),
+                                 hasLHS(declRefExpr(to(equalsNode(v))))))))),
+              *f))
+      AnnotateVarPointer(v);
   }
 
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(

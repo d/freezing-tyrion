@@ -711,6 +711,59 @@ TEST_F(BaseTest, paramOwnAssignNew) {
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
 
+TEST_F(BaseTest, retOwnAddRefReturn) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+    struct S : T {};
+
+    S *global;
+    U *GetT();
+    void F(U *);
+
+    U *GetT() {
+      global->AddRef();
+      return global;
+    }
+
+    U *NotSure(gpos::pointer<S *> s) {
+      s->AddRef();
+      F(s);
+      return s;
+    }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+    struct S : T {};
+
+    S *global;
+    gpos::owner<U *> GetT();
+    void F(U *);
+
+    gpos::owner<U *> GetT() {
+      global->AddRef();
+      return global;
+    }
+
+    U *NotSure(gpos::pointer<S *> s) {
+      s->AddRef();
+      F(s);
+      return s;
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
+
 TEST_F(BaseTest, varPointAddRefReturn) {
   std::string code = R"C++(
 #include "CRefCount.h"
@@ -722,7 +775,7 @@ TEST_F(BaseTest, varPointAddRefReturn) {
 
     U *F();
 
-    U *foo(int i, bool b, S *param) {
+    gpos::owner<U *> foo(int i, bool b, S *param) {
       U *u = F();
       U *null_checked = F();
       if (null_checked) {
@@ -747,7 +800,7 @@ TEST_F(BaseTest, varPointAddRefReturn) {
 
     U *F();
 
-    U *foo(int i, bool b, gpos::pointer<S *> param) {
+    gpos::owner<U *> foo(int i, bool b, gpos::pointer<S *> param) {
       gpos::pointer<U *> u = F();
       gpos::pointer<U *> null_checked = F();
       if (null_checked) {
@@ -781,10 +834,10 @@ TEST_F(BaseTest, parmVfunPointAddRefReturn) {
     };
 
     struct S : R {
-      U* OwnsParam(U* p, U*, int i) override;
+      gpos::owner<U*> OwnsParam(U* p, U*, int i) override;
     };
 
-    U* S::OwnsParam(U* p, U* annotated_in_base, int i) {
+    gpos::owner<U*> S::OwnsParam(U* p, U* annotated_in_base, int i) {
       if (i) {
         p->AddRef();
         return p;
@@ -806,11 +859,12 @@ TEST_F(BaseTest, parmVfunPointAddRefReturn) {
     };
 
     struct S : R {
-      U* OwnsParam(gpos::pointer<U*> p, gpos::pointer<U*>, int i) override;
+      gpos::owner<U*> OwnsParam(gpos::pointer<U*> p, gpos::pointer<U*>,
+                                int i) override;
     };
 
-    U* S::OwnsParam(gpos::pointer<U*> p, gpos::pointer<U*> annotated_in_base,
-                    int i) {
+    gpos::owner<U*> S::OwnsParam(gpos::pointer<U*> p,
+                                 gpos::pointer<U*> annotated_in_base, int i) {
       if (i) {
         p->AddRef();
         return p;
@@ -838,7 +892,7 @@ TEST_F(BaseTest, varPointAddRefReturnNegativeCases) {
     gpos::pointer<T*> F();
     gpos::owner<T*> G(gpos::owner<T*>);
 
-    T* foo(int i, bool b) {
+    gpos::owner<T*> foo(int i, bool b) {
       static T* global_u = F();
       global_u->AddRef();
       return global_u;
@@ -855,7 +909,7 @@ TEST_F(BaseTest, varPointAddRefReturnNegativeCases) {
     gpos::pointer<T*> F();
     gpos::owner<T*> G(gpos::owner<T*>);
 
-    T* foo(int i, bool b) {
+    gpos::owner<T*> foo(int i, bool b) {
       // this is actually a pointer, but the code is a bit too clever for our
       // dumb tool to recognize it
       T* ambiguous_pointer = F();
@@ -880,7 +934,7 @@ TEST_F(BaseTest, varPointAddRefReturnNegativeCases) {
     gpos::pointer<T*> F(int);
     gpos::owner<T*> G(int);
 
-    T* foo(int i) {
+    gpos::owner<T*> foo(int i) {
       T* two_face;
       if (i < 42) {
         two_face = F(0);
