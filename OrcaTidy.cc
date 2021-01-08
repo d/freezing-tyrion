@@ -140,6 +140,56 @@ struct Annotator {
       return std::tuple{bound_nodes.template getNodeAs<Nodes>(ids)...};
   }
 
+  /// Convenience interface to go through the results of an AST match by
+  /// directly iterating over node. For example, instead of saying
+  ///
+  /// \code
+  /// for (const auto& bound_nodes : match(varDecl().bind("v"), ast_context)) {
+  ///   const auto* v = bound_nodes.getNodeAs<VarDecl>("v");
+  ///   ...
+  /// }
+  /// \endcode We get to say
+  ///
+  /// \code
+  /// for (const auto* v = NodesFromMatch<VarDecl>(varDecl().bind("v"))) {
+  /// ...
+  /// }
+  /// \endcode
+  ///
+  /// In addition, when you pass in two or more bindings, the returned sequence
+  /// can be iterated through structured binding:
+  ///
+  /// \code
+  /// for (auto [var, arg]: NodesFromMatch<VarDecl, Expr>(callExpr(
+  ///          hasAnyArgument(declRefExpr(to(varDecl().bind("var"))).bind("arg")))
+  ///          )) {
+  ///   ...
+  /// }
+  /// \endcode
+  ///
+  /// Caveat: the returned sequence does NOT own the clang::BoundNodes objects
+  /// returned from the original call to \code match() \endcode . Because most
+  /// nodes (\c Decl, \c Stmt, \c Type) are pointer-stable and stored in the
+  /// AST, this is practically not a problem. Notable exceptions are: \c
+  /// QualType, \c NestedNameSpecifierLoc, \c TypeLoc, \c TemplateArgument and
+  /// \c TemplateArgumentLoc. These are embedded as values (and stored as values
+  /// in a \c BoundNodes object) and passed around as values. When you want to
+  /// bind to one of those types, use the more ceremonious \code match()
+  /// \endcode API instead.
+  ///
+  /// One interesting workaround for binding to a \c QualType is to bind to a
+  /// \c Type instead, if you know your matcher doesn't examine the
+  /// cv-qualifiers: e.g. Instead of
+  ///
+  /// \code
+  /// functionDecl(returns(qualType.bind("t")))
+  /// \endcode
+  ///
+  /// you can use
+  ///
+  /// \code
+  /// functionDecl(returns(type.bind("t")))
+  /// \endcode
   template <class... Nodes, class Matcher, class... Ids>
   auto NodesFromMatch(Matcher matcher, Ids... ids) const {
     llvm::SmallVector<decltype(GetNode<Nodes...>(std::declval<BoundNodes>(),
@@ -212,22 +262,21 @@ struct Annotator {
   }
 
   void PropagateVirtualFunctionReturnTypes() const {
-    for (const auto& bound_nodes : match(
+    for (auto [m, rt] : NodesFromMatch<clang::CXXMethodDecl, clang::Type>(
              cxxMethodDecl(
                  isOverride(),
-                 anyOf(cxxMethodDecl(
-                           returns(qualType(AnnotatedType()).bind("rt")),
-                           forEachOverridden(cxxMethodDecl().bind("follow"))),
-                       cxxMethodDecl(HasOverridden(returns(
-                                         qualType(AnnotatedType()).bind("rt"))))
-                           .bind("follow"))),
-             ast_context)) {
-      const auto* m = bound_nodes.getNodeAs<clang::CXXMethodDecl>("follow");
-      const auto* rt = bound_nodes.getNodeAs<clang::QualType>("rt");
-
-      if (IsOwner(*rt))
+                 anyOf(
+                     cxxMethodDecl(
+                         returns(qualType(AnnotatedType(), type().bind("rt"))),
+                         forEachOverridden(cxxMethodDecl().bind("follow"))),
+                     cxxMethodDecl(HasOverridden(returns(qualType(
+                                       AnnotatedType(), type().bind("rt")))))
+                         .bind("follow"))),
+             "follow", "rt")) {
+      clang::QualType qt(rt, 0);
+      if (IsOwner(qt))
         AnnotateFunctionReturnType(m, OwnerType(), kOwnerAnnotation);
-      else if (IsPointer(*rt))
+      else if (IsPointer(qt))
         AnnotateFunctionReturnType(m, PointerType(), kPointerAnnotation);
     }
   }
