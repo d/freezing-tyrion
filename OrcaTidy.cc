@@ -439,6 +439,7 @@ struct Annotator {
                    const TypeMatcher& annotation_matcher,
                    const char* annotation) const;
   void MoveSourceRange(clang::SourceRange source_range) const;
+  void PropagateTailCall() const;
 };
 
 void Annotator::Propagate() const {
@@ -550,21 +551,27 @@ void Annotator::Propagate() const {
     AnnotateParameter(param, OwnerType(), kOwnerAnnotation);
   }
 
-  for (const auto& bound_nodes : match(
-           returnStmt(
-               hasReturnValue(
-                   ignoringParenImpCasts(callExpr(forEachArgumentWithParamType(
-                       expr(expr().bind("arg"),
-                            ignoringParenImpCasts(declRefExpr(to(varDecl(
-                                varDecl().bind("var"), hasLocalStorage()))))),
-                       OwnerType())))),
-               forFunction(unless(hasDescendant(
-                   AddRefOn(declRefExpr(to(equalsBoundNode("var")))))))),
-           ast_context)) {
-    const auto* var = bound_nodes.getNodeAs<clang::VarDecl>("var");
-    AnnotateVarOwner(var);
+  PropagateTailCall();
+}
 
-    const auto* arg = bound_nodes.getNodeAs<clang::Expr>("arg");
+// We can infer a lot from the function call expressions contained in the full
+// expression being returned:
+//
+// 1. If a never-AddRef'd var is the argument to an owner param, the var is an
+// owner, and the argument is moved.
+void Annotator::PropagateTailCall() const {
+  for (auto [var, arg] : NodesFromMatch<clang::VarDecl, clang::Expr>(
+           returnStmt(
+               hasReturnValue(findAll(callExpr(forEachArgumentWithParamType(
+                   expr(expr().bind("arg"),
+                        ignoringParenImpCasts(declRefExpr(to(varDecl(
+                            hasLocalStorage(), varDecl().bind("var"),
+                            hasDeclContext(functionDecl(unless(
+                                hasAnyBody(hasDescendant(AddRefOn(declRefExpr(
+                                    to(equalsBoundNode("var")))))))))))))),
+                   OwnerType()))))),
+           "var", "arg")) {
+    AnnotateVarOwner(var);
     MoveSourceRange(arg->getSourceRange());
   }
 }

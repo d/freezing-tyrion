@@ -1796,6 +1796,7 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
 
     bool F(gpos::owner<T*>);
     bool G(gpos::owner<S*>);
+    gpos::pointer<T*> H(bool);
     bool foo(int, S*, S*);
 
     bool foo(int i, S* s, S* added_ref) {
@@ -1815,6 +1816,10 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
         }
       }
     }
+
+    gpos::pointer<T*> bar(S* s) { return H(F(s)); }
+
+    bool jazz(T* t, S* s) { return F(t) && H(G(s)); }
   )C++",
               expected_changed_code = R"C++(
 #include "CRefCount.h"
@@ -1825,6 +1830,7 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
 
     bool F(gpos::owner<T*>);
     bool G(gpos::owner<S*>);
+    gpos::pointer<T*> H(bool);
     bool foo(int, gpos::owner<S*>, S*);
 
     bool foo(int i, gpos::owner<S*> s, S* added_ref) {
@@ -1843,6 +1849,12 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
             return F(std::move(t));
         }
       }
+    }
+
+    gpos::pointer<T*> bar(gpos::owner<S*> s) { return H(F(std::move(s))); }
+
+    bool jazz(gpos::owner<T*> t, gpos::owner<S*> s) {
+      return F(std::move(t)) && H(G(std::move(s)));
     }
   )C++";
 
