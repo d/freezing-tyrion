@@ -40,6 +40,13 @@ __attribute__((const)) static auto RefCountPointerType() {
   return ref_count_pointer_type;
 }
 
+static void CantFail(llvm::Error error) noexcept {
+  if (!error) [[likely]]
+    return;
+  llvm::errs() << llvm::toString(std::move(error)) << '\n';
+  std::terminate();
+}
+
 static auto FieldReferenceFor(DeclarationMatcher const& field_matcher) {
   return memberExpr(member(field_matcher),
                     hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
@@ -291,7 +298,7 @@ struct Annotator {
         source_manager, clang::CharSourceRange::getTokenRange(source_range),
         new_text, lang_opts);
     std::string file_path = replacement.getFilePath().str();
-    llvm::cantFail(replacements[file_path].add(replacement));
+    CantFail(replacements[file_path].add(replacement));
   }
 
   void AnnotateFieldOwner(const clang::FieldDecl* field) const {
@@ -337,7 +344,7 @@ struct Annotator {
                                               field_type_loc.getEndLoc()),
         new_text, lang_opts);
     std::string file_path = annotation_rep.getFilePath().str();
-    llvm::cantFail(replacements[file_path].add(annotation_rep));
+    CantFail(replacements[file_path].add(annotation_rep));
   }
 
   template <class Matcher, class Node>
