@@ -106,6 +106,14 @@ AST_MATCHER_P2(clang::CompoundStmt, HasBoundStmtImmediatelyFollowing,
   return false;
 }
 
+template <class... Matchers>
+static auto NonTemplateCallOrConstruct(Matchers... matchers) {
+  auto non_template =
+      unless(hasDeclaration(functionDecl(isTemplateInstantiation())));
+  return expr(anyOf(callExpr(non_template, matchers...),
+                    cxxConstructExpr(non_template, matchers...)));
+}
+
 struct Annotator {
   ActionOptions action_options;
   FileToReplacements& replacements;
@@ -470,13 +478,11 @@ void Annotator::Propagate() const {
   }
 
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
-           callExpr(
-               forEachArgumentWithParam(
-                   ignoringParenImpCasts(anyOf(
-                       cxxNewExpr(),
-                       callExpr(callee(functionDecl(returns(OwnerType())))))),
-                   parmVarDecl(hasType(RefCountPointerType())).bind("param")),
-               unless(callee(functionDecl(isTemplateInstantiation())))),
+           NonTemplateCallOrConstruct(forEachArgumentWithParam(
+               ignoringParenImpCasts(
+                   anyOf(cxxNewExpr(),
+                         callExpr(callee(functionDecl(returns(OwnerType())))))),
+               parmVarDecl(hasType(RefCountPointerType())).bind("param"))),
            "param")) {
     AnnotateParameter(param, OwnerType(), kOwnerAnnotation);
   }

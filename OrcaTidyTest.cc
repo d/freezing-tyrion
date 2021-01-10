@@ -1549,13 +1549,19 @@ TEST_F(PropagateTest, paramOwnNew) {
 
     template <class U, class CleanupFn>
     struct R {
+      R(T*);
       void jazz(U*);
+    };
+
+    struct Q {
+      Q(T*);
     };
 
     void foo(T*, T*);
 
     void bar() {
-      R<T, void> r;
+      R<T, void> r(new T);
+      Q q(new T);
       r.jazz(new S);
       return foo(new T, new S);
     }
@@ -1569,13 +1575,19 @@ TEST_F(PropagateTest, paramOwnNew) {
 
     template <class U, class CleanupFn>
     struct R {
+      R(T*);
       void jazz(U*);
+    };
+
+    struct Q {
+      Q(gpos::owner<T*>);
     };
 
     void foo(gpos::owner<T*>, gpos::owner<T*>);
 
     void bar() {
-      R<T, void> r;
+      R<T, void> r(new T);
+      Q q(new T);
       r.jazz(new S);
       return foo(new T, new S);
     }
@@ -1596,7 +1608,12 @@ TEST_F(PropagateTest, paramOwnFunc) {
 
     template <class U, class CleanupFn>
     struct R {
+      R(T*);
       void jazz(U*);
+    };
+
+    struct Q {
+      Q(T*);
     };
 
     gpos::owner<T*> F();
@@ -1605,7 +1622,8 @@ TEST_F(PropagateTest, paramOwnFunc) {
     void foo(T*, T*);
 
     void bar() {
-      R<T, void> r;
+      R<T, void> r(F());
+      Q q(G());
       r.jazz(G());
       return foo(F(), G());
     }
@@ -1619,7 +1637,12 @@ TEST_F(PropagateTest, paramOwnFunc) {
 
     template <class U, class CleanupFn>
     struct R {
+      R(T*);
       void jazz(U*);
+    };
+
+    struct Q {
+      Q(gpos::owner<T*>);
     };
 
     gpos::owner<T*> F();
@@ -1628,7 +1651,8 @@ TEST_F(PropagateTest, paramOwnFunc) {
     void foo(gpos::owner<T*>, gpos::owner<T*>);
 
     void bar() {
-      R<T, void> r;
+      R<T, void> r(F());
+      Q q(G());
       r.jazz(G());
       return foo(F(), G());
     }
