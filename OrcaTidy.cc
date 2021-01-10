@@ -556,11 +556,13 @@ void Annotator::Propagate() const {
     AnnotateVarOwner(var);
   }
 
+  // It's tempting to wrap an \c ignoringParenImpCasts inside \c
+  // forEachArgumentWithParam here, but note that \c forEachArgumentWithParam
+  // already does that for the first argument
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
            NonTemplateCallOrConstruct(forEachArgumentWithParam(
-               ignoringParenImpCasts(
-                   anyOf(cxxNewExpr(),
-                         callExpr(callee(functionDecl(returns(OwnerType())))))),
+               anyOf(cxxNewExpr(),
+                     callExpr(callee(functionDecl(returns(OwnerType()))))),
                parmVarDecl(hasType(RefCountPointerType())).bind("param"))),
            "param")) {
     AnnotateParameter(param, OwnerType(), kOwnerAnnotation);
@@ -575,15 +577,18 @@ void Annotator::Propagate() const {
 // 1. If a never-AddRef'd var is the argument to an owner param, the var is an
 // owner, and the argument is moved.
 void Annotator::PropagateTailCall() const {
+  // Similar to \c forEachArgumentWithParam, \c forEachArgumentWithParamType
+  // will strip parentheses and casts for the first argument, so resist the
+  // temptation to wrap the "arg matcher" in a \c ignoringParenImpCasts
   for (auto [var, arg] : NodesFromMatch<clang::VarDecl, clang::Expr>(
            returnStmt(hasReturnValue(
                findAll(CallOrConstruct(forEachArgumentWithParamType(
                    expr(expr().bind("arg"),
-                        ignoringParenImpCasts(declRefExpr(to(varDecl(
+                        declRefExpr(to(varDecl(
                             hasLocalStorage(), varDecl().bind("var"),
                             hasDeclContext(functionDecl(unless(
                                 hasAnyBody(hasDescendant(AddRefOn(declRefExpr(
-                                    to(equalsBoundNode("var")))))))))))))),
+                                    to(equalsBoundNode("var"))))))))))))),
                    OwnerType()))))),
            "var", "arg")) {
     AnnotateVarOwner(var);
