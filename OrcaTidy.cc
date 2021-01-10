@@ -114,12 +114,27 @@ AST_MATCHER_P2(clang::CompoundStmt, HasBoundStmtImmediatelyFollowing,
   return false;
 }
 
+/// Whenever we think of using \c forEachArgumentWithParam or
+/// \c forEachArgumentWithParamType with \c callExpr, we probably should also
+/// consider using them with \c cxxConstructExpr . That's what these two
+/// matchers, \c NonTemplateCallOrConstruct, and \c CallOrConstruct are for:
+/// they will match either a \c CallExpr or a \c CXXConstructExpr with all your
+/// passed in matchers.
+/// In addition, we should consider the non-template version when we intend to
+/// infer the parameter annotations for the callee, because function templates
+/// (or methods of class templates) can exhibit different owning behavior
+/// depending on the instantiation (c.f. \c CDynamicPtrArrary::Append)
 template <class... Matchers>
 static auto NonTemplateCallOrConstruct(Matchers... matchers) {
   auto non_template =
       unless(hasDeclaration(functionDecl(isTemplateInstantiation())));
   return expr(anyOf(callExpr(non_template, matchers...),
                     cxxConstructExpr(non_template, matchers...)));
+}
+
+template <class... Matchers>
+static auto CallOrConstruct(Matchers... matchers) {
+  return expr(anyOf(callExpr(matchers...), cxxConstructExpr(matchers...)));
 }
 
 struct Annotator {
@@ -561,8 +576,8 @@ void Annotator::Propagate() const {
 // owner, and the argument is moved.
 void Annotator::PropagateTailCall() const {
   for (auto [var, arg] : NodesFromMatch<clang::VarDecl, clang::Expr>(
-           returnStmt(
-               hasReturnValue(findAll(callExpr(forEachArgumentWithParamType(
+           returnStmt(hasReturnValue(
+               findAll(CallOrConstruct(forEachArgumentWithParamType(
                    expr(expr().bind("arg"),
                         ignoringParenImpCasts(declRefExpr(to(varDecl(
                             hasLocalStorage(), varDecl().bind("var"),

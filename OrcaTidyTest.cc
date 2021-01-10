@@ -1792,7 +1792,9 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
 #include "owner.h"
 
     struct T : gpos::CRefCount<T> {};
-    struct S : T {};
+    struct S : T {
+      S(gpos::owner<T*>);
+    };
 
     bool F(gpos::owner<T*>);
     bool G(gpos::owner<S*>);
@@ -1818,6 +1820,7 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
     }
 
     gpos::pointer<T*> bar(S* s) { return H(F(s)); }
+    bool bazz(T* t) { return G(new S(t)); }
 
     bool jazz(T* t, S* s) { return F(t) && H(G(s)); }
   )C++",
@@ -1826,7 +1829,9 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
 #include "owner.h"
 
     struct T : gpos::CRefCount<T> {};
-    struct S : T {};
+    struct S : T {
+      S(gpos::owner<T*>);
+    };
 
     bool F(gpos::owner<T*>);
     bool G(gpos::owner<S*>);
@@ -1852,6 +1857,7 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
     }
 
     gpos::pointer<T*> bar(gpos::owner<S*> s) { return H(F(std::move(s))); }
+    bool bazz(gpos::owner<T*> t) { return G(new S(std::move(t))); }
 
     bool jazz(gpos::owner<T*> t, gpos::owner<S*> s) {
       return F(std::move(t)) && H(G(std::move(s)));
