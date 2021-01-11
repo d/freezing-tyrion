@@ -638,6 +638,26 @@ void Annotator::PropagateTailCall() const {
            "param")) {
     AnnotateVarPointer(param);
   }
+
+  for (auto [param, var, arg, r] :
+       NodesFromMatch<clang::ParmVarDecl, clang::VarDecl, clang::Expr,
+                      clang::ReturnStmt>(
+           returnStmt(forEachDescendant(
+                          NonTemplateCallOrConstruct(forEachArgumentWithParam(
+                              declRefExpr(to(varDecl(hasLocalStorage(),
+                                                     hasType(OwnerType()))
+                                                 .bind("var")))
+                                  .bind("arg"),
+                              parmVarDecl().bind("param")))),
+                      stmt().bind("r")),
+           "param", "var", "arg", "r")) {
+    if (Match(returnStmt(hasDescendant(
+                  declRefExpr(unless(equalsNode(arg)), to(equalsNode(var))))),
+              *r))
+      continue;
+    AnnotateVarOwner(param);
+    MoveSourceRange(arg->getSourceRange());
+  }
 }
 
 void Annotator::MoveSourceRange(clang::SourceRange source_range) const {

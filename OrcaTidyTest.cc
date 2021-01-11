@@ -2024,3 +2024,72 @@ TEST_F(PropagateTest, paramPointTailCall) {
 
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
+
+TEST_F(PropagateTest, paramOwnTailCall) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    template <class U, class CleanupFn>
+    struct S {
+      S(U u);
+      bool Ok() const;
+    };
+
+    namespace positive {
+    struct R {
+      R(T*);
+    };
+    bool F(T*, R);
+
+    bool foo(gpos::owner<T*> t, gpos::owner<T*> param) { return F(t, R(param)); }
+    }  // namespace positive
+
+    namespace negative {
+    bool F(T*);
+    bool G(T*);
+    // be conservative about inferring ownership of function templates
+    bool foo(gpos::owner<T*> t) { return S<T*, void>{t}.Ok(); }
+    // t is referenced more than once, bail
+    bool bar(gpos::owner<T*> t) { return F(t) || G(t); }
+    }  // namespace negative
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    template <class U, class CleanupFn>
+    struct S {
+      S(U u);
+      bool Ok() const;
+    };
+
+    namespace positive {
+    struct R {
+      R(gpos::owner<T*>);
+    };
+    bool F(gpos::owner<T*>, R);
+
+    bool foo(gpos::owner<T*> t, gpos::owner<T*> param) {
+      return F(std::move(t), R(std::move(param)));
+    }
+    }  // namespace positive
+
+    namespace negative {
+    bool F(T*);
+    bool G(T*);
+    // be conservative about inferring ownership of function templates
+    bool foo(gpos::owner<T*> t) { return S<T*, void>{t}.Ok(); }
+    // t is referenced more than once, bail
+    bool bar(gpos::owner<T*> t) { return F(t) || G(t); }
+    }  // namespace negative
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
