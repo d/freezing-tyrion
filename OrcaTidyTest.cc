@@ -1793,7 +1793,8 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
 
     struct T : gpos::CRefCount<T> {};
     struct S : T {
-      S(gpos::owner<T*>);
+      S(int, gpos::owner<T*>);
+      S(gpos::pointer<T*>);
     };
 
     bool F(gpos::owner<T*>);
@@ -1820,9 +1821,12 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
     }
 
     gpos::pointer<T*> bar(S* s) { return H(F(s)); }
-    bool bazz(T* t) { return G(new S(t)); }
-
+    bool bazz(T* t) { return G(new S(42, t)); }
     bool jazz(T* t, S* s) { return F(t) && H(G(s)); }
+
+    // a reference to s cannot be replaced with a move here, because there are
+    // multiple of them.
+    bool fuzz(S* s) { return G(new S(s)) || F(s); }
   )C++",
               expected_changed_code = R"C++(
 #include "CRefCount.h"
@@ -1830,7 +1834,8 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
 
     struct T : gpos::CRefCount<T> {};
     struct S : T {
-      S(gpos::owner<T*>);
+      S(int, gpos::owner<T*>);
+      S(gpos::pointer<T*>);
     };
 
     bool F(gpos::owner<T*>);
@@ -1857,11 +1862,14 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
     }
 
     gpos::pointer<T*> bar(gpos::owner<S*> s) { return H(F(std::move(s))); }
-    bool bazz(gpos::owner<T*> t) { return G(new S(std::move(t))); }
-
+    bool bazz(gpos::owner<T*> t) { return G(new S(42, std::move(t))); }
     bool jazz(gpos::owner<T*> t, gpos::owner<S*> s) {
       return F(std::move(t)) && H(G(std::move(s)));
     }
+
+    // a reference to s cannot be replaced with a move here, because there are
+    // multiple of them.
+    bool fuzz(S* s) { return G(new S(s)) || F(s); }
   )C++";
 
   auto changed_code = annotateAndFormat(code);

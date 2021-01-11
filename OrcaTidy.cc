@@ -581,15 +581,19 @@ void Annotator::PropagateTailCall() const {
   // will strip parentheses and casts for the first argument, so resist the
   // temptation to wrap the "arg matcher" in a \c ignoringParenImpCasts
   for (auto [var, arg] : NodesFromMatch<clang::VarDecl, clang::Expr>(
-           returnStmt(hasReturnValue(
-               findAll(CallOrConstruct(forEachArgumentWithParamType(
+           returnStmt(
+               forEachDescendant(CallOrConstruct(forEachArgumentWithParamType(
                    expr(expr().bind("arg"),
                         declRefExpr(to(varDecl(
                             hasLocalStorage(), varDecl().bind("var"),
                             hasDeclContext(functionDecl(unless(
                                 hasAnyBody(hasDescendant(AddRefOn(declRefExpr(
                                     to(equalsBoundNode("var"))))))))))))),
-                   OwnerType()))))),
+                   OwnerType()))),
+               unless(hasDescendant(
+                   CallOrConstruct(hasAnyArgument(ignoringParenCasts(
+                       expr(unless(equalsBoundNode("arg")),
+                            declRefExpr(to(equalsBoundNode("var")))))))))),
            "var", "arg")) {
     AnnotateVarOwner(var);
     MoveSourceRange(arg->getSourceRange());
