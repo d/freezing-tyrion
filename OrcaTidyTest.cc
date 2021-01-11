@@ -1876,3 +1876,72 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
 
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
+
+TEST_F(PropagateTest, varPointTailCall) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    struct S : T {};
+
+    struct R {
+      R(gpos::pointer<T*>);
+      R(int, gpos::owner<T*>);
+    };
+    bool F(gpos::pointer<T*>);
+    bool H(R);
+    bool G(T* unannotated_param);
+    T* Unannotated();
+
+    bool foo(S* s) {
+      T* t = Unannotated();
+      T* t2 = Unannotated();
+      if (t) return F(t);
+      if (!s) return H(R(s)) || F(s);
+      return Unannotated() && F(t2);
+    }
+
+    bool bar() {
+      T* t = Unannotated();
+      T* t2 = Unannotated();
+      if (t) return F(t) && H(R(42, t));
+      return F(t2) || G(t2);
+    }
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    struct S : T {};
+
+    struct R {
+      R(gpos::pointer<T*>);
+      R(int, gpos::owner<T*>);
+    };
+    bool F(gpos::pointer<T*>);
+    bool H(R);
+    bool G(T* unannotated_param);
+    T* Unannotated();
+
+    bool foo(gpos::pointer<S*> s) {
+      gpos::pointer<T*> t = Unannotated();
+      gpos::pointer<T*> t2 = Unannotated();
+      if (t) return F(t);
+      if (!s) return H(R(s)) || F(s);
+      return Unannotated() && F(t2);
+    }
+
+    bool bar() {
+      T* t = Unannotated();
+      T* t2 = Unannotated();
+      if (t) return F(t) && H(R(42, t));
+      return F(t2) || G(t2);
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}

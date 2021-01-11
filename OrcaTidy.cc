@@ -584,12 +584,12 @@ void Annotator::PropagateTailCall() const {
        NodesFromMatch<clang::VarDecl, clang::Expr, clang::ReturnStmt>(
            returnStmt(
                forEachDescendant(CallOrConstruct(forEachArgumentWithParamType(
-                   expr(expr().bind("arg"),
-                        declRefExpr(to(varDecl(
+                   expr(declRefExpr(to(varDecl(
                             hasLocalStorage(), varDecl().bind("var"),
                             hasDeclContext(functionDecl(unless(
                                 hasAnyBody(hasDescendant(AddRefOn(declRefExpr(
-                                    to(equalsBoundNode("var"))))))))))))),
+                                    to(equalsBoundNode("var")))))))))))),
+                        expr().bind("arg")),
                    OwnerType()))),
                stmt().bind("r")),
            "var", "arg", "r")) {
@@ -600,6 +600,25 @@ void Annotator::PropagateTailCall() const {
             *r)) {
       AnnotateVarOwner(var);
       MoveSourceRange(arg->getSourceRange());
+    }
+  }
+
+  for (auto [var, arg, r] :
+       NodesFromMatch<clang::VarDecl, clang::Expr, clang::ReturnStmt>(
+           returnStmt(
+               forEachDescendant(CallOrConstruct(forEachArgumentWithParamType(
+                   declRefExpr(to(varDecl(hasLocalStorage()).bind("var")))
+                       .bind("arg"),
+                   PointerType()))),
+               stmt().bind("r")),
+           "var", "arg", "r")) {
+    if (Match(returnStmt(unless(
+                  hasDescendant(CallOrConstruct(forEachArgumentWithParamType(
+                      expr(unless(equalsNode(arg)),
+                           declRefExpr(to(equalsNode(var)))),
+                      unless(PointerType())))))),
+              *r)) {
+      AnnotateVarPointer(var);
     }
   }
 }
