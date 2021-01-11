@@ -1945,3 +1945,82 @@ TEST_F(PropagateTest, varPointTailCall) {
 
   ASSERT_EQ(format(expected_changed_code), changed_code);
 }
+
+TEST_F(PropagateTest, paramPointTailCall) {
+  std::string code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    T* Unannotated();
+    template <class U, class CleanupFn>
+    struct S {
+      bool bar(U);
+    };
+
+    namespace positive {
+    struct R {
+      R(T*);
+    };
+    bool F(T*, R);
+
+    bool foo(gpos::pointer<T*> t) { return F(t, R(t)); }
+    }  // namespace positive
+
+    namespace negative {
+    struct R {
+      R(T*);
+    };
+    bool F(T*, R);
+
+    bool foo(gpos::pointer<T*> param, gpos::pointer<T*> t) {
+      gpos::pointer<T*> var;
+      S<T*, void> s;
+      var = Unannotated();
+      param->AddRef();
+      return F(param, R(var)) || s.bar(t);
+    }
+    }  // namespace negative
+  )C++",
+              expected_changed_code = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+
+    T* Unannotated();
+    template <class U, class CleanupFn>
+    struct S {
+      bool bar(U);
+    };
+
+    namespace positive {
+    struct R {
+      R(gpos::pointer<T*>);
+    };
+    bool F(gpos::pointer<T*>, R);
+
+    bool foo(gpos::pointer<T*> t) { return F(t, R(t)); }
+    }  // namespace positive
+
+    namespace negative {
+    struct R {
+      R(T*);
+    };
+    bool F(T*, R);
+
+    bool foo(gpos::pointer<T*> param, gpos::pointer<T*> t) {
+      gpos::pointer<T*> var;
+      S<T*, void> s;
+      var = Unannotated();
+      param->AddRef();
+      return F(param, R(var)) || s.bar(t);
+    }
+    }  // namespace negative
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(expected_changed_code), changed_code);
+}
