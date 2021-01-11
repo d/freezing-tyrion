@@ -580,7 +580,8 @@ void Annotator::PropagateTailCall() const {
   // Similar to \c forEachArgumentWithParam, \c forEachArgumentWithParamType
   // will strip parentheses and casts for the first argument, so resist the
   // temptation to wrap the "arg matcher" in a \c ignoringParenImpCasts
-  for (auto [var, arg] : NodesFromMatch<clang::VarDecl, clang::Expr>(
+  for (auto [var, arg, r] :
+       NodesFromMatch<clang::VarDecl, clang::Expr, clang::ReturnStmt>(
            returnStmt(
                forEachDescendant(CallOrConstruct(forEachArgumentWithParamType(
                    expr(expr().bind("arg"),
@@ -590,13 +591,16 @@ void Annotator::PropagateTailCall() const {
                                 hasAnyBody(hasDescendant(AddRefOn(declRefExpr(
                                     to(equalsBoundNode("var"))))))))))))),
                    OwnerType()))),
-               unless(hasDescendant(
-                   CallOrConstruct(hasAnyArgument(ignoringParenCasts(
-                       expr(unless(equalsBoundNode("arg")),
-                            declRefExpr(to(equalsBoundNode("var")))))))))),
-           "var", "arg")) {
-    AnnotateVarOwner(var);
-    MoveSourceRange(arg->getSourceRange());
+               stmt().bind("r")),
+           "var", "arg", "r")) {
+    if (Match(
+            returnStmt(unless(hasDescendant(CallOrConstruct(hasAnyArgument(
+                ignoringParenCasts(expr(unless(equalsNode(arg)),
+                                        declRefExpr(to(equalsNode(var)))))))))),
+            *r)) {
+      AnnotateVarOwner(var);
+      MoveSourceRange(arg->getSourceRange());
+    }
   }
 }
 
