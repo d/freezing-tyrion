@@ -23,7 +23,7 @@ gen_build_system() {
 build() {
 	local builddir
 	for builddir in "$@"; do
-		ninja -j"${NCPU}" -l"${JOBS}" -C "${builddir}"
+		ninja -j"${NCPU}" -l"${JOBS}" -C "${builddir}" orca-tidy-test annotate
 	done
 }
 
