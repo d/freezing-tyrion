@@ -639,24 +639,33 @@ void Annotator::PropagateTailCall() const {
     AnnotateVarPointer(param);
   }
 
-  for (auto [param, var, arg, r] :
+  for (auto [param, var, arg, r, tmpl] :
        NodesFromMatch<clang::ParmVarDecl, clang::VarDecl, clang::Expr,
-                      clang::ReturnStmt>(
-           returnStmt(forEachDescendant(
-                          NonTemplateCallOrConstruct(forEachArgumentWithParam(
+                      clang::ReturnStmt, clang::NamedDecl>(
+           returnStmt(forEachDescendant(CallOrConstruct(
+                          forEachArgumentWithParam(
                               declRefExpr(to(varDecl(hasLocalStorage(),
                                                      hasType(OwnerType()))
                                                  .bind("var")))
                                   .bind("arg"),
-                              parmVarDecl().bind("param")))),
+                              parmVarDecl().bind("param")),
+                          optionally(hasDeclaration(
+                              namedDecl(isInstantiated()).bind("tmpl"))))),
                       stmt().bind("r")),
-           "param", "var", "arg", "r")) {
+           "param", "var", "arg", "r", "tmpl")) {
     if (Match(returnStmt(hasDescendant(
                   declRefExpr(unless(equalsNode(arg)), to(equalsNode(var))))),
               *r))
       continue;
-    AnnotateVarOwner(param);
-    MoveSourceRange(arg->getSourceRange());
+    // be conservative about inferring ownership of params when callee is a
+    // function template. Note that we don't have to be conservative a couple
+    // lines above when we infer the ownership of a param in the *caller*
+    if (!tmpl) {
+      AnnotateVarOwner(param);
+    }
+    if (!tmpl || Match(namedDecl(unless(hasName("std::move"))), *tmpl)) {
+      MoveSourceRange(arg->getSourceRange());
+    }
   }
 }
 

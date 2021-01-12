@@ -56,6 +56,7 @@ class OrcaTidyTest : public ::testing::Test {
     const char* kOwnerHContent = R"C++(
 #ifndef GPOS_OWNER_H
 #define GPOS_OWNER_H
+#include <utility>  // for move
       namespace gpos {
       template <class T>
       using owner = T;
@@ -2037,6 +2038,7 @@ TEST_F(PropagateTest, paramOwnTailCall) {
       S(U u);
       bool Ok() const;
     };
+    using Q = S<T*, void>;
 
     namespace positive {
     struct R {
@@ -2051,7 +2053,9 @@ TEST_F(PropagateTest, paramOwnTailCall) {
     bool F(T*);
     bool G(T*);
     // be conservative about inferring ownership of function templates
-    bool foo(gpos::owner<T*> t) { return S<T*, void>{t}.Ok(); }
+    bool foo(gpos::owner<T*> t) { return Q{t}.Ok(); }
+    // idempotence: don't move the argument of std::move
+    bool fuzz(gpos::owner<T*> t) { return Q{std::move(t)}.Ok(); }
     // t is referenced more than once, bail
     bool bar(gpos::owner<T*> t) { return F(t) || G(t); }
     }  // namespace negative
@@ -2067,6 +2071,7 @@ TEST_F(PropagateTest, paramOwnTailCall) {
       S(U u);
       bool Ok() const;
     };
+    using Q = S<T*, void>;
 
     namespace positive {
     struct R {
@@ -2083,7 +2088,9 @@ TEST_F(PropagateTest, paramOwnTailCall) {
     bool F(T*);
     bool G(T*);
     // be conservative about inferring ownership of function templates
-    bool foo(gpos::owner<T*> t) { return S<T*, void>{t}.Ok(); }
+    bool foo(gpos::owner<T*> t) { return Q{std::move(t)}.Ok(); }
+    // idempotence: don't move the argument of std::move
+    bool fuzz(gpos::owner<T*> t) { return Q{std::move(t)}.Ok(); }
     // t is referenced more than once, bail
     bool bar(gpos::owner<T*> t) { return F(t) || G(t); }
     }  // namespace negative
