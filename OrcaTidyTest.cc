@@ -13,10 +13,19 @@ class OrcaTidyTest : public ::testing::Test {
   const orca_tidy::ActionOptions action_options_;
 
  public:
-  OrcaTidyTest(orca_tidy::ActionOptions action_options)
+  explicit OrcaTidyTest(orca_tidy::ActionOptions action_options)
       : action_options_(action_options) {}
 
  protected:
+  constexpr static const char* const kPreamble = R"C++(
+#include "CRefCount.h"
+#include "owner.h"
+
+    struct T : gpos::CRefCount<T> {};
+    using U = T;
+    struct S : U {};
+  )C++";
+
   static std::string format(const std::string& code) {
     auto style =
         clang::format::getGoogleStyle(clang::format::FormatStyle::LK_Cpp);
@@ -67,6 +76,8 @@ class OrcaTidyTest : public ::testing::Test {
 #endif
     )C++";
 
+    code = kPreamble + code;
+
     std::unique_ptr<clang::ASTUnit> ast_unit =
         clang::tooling::buildASTFromCodeWithArgs(
             code, {"-std=c++14"}, kSourceFilePath, kToolName,
@@ -104,11 +115,6 @@ struct PropagateTest : OrcaTidyTest {
 
 TEST_F(BaseTest, FieldOwnRelease) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     struct R {
       T* t;
       T* not_released_in_dtor;
@@ -116,11 +122,6 @@ TEST_F(BaseTest, FieldOwnRelease) {
       ~R() { t->Release(); }
     };)C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     struct R {
       gpos::owner<T*> t;
       gpos::owner<T*> not_released_in_dtor;
@@ -130,16 +131,11 @@ TEST_F(BaseTest, FieldOwnRelease) {
 
   auto changed_code = annotateAndFormat(std::move(code));
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, FieldOwnSafeRelease) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     struct R {
       T* t;
       T* not_released_in_dtor;
@@ -148,11 +144,6 @@ TEST_F(BaseTest, FieldOwnSafeRelease) {
     };
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     struct R {
       gpos::owner<T*> t;
       gpos::owner<T*> not_released_in_dtor;
@@ -163,16 +154,11 @@ TEST_F(BaseTest, FieldOwnSafeRelease) {
 
   auto changed_code = annotateAndFormat(std::move(code));
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, ConstQualifiersOnField) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     struct R {
       const T* pc;
       T* const cp;
@@ -182,11 +168,6 @@ TEST_F(BaseTest, ConstQualifiersOnField) {
       ~R() {}
     };)C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     struct R {
       gpos::pointer<const T*> pc;
       gpos::pointer<T*> const cp;
@@ -198,28 +179,23 @@ TEST_F(BaseTest, ConstQualifiersOnField) {
 
   auto changed_code = annotateAndFormat(std::move(code));
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, FieldPoint) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
-    struct U {
+    struct V {
       void Release(int*);
     };
 
-    struct S {
+    struct Q {
       T* t;
     };
 
     struct R {
-      U* u;  // not ref-counted, leave me alone
+      V* v;  // not ref-counted, leave me alone
       T* t;
-      void bar(int* p) { u->Release(p); }
+      void bar(int* p) { v->Release(p); }
       ~R() {}
     };
 
@@ -231,23 +207,18 @@ TEST_F(BaseTest, FieldPoint) {
     DtorOutOfLine::~DtorOutOfLine() {}
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
-    struct U {
+    struct V {
       void Release(int*);
     };
 
-    struct S {
+    struct Q {
       gpos::pointer<T*> t;
     };
 
     struct R {
-      U* u;  // not ref-counted, leave me alone
+      V* v;  // not ref-counted, leave me alone
       gpos::pointer<T*> t;
-      void bar(int* p) { u->Release(p); }
+      void bar(int* p) { v->Release(p); }
       ~R() {}
     };
 
@@ -261,18 +232,12 @@ TEST_F(BaseTest, FieldPoint) {
 
   auto changed_code = annotateAndFormat(std::move(code));
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, FieldPointThroughTypedef) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-
-    struct S {
+    struct Q {
       U* t;
     };
 
@@ -282,13 +247,7 @@ TEST_F(BaseTest, FieldPointThroughTypedef) {
     };
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-
-    struct S {
+    struct Q {
       gpos::pointer<U*> t;
     };
 
@@ -300,55 +259,40 @@ TEST_F(BaseTest, FieldPointThroughTypedef) {
 
   auto changed_code = annotateAndFormat(std::move(code));
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, fieldPointExcludeTemplate) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     template <class U>
-    struct S {
+    struct R {
       T* released;
       T* not_released;
 
-      ~S() { released->Release(); }
+      ~R() { released->Release(); }
     };
 
-    void f(S<T>*) {}
+    void f(R<T>*) {}
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     template <class U>
-    struct S {
+    struct R {
       gpos::owner<T*> released;
       T* not_released;
 
-      ~S() { released->Release(); }
+      ~R() { released->Release(); }
     };
 
-    void f(S<T>*) {}
+    void f(R<T>*) {}
   )C++";
 
   auto changed_code = annotateAndFormat(std::move(code));
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, Idempotence) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     struct R {
       gpos::owner<T*> t;   // don't annotate me again
       gpos::owner<T*> t2;  // don't annotate me again
@@ -362,11 +306,6 @@ TEST_F(BaseTest, Idempotence) {
       }
     };)C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     struct R {
       gpos::owner<T*> t;   // don't annotate me again
       gpos::owner<T*> t2;  // don't annotate me again
@@ -382,34 +321,28 @@ TEST_F(BaseTest, Idempotence) {
 
   auto changed_code = annotateAndFormat(std::move(code));
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, parmOwnRelease) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using S = T;
-
     // leave gpos::SafeRelease alone
     template <class T>
     void gpos::SafeRelease(CRefCount<T>* t) {
       if (t) t->Release();
     }
 
-    void OwnsParam(S* released, S*, int i);
+    void OwnsParam(U* released, U*, int i);
 
-    void OwnsParam(S* released, S* safe_released, int i) {
+    void OwnsParam(U* released, U* safe_released, int i) {
       if (i) {
         released->Release();
         gpos::SafeRelease(safe_released);
       }
     }
 
-    void AlsoOwnsParam(gpos::owner<S*>, gpos::owner<S*>, int);
-    void AlsoOwnsParam(gpos::owner<S*> released, S* safe_released, int i) {
+    void AlsoOwnsParam(gpos::owner<U*>, gpos::owner<U*>, int);
+    void AlsoOwnsParam(gpos::owner<U*> released, U* safe_released, int i) {
       if (i) {
         released->Release();
       } else {
@@ -417,32 +350,26 @@ TEST_F(BaseTest, parmOwnRelease) {
       }
     }
 
-    void OwnsParam(gpos::owner<S*>, gpos::owner<S*>, int);
+    void OwnsParam(gpos::owner<U*>, gpos::owner<U*>, int);
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using S = T;
-
     // leave gpos::SafeRelease alone
     template <class T>
     void gpos::SafeRelease(CRefCount<T>* t) {
       if (t) t->Release();
     }
 
-    void OwnsParam(gpos::owner<S*> released, gpos::owner<S*>, int i);
+    void OwnsParam(gpos::owner<U*> released, gpos::owner<U*>, int i);
 
-    void OwnsParam(gpos::owner<S*> released, gpos::owner<S*> safe_released, int i) {
+    void OwnsParam(gpos::owner<U*> released, gpos::owner<U*> safe_released, int i) {
       if (i) {
         released->Release();
         gpos::SafeRelease(safe_released);
       }
     }
 
-    void AlsoOwnsParam(gpos::owner<S*>, gpos::owner<S*>, int);
-    void AlsoOwnsParam(gpos::owner<S*> released, gpos::owner<S*> safe_released,
+    void AlsoOwnsParam(gpos::owner<U*>, gpos::owner<U*>, int);
+    void AlsoOwnsParam(gpos::owner<U*> released, gpos::owner<U*> safe_released,
                        int i) {
       if (i) {
         released->Release();
@@ -451,31 +378,25 @@ TEST_F(BaseTest, parmOwnRelease) {
       }
     }
 
-    void OwnsParam(gpos::owner<S*>, gpos::owner<S*>, int);
+    void OwnsParam(gpos::owner<U*>, gpos::owner<U*>, int);
   )C++";
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, parmVfunOwnRelease) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using S = T;
-
     struct R {
-      virtual void OwnsParam(S*, gpos::owner<S*>, int);
+      virtual void OwnsParam(U*, gpos::owner<U*>, int);
     };
 
-    struct U : R {
-      void OwnsParam(S* released, S*, int i) override;
+    struct Q : R {
+      void OwnsParam(U* released, U*, int i) override;
     };
 
-    void U::OwnsParam(S* released, S* safe_released, int i) {
+    void Q::OwnsParam(U* released, U* safe_released, int i) {
       if (i) {
         released->Release();
       } else {
@@ -484,21 +405,15 @@ TEST_F(BaseTest, parmVfunOwnRelease) {
     }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using S = T;
-
     struct R {
-      virtual void OwnsParam(gpos::owner<S*>, gpos::owner<S*>, int);
+      virtual void OwnsParam(gpos::owner<U*>, gpos::owner<U*>, int);
     };
 
-    struct U : R {
-      void OwnsParam(gpos::owner<S*> released, gpos::owner<S*>, int i) override;
+    struct Q : R {
+      void OwnsParam(gpos::owner<U*> released, gpos::owner<U*>, int i) override;
     };
 
-    void U::OwnsParam(gpos::owner<S*> released, gpos::owner<S*> safe_released,
+    void Q::OwnsParam(gpos::owner<U*> released, gpos::owner<U*> safe_released,
                       int i) {
       if (i) {
         released->Release();
@@ -510,23 +425,17 @@ TEST_F(BaseTest, parmVfunOwnRelease) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, varOwnRelease) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
+    extern U* global_var;
 
-    struct T : gpos::CRefCount<T> {};
-    using S = T;
-
-    extern S* global_var;
-
-    S* global_var;
+    U* global_var;
 
     void foo() {
-      S* s;
+      U* s;
 
       s->Release();
     }
@@ -534,18 +443,12 @@ TEST_F(BaseTest, varOwnRelease) {
     void Shutdown() { global_var->Release(); }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
+    extern gpos::owner<U*> global_var;
 
-    struct T : gpos::CRefCount<T> {};
-    using S = T;
-
-    extern gpos::owner<S*> global_var;
-
-    gpos::owner<S*> global_var;
+    gpos::owner<U*> global_var;
 
     void foo() {
-      gpos::owner<S*> s;
+      gpos::owner<U*> s;
 
       s->Release();
     }
@@ -555,58 +458,40 @@ TEST_F(BaseTest, varOwnRelease) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, varOwnInitNew) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using S = T;
-    struct U : S {};
     struct R {};
 
     void foo() {
       R *r = new R;  // not ref-counted, leave me alone
-      S *s = new S;
-      S *implicitly_converted = new U;
+      U *s = new U;
+      U *implicitly_converted = new S;
 
-      gpos::owner<S *> annotated = new S;
+      gpos::owner<U *> annotated = new U;
     }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using S = T;
-    struct U : S {};
     struct R {};
 
     void foo() {
       R *r = new R;  // not ref-counted, leave me alone
-      gpos::owner<S *> s = new S;
-      gpos::owner<S *> implicitly_converted = new U;
+      gpos::owner<U *> s = new U;
+      gpos::owner<U *> implicitly_converted = new S;
 
-      gpos::owner<S *> annotated = new S;
+      gpos::owner<U *> annotated = new U;
     }
   )C++";
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, varOwnAssignNew) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-    struct S : U {};
     struct R {};
 
     void foo() {
@@ -622,12 +507,6 @@ TEST_F(BaseTest, varOwnAssignNew) {
     }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-    struct S : U {};
     struct R {};
 
     void foo() {
@@ -645,18 +524,11 @@ TEST_F(BaseTest, varOwnAssignNew) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, paramOwnAssignNew) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-    struct S : U {};
-
     struct R {
       virtual void foo(R *, S *, U *, gpos::owner<S *>);
     };
@@ -678,13 +550,6 @@ TEST_F(BaseTest, paramOwnAssignNew) {
     void bar(U *u) { u = new S; }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-    struct S : U {};
-
     struct R {
       virtual void foo(R *, gpos::owner<S *>, gpos::owner<U *>, gpos::owner<S *>);
     };
@@ -709,18 +574,11 @@ TEST_F(BaseTest, paramOwnAssignNew) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, retOwnAddRefReturnVar) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-    struct S : T {};
-
     S *global;
     U *GetT();
     void F(U *);
@@ -737,13 +595,6 @@ TEST_F(BaseTest, retOwnAddRefReturnVar) {
     }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-    struct S : T {};
-
     S *global;
     gpos::owner<U *> GetT();
     void F(U *);
@@ -762,18 +613,11 @@ TEST_F(BaseTest, retOwnAddRefReturnVar) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, retOwnAddRefReturnField) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-    struct S : T {};
-
     struct R {
       gpos::pointer<S *> s;
       U *GetT();
@@ -794,13 +638,6 @@ TEST_F(BaseTest, retOwnAddRefReturnField) {
     }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-    struct S : T {};
-
     struct R {
       gpos::pointer<S *> s;
       gpos::owner<U *> GetT();
@@ -823,18 +660,11 @@ TEST_F(BaseTest, retOwnAddRefReturnField) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, varPointAddRefReturn) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-    struct S : T {};
-
     U *F();
 
     gpos::owner<U *> foo(int i, bool b, S *param) {
@@ -853,13 +683,6 @@ TEST_F(BaseTest, varPointAddRefReturn) {
     }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-    struct S : T {};
-
     U *F();
 
     gpos::owner<U *> foo(int i, bool b, gpos::pointer<S *> param) {
@@ -880,26 +703,20 @@ TEST_F(BaseTest, varPointAddRefReturn) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, parmVfunPointAddRefReturn) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-
     struct R {
       virtual U* OwnsParam(U*, gpos::pointer<U*>, int);
     };
 
-    struct S : R {
+    struct Q : R {
       gpos::owner<U*> OwnsParam(U* p, U*, int i) override;
     };
 
-    gpos::owner<U*> S::OwnsParam(U* p, U* annotated_in_base, int i) {
+    gpos::owner<U*> Q::OwnsParam(U* p, U* annotated_in_base, int i) {
       if (i) {
         p->AddRef();
         return p;
@@ -910,22 +727,16 @@ TEST_F(BaseTest, parmVfunPointAddRefReturn) {
     }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-
     struct R {
       virtual U* OwnsParam(gpos::pointer<U*>, gpos::pointer<U*>, int);
     };
 
-    struct S : R {
+    struct Q : R {
       gpos::owner<U*> OwnsParam(gpos::pointer<U*> p, gpos::pointer<U*>,
                                 int i) override;
     };
 
-    gpos::owner<U*> S::OwnsParam(gpos::pointer<U*> p,
+    gpos::owner<U*> Q::OwnsParam(gpos::pointer<U*> p,
                                  gpos::pointer<U*> annotated_in_base, int i) {
       if (i) {
         p->AddRef();
@@ -939,16 +750,11 @@ TEST_F(BaseTest, parmVfunPointAddRefReturn) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, varPointAddRefReturnNegativeCases) {
   std::string global_var = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     T* F();
 
     gpos::pointer<T*> F();
@@ -961,11 +767,6 @@ TEST_F(BaseTest, varPointAddRefReturnNegativeCases) {
     }
   )C++",
               common_add_ref = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     T* F();
 
     gpos::pointer<T*> F();
@@ -988,11 +789,6 @@ TEST_F(BaseTest, varPointAddRefReturnNegativeCases) {
   )C++",
               two_face = R"C++(
 #include <cstddef>
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     gpos::pointer<T*> F(int);
     gpos::owner<T*> G(int);
 
@@ -1026,20 +822,16 @@ TEST_F(BaseTest, varPointAddRefReturnNegativeCases) {
   for (const auto& code : {global_var, common_add_ref, two_face}) {
     auto changed_code = annotateAndFormat(code);
 
-    ASSERT_EQ(format(code), changed_code);
+    ASSERT_EQ(format(kPreamble + code), changed_code);
   }
 }
 
 TEST_F(BaseTest, retPointField) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    struct S {};
+    struct Q {};
 
     struct R {
-      S* s;
+      Q* s;
       gpos::owner<T*> t;
       gpos::pointer<T*> p;
 
@@ -1054,22 +846,18 @@ TEST_F(BaseTest, retPointField) {
       ~R() { t->Release(); }
     };
 
-    struct U {
+    struct P {
       gpos::pointer<T*> p;
     };
-    struct V : U {
+    struct V : P {
       T* GetP() { return p; }
     };
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    struct S {};
+    struct Q {};
 
     struct R {
-      S* s;
+      Q* s;
       gpos::owner<T*> t;
       gpos::pointer<T*> p;
 
@@ -1084,26 +872,21 @@ TEST_F(BaseTest, retPointField) {
       ~R() { t->Release(); }
     };
 
-    struct U {
+    struct P {
       gpos::pointer<T*> p;
     };
-    struct V : U {
+    struct V : P {
       gpos::pointer<T*> GetP() { return p; }
     };
   )C++";
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, retPointFieldQualifiers) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     struct R {
       gpos::owner<T*> t;
 
@@ -1114,11 +897,6 @@ TEST_F(BaseTest, retPointFieldQualifiers) {
     };
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     struct R {
       gpos::owner<T*> t;
 
@@ -1131,19 +909,11 @@ TEST_F(BaseTest, retPointFieldQualifiers) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(BaseTest, retOwnNew) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-
-    struct S : U {};
-
     struct R {};
 
     R* foo() { return new R; }  // not ref counted, leave me alone
@@ -1155,14 +925,6 @@ TEST_F(BaseTest, retOwnNew) {
     U* implicitly_cast() { return new S; }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-
-    struct S : U {};
-
     struct R {};
 
     R* foo() { return new R; }  // not ref counted, leave me alone
@@ -1176,60 +938,48 @@ TEST_F(BaseTest, retOwnNew) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, retOwnVar) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using S = T;
-
-    gpos::owner<S*> global;
+    gpos::owner<U*> global;
 
     // returns pointer
-    S* GetGlobal() { return global; }
-    S* Unannotated();               // annotate me too
-    gpos::owner<S*> Unannotated();  // leave me alone
+    U* GetGlobal() { return global; }
+    U* Unannotated();               // annotate me too
+    gpos::owner<U*> Unannotated();  // leave me alone
 
-    gpos::owner<S*> Annotated()  // leave me alone
+    gpos::owner<U*> Annotated()  // leave me alone
     {
-      gpos::owner<S*> o;
+      gpos::owner<U*> o;
 
       return o;
     }
 
-    S* Unannotated() {
-      gpos::owner<S*> o;
+    U* Unannotated() {
+      gpos::owner<U*> o;
 
       return o;
     }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using S = T;
-
-    gpos::owner<S*> global;
+    gpos::owner<U*> global;
 
     // returns pointer
-    S* GetGlobal() { return global; }
-    gpos::owner<S*> Unannotated();  // annotate me too
-    gpos::owner<S*> Unannotated();  // leave me alone
+    U* GetGlobal() { return global; }
+    gpos::owner<U*> Unannotated();  // annotate me too
+    gpos::owner<U*> Unannotated();  // leave me alone
 
-    gpos::owner<S*> Annotated()  // leave me alone
+    gpos::owner<U*> Annotated()  // leave me alone
     {
-      gpos::owner<S*> o;
+      gpos::owner<U*> o;
 
       return o;
     }
 
-    gpos::owner<S*> Unannotated() {
-      gpos::owner<S*> o;
+    gpos::owner<U*> Unannotated() {
+      gpos::owner<U*> o;
 
       return o;
     }
@@ -1237,47 +987,35 @@ TEST_F(PropagateTest, retOwnVar) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, retOwnFunc) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
+    gpos::owner<U*> F();
 
-    struct T : gpos::CRefCount<T> {};
-    using S = T;
-
-    gpos::owner<S*> F();
-
-    gpos::owner<S*> Unannotated(int);  // leave me alone
-    S* Unannotated(int);               // annotate me too
-    S* Unannotated(int i) {
+    gpos::owner<U*> Unannotated(int);  // leave me alone
+    U* Unannotated(int);               // annotate me too
+    U* Unannotated(int i) {
       if (i == 0) return F();
       return nullptr;
     }
-    gpos::owner<S*> Annotated(int i)  // leave me alone
+    gpos::owner<U*> Annotated(int i)  // leave me alone
     {
       if (i == 42) return F();
       return nullptr;
     }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
+    gpos::owner<U*> F();
 
-    struct T : gpos::CRefCount<T> {};
-    using S = T;
-
-    gpos::owner<S*> F();
-
-    gpos::owner<S*> Unannotated(int);  // leave me alone
-    gpos::owner<S*> Unannotated(int);  // annotate me too
-    gpos::owner<S*> Unannotated(int i) {
+    gpos::owner<U*> Unannotated(int);  // leave me alone
+    gpos::owner<U*> Unannotated(int);  // annotate me too
+    gpos::owner<U*> Unannotated(int i) {
       if (i == 0) return F();
       return nullptr;
     }
-    gpos::owner<S*> Annotated(int i)  // leave me alone
+    gpos::owner<U*> Annotated(int i)  // leave me alone
     {
       if (i == 42) return F();
       return nullptr;
@@ -1286,40 +1024,28 @@ TEST_F(PropagateTest, retOwnFunc) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, vfunRetUp) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-
-    struct S {
+    struct Q {
       virtual U* foo();
       virtual U* bar();
     };
 
-    struct R : S {
+    struct R : Q {
       gpos::owner<U*> foo() override;
       gpos::pointer<U*> bar() override;
     };
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-
-    struct S {
+    struct Q {
       virtual gpos::owner<U*> foo();
       virtual gpos::pointer<U*> bar();
     };
 
-    struct R : S {
+    struct R : Q {
       gpos::owner<U*> foo() override;
       gpos::pointer<U*> bar() override;
     };
@@ -1327,82 +1053,58 @@ TEST_F(PropagateTest, vfunRetUp) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, vfunRetDown) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-
-    struct S {
+    struct Q {
       virtual gpos::owner<U*> foo();
       virtual gpos::pointer<U*> bar();
     };
 
-    struct R : S {
+    struct R : Q {
       gpos::owner<U*> foo() override;
       U* bar() override;
     };
 
-    U* S::foo() { return nullptr; }
+    U* Q::foo() { return nullptr; }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-
-    struct S {
+    struct Q {
       virtual gpos::owner<U*> foo();
       virtual gpos::pointer<U*> bar();
     };
 
-    struct R : S {
+    struct R : Q {
       gpos::owner<U*> foo() override;
       gpos::pointer<U*> bar() override;
     };
 
-    gpos::owner<U*> S::foo() { return nullptr; }
+    gpos::owner<U*> Q::foo() { return nullptr; }
   )C++";
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, vfunParmDown) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-
-    struct S {
+    struct Q {
       virtual void foo(gpos::owner<U*>, gpos::owner<U*>, gpos::pointer<U*>);
     };
 
-    struct R : S {
+    struct R : Q {
       void foo(U* u, gpos::owner<U*> annotated, U* p) override;
     };
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-
-    struct S {
+    struct Q {
       virtual void foo(gpos::owner<U*>, gpos::owner<U*>, gpos::pointer<U*>);
     };
 
-    struct R : S {
+    struct R : Q {
       void foo(gpos::owner<U*> u, gpos::owner<U*> annotated,
                gpos::pointer<U*> p) override;
     };
@@ -1410,16 +1112,11 @@ TEST_F(PropagateTest, vfunParmDown) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, retPointOwnField) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     gpos::pointer<T*> CalculateT();
     struct R {
       gpos::owner<T*> t;
@@ -1434,7 +1131,7 @@ TEST_F(PropagateTest, retPointOwnField) {
       ~R() { gpos::SafeRelease(t); }
     };
 
-    struct S : R {
+    struct Q : R {
       T* GetT() {
         gpos::SafeRelease(t);
         t = CalculateT();
@@ -1443,11 +1140,6 @@ TEST_F(PropagateTest, retPointOwnField) {
     };
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     gpos::pointer<T*> CalculateT();
     struct R {
       gpos::owner<T*> t;
@@ -1462,7 +1154,7 @@ TEST_F(PropagateTest, retPointOwnField) {
       ~R() { gpos::SafeRelease(t); }
     };
 
-    struct S : R {
+    struct Q : R {
       gpos::pointer<T*> GetT() {
         gpos::SafeRelease(t);
         t = CalculateT();
@@ -1473,23 +1165,18 @@ TEST_F(PropagateTest, retPointOwnField) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, retPointPointField) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     gpos::owner<T*> MakeT();
     gpos::pointer<T*> GetT();
     struct R {
       gpos::pointer<T*> t;
     };
 
-    struct S : R {
+    struct Q : R {
       T* GetT() { return t; }
       T* CreateT() {
         t = MakeT();
@@ -1498,18 +1185,13 @@ TEST_F(PropagateTest, retPointPointField) {
     };
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     gpos::owner<T*> MakeT();
     gpos::pointer<T*> GetT();
     struct R {
       gpos::pointer<T*> t;
     };
 
-    struct S : R {
+    struct Q : R {
       gpos::pointer<T*> GetT() { return t; }
       T* CreateT() {
         t = MakeT();
@@ -1520,17 +1202,11 @@ TEST_F(PropagateTest, retPointPointField) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, varOwnInitAssignOwnFunc) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    struct S : T {};
-
     gpos::owner<T *> MakeT(int);
     gpos::pointer<T *> GetT();
 
@@ -1547,12 +1223,6 @@ TEST_F(PropagateTest, varOwnInitAssignOwnFunc) {
     };
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    struct S : T {};
-
     gpos::owner<T *> MakeT(int);
     gpos::pointer<T *> GetT();
 
@@ -1571,16 +1241,11 @@ TEST_F(PropagateTest, varOwnInitAssignOwnFunc) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, paramOwnInitAssignOwnFunc) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     gpos::owner<T *> MakeT(int i = 42);
     gpos::pointer<T *> GetT();
 
@@ -1603,11 +1268,6 @@ TEST_F(PropagateTest, paramOwnInitAssignOwnFunc) {
     }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     gpos::owner<T *> MakeT(int i = 42);
     gpos::pointer<T *> GetT();
 
@@ -1635,27 +1295,17 @@ TEST_F(PropagateTest, paramOwnInitAssignOwnFunc) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, paramTypeAmongRedecls) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     // another TU annotated our params
     void F(gpos::owner<T*>, gpos::pointer<T*>);
 
     void F(T* p, T* q);
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     // another TU annotated our params
     void F(gpos::owner<T*>, gpos::pointer<T*>);
 
@@ -1664,17 +1314,11 @@ TEST_F(PropagateTest, paramTypeAmongRedecls) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, paramOwnNew) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    struct S : T {};
-
     template <class U, class CleanupFn>
     struct R {
       R(T*);
@@ -1695,12 +1339,6 @@ TEST_F(PropagateTest, paramOwnNew) {
     }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    struct S : T {};
-
     template <class U, class CleanupFn>
     struct R {
       R(T*);
@@ -1723,17 +1361,11 @@ TEST_F(PropagateTest, paramOwnNew) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, paramOwnFunc) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    struct S : T {};
-
     template <class U, class CleanupFn>
     struct R {
       R(T*);
@@ -1757,12 +1389,6 @@ TEST_F(PropagateTest, paramOwnFunc) {
     }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    struct S : T {};
-
     template <class U, class CleanupFn>
     struct R {
       R(T*);
@@ -1788,32 +1414,28 @@ TEST_F(PropagateTest, paramOwnFunc) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, varMoveOwnTailCall) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    struct S : T {
-      S(int, gpos::owner<T*>);
-      S(gpos::pointer<T*>);
+    struct R : T {
+      R(int, gpos::owner<T*>);
+      R(gpos::pointer<T*>);
     };
 
     bool F(gpos::owner<T*>);
-    bool G(gpos::owner<S*>);
+    bool G(gpos::owner<R*>);
     gpos::pointer<T*> H(bool);
-    bool foo(int, S*, S*);
+    bool foo(int, R*, R*);
 
-    bool foo(int i, S* s, S* added_ref) {
+    bool foo(int i, R* r, R* added_ref) {
       T* t = nullptr;
       switch (i) {
         default:
-          return F(s);
+          return F(r);
         case 42:
-          return G(s);
+          return G(r);
         case 41: {
           added_ref->AddRef();
           bool b = G(added_ref);
@@ -1825,36 +1447,32 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
       }
     }
 
-    gpos::pointer<T*> bar(S* s) { return H(F(s)); }
-    bool bazz(T* t) { return G(new S(42, t)); }
-    bool jazz(T* t, S* s) { return F(t) && H(G(s)); }
+    gpos::pointer<T*> bar(R* r) { return H(F(r)); }
+    bool bazz(T* t) { return G(new R(42, t)); }
+    bool jazz(T* t, R* r) { return F(t) && H(G(r)); }
 
-    // a reference to s cannot be replaced with a move here, because there are
+    // a reference to r cannot be replaced with a move here, because there are
     // multiple of them.
-    bool fuzz(S* s) { return G(new S(s)) || F(s); }
+    bool fuzz(R* r) { return G(new R(r)) || F(r); }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    struct S : T {
-      S(int, gpos::owner<T*>);
-      S(gpos::pointer<T*>);
+    struct R : T {
+      R(int, gpos::owner<T*>);
+      R(gpos::pointer<T*>);
     };
 
     bool F(gpos::owner<T*>);
-    bool G(gpos::owner<S*>);
+    bool G(gpos::owner<R*>);
     gpos::pointer<T*> H(bool);
-    bool foo(int, gpos::owner<S*>, S*);
+    bool foo(int, gpos::owner<R*>, R*);
 
-    bool foo(int i, gpos::owner<S*> s, S* added_ref) {
+    bool foo(int i, gpos::owner<R*> r, R* added_ref) {
       gpos::owner<T*> t = nullptr;
       switch (i) {
         default:
-          return F(std::move(s));
+          return F(std::move(r));
         case 42:
-          return G(std::move(s));
+          return G(std::move(r));
         case 41: {
           added_ref->AddRef();
           bool b = G(added_ref);
@@ -1866,30 +1484,24 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
       }
     }
 
-    gpos::pointer<T*> bar(gpos::owner<S*> s) { return H(F(std::move(s))); }
-    bool bazz(gpos::owner<T*> t) { return G(new S(42, std::move(t))); }
-    bool jazz(gpos::owner<T*> t, gpos::owner<S*> s) {
-      return F(std::move(t)) && H(G(std::move(s)));
+    gpos::pointer<T*> bar(gpos::owner<R*> r) { return H(F(std::move(r))); }
+    bool bazz(gpos::owner<T*> t) { return G(new R(42, std::move(t))); }
+    bool jazz(gpos::owner<T*> t, gpos::owner<R*> r) {
+      return F(std::move(t)) && H(G(std::move(r)));
     }
 
-    // a reference to s cannot be replaced with a move here, because there are
+    // a reference to r cannot be replaced with a move here, because there are
     // multiple of them.
-    bool fuzz(S* s) { return G(new S(s)) || F(s); }
+    bool fuzz(R* r) { return G(new R(r)) || F(r); }
   )C++";
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, varPointTailCall) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    struct S : T {};
-
     struct R {
       R(gpos::pointer<T*>);
       R(int, gpos::owner<T*>);
@@ -1915,12 +1527,6 @@ TEST_F(PropagateTest, varPointTailCall) {
     }
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-    struct S : T {};
-
     struct R {
       R(gpos::pointer<T*>);
       R(int, gpos::owner<T*>);
@@ -1948,19 +1554,14 @@ TEST_F(PropagateTest, varPointTailCall) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, paramPointTailCall) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     T* Unannotated();
     template <class U, class CleanupFn>
-    struct S {
+    struct P {
       bool bar(U);
     };
 
@@ -1981,22 +1582,17 @@ TEST_F(PropagateTest, paramPointTailCall) {
 
     bool foo(gpos::pointer<T*> param, gpos::pointer<T*> t) {
       gpos::pointer<T*> var;
-      S<T*, void> s;
+      P<T*, void> p;
       var = Unannotated();
       param->AddRef();
-      return F(param, R(var)) || s.bar(t);
+      return F(param, R(var)) || p.bar(t);
     }
     }  // namespace negative
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     T* Unannotated();
     template <class U, class CleanupFn>
-    struct S {
+    struct P {
       bool bar(U);
     };
 
@@ -2017,32 +1613,27 @@ TEST_F(PropagateTest, paramPointTailCall) {
 
     bool foo(gpos::pointer<T*> param, gpos::pointer<T*> t) {
       gpos::pointer<T*> var;
-      S<T*, void> s;
+      P<T*, void> p;
       var = Unannotated();
       param->AddRef();
-      return F(param, R(var)) || s.bar(t);
+      return F(param, R(var)) || p.bar(t);
     }
     }  // namespace negative
   )C++";
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
 TEST_F(PropagateTest, paramOwnTailCall) {
   std::string code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     template <class U, class CleanupFn>
-    struct S {
-      S(U u);
+    struct P {
+      P(U u);
       bool Ok() const;
     };
-    using Q = S<T*, void>;
+    using Q = P<T*, void>;
 
     namespace positive {
     struct R {
@@ -2065,17 +1656,12 @@ TEST_F(PropagateTest, paramOwnTailCall) {
     }  // namespace negative
   )C++",
               expected_changed_code = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
-
-    struct T : gpos::CRefCount<T> {};
-
     template <class U, class CleanupFn>
-    struct S {
-      S(U u);
+    struct P {
+      P(U u);
       bool Ok() const;
     };
-    using Q = S<T*, void>;
+    using Q = P<T*, void>;
 
     namespace positive {
     struct R {
@@ -2102,5 +1688,5 @@ TEST_F(PropagateTest, paramOwnTailCall) {
 
   auto changed_code = annotateAndFormat(code);
 
-  ASSERT_EQ(format(expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
