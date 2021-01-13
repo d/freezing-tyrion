@@ -619,42 +619,42 @@ TEST_F(BaseTest, retOwnAddRefReturnVar) {
 TEST_F(BaseTest, retOwnAddRefReturnField) {
   std::string code = R"C++(
     struct R {
-      gpos::pointer<S *> s;
-      U *GetT();
+      gpos::pointer<U *> u;
+      S *GetS();
       U *NotSure();
     };
 
     void F(U *);
 
-    U *R::GetT() {
-      s->AddRef();
-      return s;
+    S *R::GetS() {
+      u->AddRef();
+      return static_cast<S *>(u);
     }
 
     U *R::NotSure() {
-      s->AddRef();
-      F(s);
-      return s;
+      u->AddRef();
+      F(u);
+      return u;
     }
   )C++",
               expected_changed_code = R"C++(
     struct R {
-      gpos::pointer<S *> s;
-      gpos::owner<U *> GetT();
+      gpos::pointer<U *> u;
+      gpos::owner<S *> GetS();
       U *NotSure();
     };
 
     void F(U *);
 
-    gpos::owner<U *> R::GetT() {
-      s->AddRef();
-      return s;
+    gpos::owner<S *> R::GetS() {
+      u->AddRef();
+      return static_cast<S *>(u);
     }
 
     U *R::NotSure() {
-      s->AddRef();
-      F(s);
-      return s;
+      u->AddRef();
+      F(u);
+      return u;
     }
   )C++";
 
@@ -667,37 +667,27 @@ TEST_F(BaseTest, varPointAddRefReturn) {
   std::string code = R"C++(
     U *F();
 
-    gpos::owner<U *> foo(int i, bool b, S *param) {
+    gpos::owner<S *> foo(int i, bool b, S *param) {
       U *u = F();
-      U *null_checked = F();
-      if (null_checked) {
-        null_checked->AddRef();
-        return null_checked;
-      }
       if (i < 42) {
-        u->AddRef();
-        return u;
+        param->AddRef();
+        return param;
       }
-      param->AddRef();
-      return param;
+      u->AddRef();
+      return static_cast<S *>(u);
     }
   )C++",
               expected_changed_code = R"C++(
     U *F();
 
-    gpos::owner<U *> foo(int i, bool b, gpos::pointer<S *> param) {
+    gpos::owner<S *> foo(int i, bool b, gpos::pointer<S *> param) {
       gpos::pointer<U *> u = F();
-      gpos::pointer<U *> null_checked = F();
-      if (null_checked) {
-        null_checked->AddRef();
-        return null_checked;
-      }
       if (i < 42) {
-        u->AddRef();
-        return u;
+        param->AddRef();
+        return param;
       }
-      param->AddRef();
-      return param;
+      u->AddRef();
+      return static_cast<S *>(u);
     }
   )C++";
 

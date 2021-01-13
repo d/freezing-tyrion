@@ -743,7 +743,7 @@ void Annotator::AnnotateBaseCases() const {
 
   for (auto [v, f] : NodesFromMatch<clang::VarDecl, clang::FunctionDecl>(
            returnStmt(returnStmt().bind("return"),
-                      hasReturnValue(ignoringParenImpCasts(
+                      hasReturnValue(ignoringParenCasts(
                           declRefExpr(to(varDecl().bind("var"))))),
                       hasParent(compoundStmt(HasBoundStmtImmediatelyFollowing(
                           "return",
@@ -761,7 +761,7 @@ void Annotator::AnnotateBaseCases() const {
 
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
            returnStmt(returnStmt().bind("return"),
-                      hasReturnValue(ignoringParenImpCasts(
+                      hasReturnValue(ignoringParenCasts(
                           FieldReferenceFor(fieldDecl().bind("field")))),
                       hasParent(compoundStmt(HasBoundStmtImmediatelyFollowing(
                           "return", AddRefOn(FieldReferenceFor(
