@@ -231,25 +231,33 @@ struct Annotator {
     return node_set;
   }
 
-  auto RefCountVarInitializedOrAssigned(
-      ExpressionMatcher const& init_expr_matcher) const {
+  using VarMatcher = decltype(hasLocalStorage());
+  auto VarInitializedOrAssigned(const VarMatcher& var_matcher,
+                                const ExpressionMatcher& expr_matcher) const {
     // We're not quite ready to handle multiple-declaration yet, so here's a
     // best effort to walk (carefully) around them. Amazingly, this doesn't seem
     // to disrupt any of the base cases.
+    auto not_in_multi_decl =
+        unless(hasParent(declStmt(unless(declCountIs(1)))));
 
-    auto refcount_var =
-        varDecl(hasType(RefCountPointerType()),
-                unless(hasParent(declStmt(unless(declCountIs(1))))));
+    return varDecl(
+        not_in_multi_decl,
+        anyOf(allOf(var_matcher,
+                    hasInitializer(ignoringParenCasts(expr_matcher))),
+              IsInSet(DeclSetFromMatch(
+                  binaryOperator(
+                      hasOperatorName("="),
+                      hasOperands(
+                          declRefExpr(to(varDecl(not_in_multi_decl, var_matcher)
+                                             .bind("owner_var"))),
+                          ignoringParenCasts(expr_matcher))),
+                  "owner_var"))));
+  }
 
-    return varDecl(anyOf(
-        allOf(refcount_var,
-              hasInitializer(ignoringParenImpCasts(init_expr_matcher))),
-        IsInSet(DeclSetFromMatch(
-            binaryOperator(
-                hasOperatorName("="),
-                hasOperands(declRefExpr(to(refcount_var.bind("owner_var"))),
-                            ignoringParenImpCasts(init_expr_matcher))),
-            "owner_var"))));
+  auto RefCountVarInitializedOrAssigned(
+      ExpressionMatcher const& expr_matcher) const {
+    return VarInitializedOrAssigned(hasType(RefCountPointerType()),
+                                    expr_matcher);
   }
 
   auto FieldReleased() const {

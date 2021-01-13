@@ -1529,6 +1529,7 @@ TEST_F(PropagateTest, varOwnInitAssignOwnFunc) {
 #include "owner.h"
 
     struct T : gpos::CRefCount<T> {};
+    struct S : T {};
 
     gpos::owner<T *> MakeT(int);
     gpos::pointer<T *> GetT();
@@ -1541,6 +1542,7 @@ TEST_F(PropagateTest, varOwnInitAssignOwnFunc) {
         T *var_init_own_func = MakeT(i);
         T *var_assign_own_func = MakeT(i);
         T *var_init_point_func = GetT();
+        S *var_init_cast_own_func = static_cast<S *>(MakeT(i));
       }
     };
   )C++",
@@ -1549,6 +1551,7 @@ TEST_F(PropagateTest, varOwnInitAssignOwnFunc) {
 #include "owner.h"
 
     struct T : gpos::CRefCount<T> {};
+    struct S : T {};
 
     gpos::owner<T *> MakeT(int);
     gpos::pointer<T *> GetT();
@@ -1561,6 +1564,7 @@ TEST_F(PropagateTest, varOwnInitAssignOwnFunc) {
         gpos::owner<T *> var_init_own_func = MakeT(i);
         gpos::owner<T *> var_assign_own_func = MakeT(i);
         T *var_init_point_func = GetT();
+        gpos::owner<S *> var_init_cast_own_func = static_cast<S *>(MakeT(i));
       }
     };
   )C++";
