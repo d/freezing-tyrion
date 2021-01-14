@@ -1,117 +1,76 @@
-#include <iterator>
-#include <utility>
-#include "OrcaTidy.h"
-#include "clang/Format/Format.h"
-#include "clang/Tooling/CommonOptionsParser.h"
-#include "clang/Tooling/Refactoring.h"
+#include "OrcaTidyTest.h"
 
-#include "gtest/gtest.h"
+namespace orca_tidy {
+std::string OrcaTidyTest::format(const std::string& code) {
+  auto style =
+      clang::format::getGoogleStyle(clang::format::FormatStyle::LK_Cpp);
+  auto format_changes = clang::format::reformat(
+      style, code, {{0, (unsigned int)code.size()}}, kSourceFilePath);
 
-class OrcaTidyTest : public ::testing::Test {
- protected:
-  constexpr static const char* const kSourceFilePath = "/tmp/foo.cc";
-  const orca_tidy::ActionOptions action_options_;
+  auto changed_code =
+      clang::tooling::applyAllReplacements(code, format_changes);
+  // FIXME: maybe a proper error / expected style code here?
+  if (!changed_code) std::terminate();
+  return changed_code.get();
+}
 
- public:
-  explicit OrcaTidyTest(orca_tidy::ActionOptions action_options)
-      : action_options_(action_options) {}
+std::string OrcaTidyTest::runToolOverCode(std::string code) {
+  std::map<std::string, clang::tooling::Replacements> file_to_replaces;
 
- protected:
-  constexpr static const char* const kPreamble = R"C++(
-#include "CRefCount.h"
-#include "owner.h"
+  orca_tidy::AnnotateAction action(file_to_replaces, action_options_);
+  auto ast_consumer = action.newASTConsumer();
 
-    struct T : gpos::CRefCount<T> {};
-    using U = T;
-    struct S : U {};
-  )C++";
-
-  static std::string format(const std::string& code) {
-    auto style =
-        clang::format::getGoogleStyle(clang::format::FormatStyle::LK_Cpp);
-    auto format_changes = clang::format::reformat(
-        style, code, {{0, (unsigned int)code.size()}}, kSourceFilePath);
-
-    auto changed_code =
-        clang::tooling::applyAllReplacements(code, format_changes);
-    // FIXME: maybe a proper error / expected style code here?
-    if (!changed_code) std::terminate();
-    return changed_code.get();
-  }
-
-  std::string runToolOverCode(std::string code) {
-    std::map<std::string, clang::tooling::Replacements> file_to_replaces;
-
-    orca_tidy::AnnotateAction action(file_to_replaces, action_options_);
-    auto ast_consumer = action.newASTConsumer();
-
-    const auto* kToolName = "annotate";
-    const char* kRefCountHContent = R"C++(
+  const auto* kToolName = "annotate";
+  const char* kRefCountHContent = R"C++(
 #ifndef GPOS_CREFCOUNT_H
 #define GPOS_CREFCOUNT_H
-      namespace gpos {
-      template <class Derived>
-      struct CRefCount {
-        void Release();
-        void AddRef();
-      };
+    namespace gpos {
+    template <class Derived>
+    struct CRefCount {
+      void Release();
+      void AddRef();
+    };
 
-      template <class T>
-      void SafeRelease(CRefCount<T> *);
-      }  // namespace gpos
+    template <class T>
+    void SafeRelease(CRefCount<T> *);
+    }  // namespace gpos
 #endif
-    )C++";
+  )C++";
 
-    const char* kOwnerHContent = R"C++(
+  const char* kOwnerHContent = R"C++(
 #ifndef GPOS_OWNER_H
 #define GPOS_OWNER_H
 #include <utility>  // for move
-      namespace gpos {
-      template <class T>
-      using owner = T;
+    namespace gpos {
+    template <class T>
+    using owner = T;
 
-      template <class T>
-      using pointer = T;
-      }  // namespace gpos
+    template <class T>
+    using pointer = T;
+    }  // namespace gpos
 #endif
-    )C++";
+  )C++";
 
-    code = kPreamble + code;
+  code = kPreamble + code;
 
-    std::unique_ptr<clang::ASTUnit> ast_unit =
-        clang::tooling::buildASTFromCodeWithArgs(
-            code, {"-std=c++14"}, kSourceFilePath, kToolName,
-            std::make_shared<clang::PCHContainerOperations>(),
-            clang::tooling::getClangStripDependencyFileAdjuster(),
-            {{"/tmp/CRefCount.h", kRefCountHContent},
-             {"/tmp/owner.h", kOwnerHContent}});
+  std::unique_ptr<clang::ASTUnit> ast_unit =
+      clang::tooling::buildASTFromCodeWithArgs(
+          code, {"-std=c++14"}, kSourceFilePath, kToolName,
+          std::make_shared<clang::PCHContainerOperations>(),
+          clang::tooling::getClangStripDependencyFileAdjuster(),
+          {{"/tmp/CRefCount.h", kRefCountHContent},
+           {"/tmp/owner.h", kOwnerHContent}});
 
-    ast_consumer->HandleTranslationUnit(ast_unit->getASTContext());
+  ast_consumer->HandleTranslationUnit(ast_unit->getASTContext());
 
-    if (file_to_replaces.empty()) return code;
-    const auto& replacements = file_to_replaces.begin()->second;
+  if (file_to_replaces.empty()) return code;
+  const auto& replacements = file_to_replaces.begin()->second;
 
-    auto changed_code =
-        clang::tooling::applyAllReplacements(code, replacements);
-    if (!changed_code) std::terminate();
+  auto changed_code = clang::tooling::applyAllReplacements(code, replacements);
+  if (!changed_code) std::terminate();
 
-    return changed_code.get();
-  }
-
-  std::string annotateAndFormat(std::string code) {
-    return format(runToolOverCode(std::move(code)));
-  }
-
- public:
-};
-
-struct BaseTest : OrcaTidyTest {
-  BaseTest() : OrcaTidyTest({true, false}) {}
-};
-
-struct PropagateTest : OrcaTidyTest {
-  PropagateTest() : OrcaTidyTest({false, true}) {}
-};
+  return changed_code.get();
+}
 
 TEST_F(BaseTest, FieldOwnRelease) {
   std::string code = R"C++(
@@ -1680,3 +1639,4 @@ TEST_F(PropagateTest, paramOwnTailCall) {
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
+}  // namespace orca_tidy
