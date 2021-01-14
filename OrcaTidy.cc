@@ -862,6 +862,8 @@ void Annotator::PropagateFunctionPointers() const {
     if (IsOwner(rt)) {
       AnnotateSourceRange(rt_range, kOwnerAnnotation);
     } else if (IsPointer(rt)) {
+      if (rt->getPointeeType().isConstQualified())
+        FindConstTokenBefore(td->getBeginLoc(), rt_range);
       AnnotateSourceRange(rt_range, kPointerAnnotation);
     }
   }

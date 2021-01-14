@@ -58,4 +58,23 @@ TEST_F(PropagateTest, fRet) {
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
+
+TEST_F(PropagateTest, fRetConst) {
+  std::string code = R"C++(
+    gpos::pointer<const T*> G();
+    typedef const T* FPT();
+
+    void f() { FPT* pp = G; }
+  )C++",
+              expected_changed_code = R"C++(
+    gpos::pointer<const T*> G();
+    typedef gpos::pointer<const T*> FPT();
+
+    void f() { FPT* pp = G; }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
 }  // namespace orca_tidy
