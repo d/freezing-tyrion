@@ -463,6 +463,7 @@ struct Annotator {
                    const char* annotation) const;
   void MoveSourceRange(clang::SourceRange source_range) const;
   void PropagateTailCall() const;
+  void PropagateFunctionPointers() const;
 };
 
 void Annotator::Propagate() const {
@@ -577,6 +578,8 @@ void Annotator::Propagate() const {
   }
 
   PropagateTailCall();
+
+  PropagateFunctionPointers();
 }
 
 // We can infer a lot from the function call expressions contained in the full
@@ -829,6 +832,32 @@ void Annotator::AnnotateParameter(const clang::ParmVarDecl* p,
     for (const auto* o : m->overridden_methods()) {
       AnnotateFunctionParameter(o, parameter_index, annotation_matcher,
                                 annotation);
+    }
+  }
+}
+
+void Annotator::PropagateFunctionPointers() const {
+  for (auto [td, fproto] :
+       NodesFromMatch<clang::TypedefNameDecl, clang::FunctionProtoType>(
+           varDecl(hasInitializer(hasType(pointerType(
+                       pointee(functionProtoType().bind("fproto"))))),
+                   hasType(typedefNameDecl(hasType(pointsTo(ignoringParens(
+                                               functionProtoType()))))
+                               .bind("typedef_decl"))),
+           "typedef_decl", "fproto")) {
+    auto rt = fproto->getReturnType();
+    if (!Match(AnnotatedType(), rt)) continue;
+
+    auto pointee_loc = td->getTypeSourceInfo()
+                           ->getTypeLoc()
+                           .getAs<clang::PointerTypeLoc>()
+                           .getPointeeLoc()
+                           .getAsAdjusted<clang::FunctionProtoTypeLoc>();
+    auto rt_range = pointee_loc.getReturnLoc().getSourceRange();
+    if (IsOwner(rt)) {
+      AnnotateSourceRange(rt_range, kOwnerAnnotation);
+    } else if (IsPointer(rt)) {
+      AnnotateSourceRange(rt_range, kPointerAnnotation);
     }
   }
 }

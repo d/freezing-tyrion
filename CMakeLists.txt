@@ -28,7 +28,7 @@ set(INSTALL_GTEST
     CACHE BOOL "")
 add_subdirectory(vendor/googletest EXCLUDE_FROM_ALL)
 
-add_executable(orca-tidy-test OrcaTidyTest.cc)
+add_executable(orca-tidy-test OrcaTidyTest.cc FunctionPointerTest.cc)
 target_link_libraries(orca-tidy-test orca_tidy gmock_main)
 
 include(GoogleTest)
