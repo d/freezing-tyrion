@@ -336,6 +336,12 @@ struct Annotator {
     AnnotateSourceRange(rt_range, annotation);
   }
 
+  void AnnotateTypedefFunctionProtoTypeReturnPointer(
+      const clang::TypedefNameDecl* typedef_name_decl) const;
+  void AnnotateTypedefFunctionProtoTypeReturnType(
+      const clang::TypedefNameDecl* typedef_decl,
+      const TypeMatcher& annotation_matcher, const char* annotation) const;
+
   void FindConstTokenBefore(clang::SourceLocation begin_loc,
                             clang::SourceRange& rt_range) const {
     auto end_loc = rt_range.getEnd();
@@ -464,6 +470,8 @@ struct Annotator {
   void MoveSourceRange(clang::SourceRange source_range) const;
   void PropagateTailCall() const;
   void PropagateFunctionPointers() const;
+  void AnnotateTypedefFunctionProtoTypeReturnOwner(
+      const clang::TypedefNameDecl* typedef_decl) const;
 };
 
 void Annotator::Propagate() const {
@@ -848,25 +856,47 @@ void Annotator::PropagateFunctionPointers() const {
     auto rt = fproto->getReturnType();
     if (!Match(AnnotatedType(), rt)) continue;
 
-    if (auto t = td->getUnderlyingType();
-        !t->isFunctionPointerType() && !t->isFunctionProtoType())
-      continue;
-    auto underlying_loc = td->getTypeSourceInfo()->getTypeLoc();
-    auto function_proto_type_loc =
-        td->getUnderlyingType()->isFunctionPointerType()
-            ? underlying_loc.getAs<clang::PointerTypeLoc>()
-                  .getPointeeLoc()
-                  .getAsAdjusted<clang::FunctionProtoTypeLoc>()
-            : underlying_loc.getAsAdjusted<clang::FunctionProtoTypeLoc>();
-    auto rt_range = function_proto_type_loc.getReturnLoc().getSourceRange();
     if (IsOwner(rt)) {
-      AnnotateSourceRange(rt_range, kOwnerAnnotation);
+      AnnotateTypedefFunctionProtoTypeReturnOwner(td);
     } else if (IsPointer(rt)) {
-      if (rt->getPointeeType().isConstQualified())
-        FindConstTokenBefore(td->getBeginLoc(), rt_range);
-      AnnotateSourceRange(rt_range, kPointerAnnotation);
+      AnnotateTypedefFunctionProtoTypeReturnPointer(td);
     }
   }
+}
+void Annotator::AnnotateTypedefFunctionProtoTypeReturnOwner(
+    const clang::TypedefNameDecl* typedef_decl) const {
+  AnnotateTypedefFunctionProtoTypeReturnType(typedef_decl, OwnerType(),
+                                             kOwnerAnnotation);
+}
+
+void Annotator::AnnotateTypedefFunctionProtoTypeReturnPointer(
+    const clang::TypedefNameDecl* typedef_name_decl) const {
+  AnnotateTypedefFunctionProtoTypeReturnType(typedef_name_decl, PointerType(),
+                                             kPointerAnnotation);
+}
+
+void Annotator::AnnotateTypedefFunctionProtoTypeReturnType(
+    const clang::TypedefNameDecl* typedef_decl,
+    const TypeMatcher& annotation_matcher, const char* annotation) const {
+  if (auto t = typedef_decl->getUnderlyingType();
+      !t->isFunctionPointerType() && !t->isFunctionProtoType())
+    return;
+  auto underlying_loc = typedef_decl->getTypeSourceInfo()->getTypeLoc();
+  auto function_proto_type_loc =
+      typedef_decl->getUnderlyingType()->isFunctionPointerType()
+          ? underlying_loc.getAs<clang::PointerTypeLoc>()
+                .getPointeeLoc()
+                .getAsAdjusted<clang::FunctionProtoTypeLoc>()
+          : underlying_loc.getAsAdjusted<clang::FunctionProtoTypeLoc>();
+  auto return_loc = function_proto_type_loc.getReturnLoc();
+  auto return_type = return_loc.getType();
+
+  if (Match(annotation_matcher, return_type)) return;
+
+  auto return_source_range = return_loc.getSourceRange();
+  if (return_type->getPointeeType().isLocalConstQualified())
+    FindConstTokenBefore(typedef_decl->getBeginLoc(), return_source_range);
+  AnnotateSourceRange(return_source_range, annotation);
 }
 
 class AnnotateASTConsumer : public clang::ASTConsumer {

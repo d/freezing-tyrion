@@ -7,22 +7,22 @@ TEST_F(PropagateTest, fpRet) {
     gpos::pointer<T*> G();
     using PfOwnT = T* (*)(int);
     typedef T* (*PfPT)();
+    using PfPAnnotated = gpos::pointer<T*> (*)();
 
-    void FpVar() {
-      PfOwnT po = F;
-      PfPT pp = &G;
-    }
+    void PO() { PfOwnT po = F; }
+    void PP() { PfPT pp = &G; }
+    void PPA() { PfPAnnotated pp = G; }
   )C++",
               expected_changed_code = R"C++(
     gpos::owner<T*> F(int);
     gpos::pointer<T*> G();
     using PfOwnT = gpos::owner<T*> (*)(int);
     typedef gpos::pointer<T*> (*PfPT)();
+    using PfPAnnotated = gpos::pointer<T*> (*)();
 
-    void FpVar() {
-      PfOwnT po = F;
-      PfPT pp = &G;
-    }
+    void PO() { PfOwnT po = F; }
+    void PP() { PfPT pp = &G; }
+    void PPA() { PfPAnnotated pp = G; }
   )C++";
 
   auto changed_code = annotateAndFormat(code);
