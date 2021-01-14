@@ -841,19 +841,24 @@ void Annotator::PropagateFunctionPointers() const {
        NodesFromMatch<clang::TypedefNameDecl, clang::FunctionProtoType>(
            varDecl(hasInitializer(hasType(pointerType(
                        pointee(functionProtoType().bind("fproto"))))),
-                   hasType(typedefNameDecl(hasType(pointsTo(ignoringParens(
-                                               functionProtoType()))))
-                               .bind("typedef_decl"))),
+                   anyOf(hasType(typedefNameDecl().bind("typedef_decl")),
+                         hasType(pointsTo(
+                             typedefNameDecl().bind("typedef_decl"))))),
            "typedef_decl", "fproto")) {
     auto rt = fproto->getReturnType();
     if (!Match(AnnotatedType(), rt)) continue;
 
-    auto pointee_loc = td->getTypeSourceInfo()
-                           ->getTypeLoc()
-                           .getAs<clang::PointerTypeLoc>()
-                           .getPointeeLoc()
-                           .getAsAdjusted<clang::FunctionProtoTypeLoc>();
-    auto rt_range = pointee_loc.getReturnLoc().getSourceRange();
+    if (auto t = td->getUnderlyingType();
+        !t->isFunctionPointerType() && !t->isFunctionProtoType())
+      continue;
+    auto underlying_loc = td->getTypeSourceInfo()->getTypeLoc();
+    auto function_proto_type_loc =
+        td->getUnderlyingType()->isFunctionPointerType()
+            ? underlying_loc.getAs<clang::PointerTypeLoc>()
+                  .getPointeeLoc()
+                  .getAsAdjusted<clang::FunctionProtoTypeLoc>()
+            : underlying_loc.getAsAdjusted<clang::FunctionProtoTypeLoc>();
+    auto rt_range = function_proto_type_loc.getReturnLoc().getSourceRange();
     if (IsOwner(rt)) {
       AnnotateSourceRange(rt_range, kOwnerAnnotation);
     } else if (IsPointer(rt)) {
