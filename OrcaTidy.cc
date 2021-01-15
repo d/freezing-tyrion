@@ -114,6 +114,27 @@ AST_MATCHER_P2(clang::CompoundStmt, HasBoundStmtImmediatelyFollowing,
   return false;
 }
 
+AST_MATCHER_P(clang::RecordDecl, HasField, DeclarationMatcher, field_matcher) {
+  return matchesFirstInPointerRange(field_matcher, Node.field_begin(),
+                                    Node.field_end(), Finder,
+                                    Builder) != Node.field_end();
+}
+
+using ProtoTypeMatcher = decltype(functionProtoType().bind(""));
+static DeclarationMatcher VarInitWithTypedefFunctionPointers(
+    const DeclarationMatcher& typedef_matcher,
+    const ProtoTypeMatcher& fproto_matcher) {
+  return varDecl(
+      anyOf(hasType(typedef_matcher),
+            hasType(qualType(anyOf(
+                pointsTo(typedef_matcher),
+                arrayType(hasElementType(hasDeclaration(recordDecl(HasField(
+                    fieldDecl(hasType(pointsTo(typedef_matcher)))))))))))),
+      hasInitializer(anyOf(expr(hasType(pointsTo(fproto_matcher))),
+                           initListExpr(hasDescendant(initListExpr(has(
+                               expr(hasType(pointsTo(fproto_matcher))))))))));
+}
+
 /// Whenever we think of using \c forEachArgumentWithParam or
 /// \c forEachArgumentWithParamType with \c callExpr, we probably should also
 /// consider using them with \c cxxConstructExpr . That's what these two
@@ -847,11 +868,9 @@ void Annotator::AnnotateParameter(const clang::ParmVarDecl* p,
 void Annotator::PropagateFunctionPointers() const {
   for (auto [td, fproto] :
        NodesFromMatch<clang::TypedefNameDecl, clang::FunctionProtoType>(
-           varDecl(hasInitializer(hasType(pointerType(
-                       pointee(functionProtoType().bind("fproto"))))),
-                   anyOf(hasType(typedefNameDecl().bind("typedef_decl")),
-                         hasType(pointsTo(
-                             typedefNameDecl().bind("typedef_decl"))))),
+           VarInitWithTypedefFunctionPointers(
+               typedefNameDecl().bind("typedef_decl"),
+               functionProtoType().bind("fproto")),
            "typedef_decl", "fproto")) {
     auto rt = fproto->getReturnType();
     if (!Match(AnnotatedType(), rt)) continue;
