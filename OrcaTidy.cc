@@ -120,10 +120,8 @@ AST_MATCHER_P(clang::RecordDecl, HasField, DeclarationMatcher, field_matcher) {
                                     Builder) != Node.field_end();
 }
 
-using ProtoTypeMatcher = decltype(functionProtoType().bind(""));
-static DeclarationMatcher VarInitWithTypedefFunctionPointers(
-    const DeclarationMatcher& typedef_matcher,
-    const ProtoTypeMatcher& fproto_matcher) {
+static TypeMatcher TypeContainingTypedefFunctionPointer(
+    const DeclarationMatcher& typedef_matcher) {
   auto typedef_or_points_to_typedef = qualType(anyOf(
       hasDeclaration(typedefNameDecl(
           hasType(hasCanonicalType(
@@ -132,16 +130,36 @@ static DeclarationMatcher VarInitWithTypedefFunctionPointers(
           typedef_matcher)),
       pointsTo(typedefNameDecl(hasType(hasCanonicalType(functionProtoType())),
                                typedef_matcher))));
-  return varDecl(
-      hasType(qualType(anyOf(
-          typedef_or_points_to_typedef,
-          arrayType(hasElementType(hasDeclaration(recordDecl(
-              HasField(fieldDecl(hasType(typedef_or_points_to_typedef)))))))))),
-      hasInitializer(anyOf(
-          expr(hasType(pointsTo(fproto_matcher))),
-          initListExpr(hasDescendant(initListExpr(has(expr(hasType(qualType(
-              anyOf(pointsTo(fproto_matcher),
-                    memberPointerType(pointee(fproto_matcher)))))))))))));
+  return qualType(anyOf(
+      typedef_or_points_to_typedef,
+      arrayType(hasElementType(hasDeclaration(recordDecl(
+          HasField(fieldDecl(hasType(typedef_or_points_to_typedef)))))))));
+}
+
+using ProtoTypeMatcher = decltype(functionProtoType().bind(""));
+static ExpressionMatcher ExprInitializingFunctionPointer(
+    const ProtoTypeMatcher& fproto_matcher) {
+  return anyOf(
+      expr(hasType(qualType(anyOf(pointsTo(fproto_matcher), fproto_matcher)))),
+      initListExpr(hasDescendant(initListExpr(has(expr(hasType(
+          qualType(anyOf(pointsTo(fproto_matcher),
+                         memberPointerType(pointee(fproto_matcher)))))))))));
+}
+
+static StatementMatcher VarInitWithTypedefFunctionPointers(
+    const DeclarationMatcher& typedef_matcher,
+    const ProtoTypeMatcher& fproto_matcher) {
+  return declStmt(forEach(varDecl(
+      hasType(TypeContainingTypedefFunctionPointer(typedef_matcher)),
+      hasInitializer(ExprInitializingFunctionPointer(fproto_matcher)))));
+}
+
+static StatementMatcher CallPassingFunctionToTypedefFunctionPointer(
+    const DeclarationMatcher& typedef_matcher,
+    const ProtoTypeMatcher& fproto_matcher) {
+  return callExpr(forEachArgumentWithParamType(
+      ExprInitializingFunctionPointer(fproto_matcher),
+      TypeContainingTypedefFunctionPointer(typedef_matcher)));
 }
 
 /// Whenever we think of using \c forEachArgumentWithParam or
@@ -877,9 +895,12 @@ void Annotator::AnnotateParameter(const clang::ParmVarDecl* p,
 void Annotator::PropagateFunctionPointers() const {
   for (auto [td, fproto] :
        NodesFromMatch<clang::TypedefNameDecl, clang::FunctionProtoType>(
-           VarInitWithTypedefFunctionPointers(
-               typedefNameDecl().bind("typedef_decl"),
-               functionProtoType().bind("fproto")),
+           stmt(anyOf(VarInitWithTypedefFunctionPointers(
+                          typedefNameDecl().bind("typedef_decl"),
+                          functionProtoType().bind("fproto")),
+                      CallPassingFunctionToTypedefFunctionPointer(
+                          typedefNameDecl().bind("typedef_decl"),
+                          functionProtoType().bind("fproto")))),
            "typedef_decl", "fproto")) {
     auto rt = fproto->getReturnType();
     if (!Match(AnnotatedType(), rt)) continue;
