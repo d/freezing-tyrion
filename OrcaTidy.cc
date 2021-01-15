@@ -352,10 +352,9 @@ struct Annotator {
                                        AnnotatedType(), type().bind("rt")))))
                          .bind("follow"))),
              "follow", "rt")) {
-      clang::QualType qt(rt, 0);
-      if (IsOwner(qt))
+      if (IsOwner(rt))
         AnnotateFunctionReturnType(m, OwnerType(), kOwnerAnnotation);
-      else if (IsPointer(qt))
+      else if (IsPointer(rt))
         AnnotateFunctionReturnType(m, PointerType(), kPointerAnnotation);
     }
   }
@@ -508,6 +507,14 @@ struct Annotator {
 
   bool IsAnnotated(const clang::QualType& type) const {
     return Match(AnnotatedType(), type);
+  }
+
+  bool IsOwner(const clang::Type* type) const {
+    return Match(elaboratedType(namesType(OwnerType())), *type);
+  }
+
+  bool IsPointer(const clang::Type* type) const {
+    return Match(elaboratedType(namesType(PointerType())), *type);
   }
 
   void AnnotateParameter(const clang::ParmVarDecl* p,
