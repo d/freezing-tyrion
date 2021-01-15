@@ -126,7 +126,9 @@ static DeclarationMatcher VarInitWithTypedefFunctionPointers(
     const ProtoTypeMatcher& fproto_matcher) {
   auto typedef_or_points_to_typedef = qualType(anyOf(
       hasDeclaration(typedefNameDecl(
-          hasType(hasCanonicalType(pointsTo(functionProtoType()))),
+          hasType(hasCanonicalType(
+              anyOf(pointsTo(functionProtoType()),
+                    memberPointerType(pointee(functionProtoType()))))),
           typedef_matcher)),
       pointsTo(typedefNameDecl(hasType(hasCanonicalType(functionProtoType())),
                                typedef_matcher))));
@@ -135,9 +137,11 @@ static DeclarationMatcher VarInitWithTypedefFunctionPointers(
           typedef_or_points_to_typedef,
           arrayType(hasElementType(hasDeclaration(recordDecl(
               HasField(fieldDecl(hasType(typedef_or_points_to_typedef)))))))))),
-      hasInitializer(anyOf(expr(hasType(pointsTo(fproto_matcher))),
-                           initListExpr(hasDescendant(initListExpr(has(
-                               expr(hasType(pointsTo(fproto_matcher))))))))));
+      hasInitializer(anyOf(
+          expr(hasType(pointsTo(fproto_matcher))),
+          initListExpr(hasDescendant(initListExpr(has(expr(hasType(qualType(
+              anyOf(pointsTo(fproto_matcher),
+                    memberPointerType(pointee(fproto_matcher)))))))))))));
 }
 
 /// Whenever we think of using \c forEachArgumentWithParam or
@@ -902,16 +906,19 @@ void Annotator::AnnotateTypedefFunctionProtoTypeReturnPointer(
 void Annotator::AnnotateTypedefFunctionProtoTypeReturnType(
     const clang::TypedefNameDecl* typedef_decl,
     const TypeMatcher& annotation_matcher, const char* annotation) const {
-  if (auto t = typedef_decl->getUnderlyingType();
-      !t->isFunctionPointerType() && !t->isFunctionProtoType())
+  auto underlying_type = typedef_decl->getUnderlyingType();
+  if (auto t = underlying_type; !t->isFunctionPointerType() &&
+                                !t->isFunctionProtoType() &&
+                                !t->isMemberFunctionPointerType())
     return;
   auto underlying_loc = typedef_decl->getTypeSourceInfo()->getTypeLoc();
   auto function_proto_type_loc =
-      typedef_decl->getUnderlyingType()->isFunctionPointerType()
-          ? underlying_loc.getAs<clang::PointerTypeLoc>()
-                .getPointeeLoc()
-                .getAsAdjusted<clang::FunctionProtoTypeLoc>()
-          : underlying_loc.getAsAdjusted<clang::FunctionProtoTypeLoc>();
+      (underlying_type->isMemberFunctionPointerType()
+           ? underlying_loc.getAs<clang::MemberPointerTypeLoc>().getPointeeLoc()
+       : underlying_type->isFunctionPointerType()
+           ? underlying_loc.getAs<clang::PointerTypeLoc>().getPointeeLoc()
+           : underlying_loc)
+          .getAsAdjusted<clang::FunctionProtoTypeLoc>();
   auto return_loc = function_proto_type_loc.getReturnLoc();
   auto return_type = return_loc.getType();
 

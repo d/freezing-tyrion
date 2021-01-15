@@ -132,4 +132,43 @@ TEST_F(PropagateTest, pfStructArr) {
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
+
+TEST_F(PropagateTest, pmfRet) {
+  std::string code = R"C++(
+    struct R {
+      gpos::owner<T*> F();
+    };
+    typedef T* (R::*Pmf)();
+    struct Q {
+      int i;
+      Pmf pmf;
+    };
+
+    void f() {
+      Q qs[] = {
+          {42, &R::F},
+      };
+    }
+  )C++",
+              expected_changed_code = R"C++(
+    struct R {
+      gpos::owner<T*> F();
+    };
+    typedef gpos::owner<T*> (R::*Pmf)();
+    struct Q {
+      int i;
+      Pmf pmf;
+    };
+
+    void f() {
+      Q qs[] = {
+          {42, &R::F},
+      };
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
 }  // namespace orca_tidy
