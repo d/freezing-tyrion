@@ -41,6 +41,10 @@ __attribute__((const)) static auto RefCountPointerType() {
   return ref_count_pointer_type;
 }
 
+__attribute__((const)) static StatementMatcher CallReturningOwner() {
+  return callExpr(callee(functionDecl(returns(OwnerType()))));
+}
+
 static void CantFail(llvm::Error error) noexcept {
   if (!error) [[likely]]
     return;
@@ -529,8 +533,7 @@ void Annotator::Propagate() const {
                             hasReturnValue(ignoringParenImpCasts(anyOf(
                                 declRefExpr(to(varDecl(hasLocalStorage(),
                                                        hasType(OwnerType())))),
-                                callExpr(callee(
-                                    functionDecl(returns(OwnerType())))))))))))
+                                CallReturningOwner())))))))
                .bind("f"),
            "f")) {
     AnnotateFunctionReturnOwner(f);
@@ -594,28 +597,25 @@ void Annotator::Propagate() const {
   }
 
   for (const auto* method : NodesFromMatch<clang::CXXMethodDecl>(
-           returnStmt(
-               hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
-                   fieldDecl(hasType(PointerType())).bind("field")))),
-               forFunction(
-                   cxxMethodDecl(
-                       unless(hasAnyBody(hasDescendant(stmt(anyOf(
-                           AddRefOn(
-                               FieldReferenceFor(equalsBoundNode("field"))),
-                           binaryOperator(
-                               hasOperatorName("="),
-                               hasOperands(
-                                   FieldReferenceFor(equalsBoundNode("field")),
-                                   callExpr(callee(functionDecl(
-                                       returns(OwnerType()))))))))))))
-                       .bind("method"))),
+           returnStmt(hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
+                          fieldDecl(hasType(PointerType())).bind("field")))),
+                      forFunction(
+                          cxxMethodDecl(
+                              unless(hasAnyBody(hasDescendant(stmt(anyOf(
+                                  AddRefOn(FieldReferenceFor(
+                                      equalsBoundNode("field"))),
+                                  binaryOperator(
+                                      hasOperatorName("="),
+                                      hasOperands(FieldReferenceFor(
+                                                      equalsBoundNode("field")),
+                                                  CallReturningOwner()))))))))
+                              .bind("method"))),
            "method")) {
     AnnotateFunctionReturnPointer(method);
   }
 
   for (const auto* var : NodesFromMatch<clang::VarDecl>(
-           varDecl(RefCountVarInitializedOrAssigned(
-                       callExpr(callee(functionDecl(returns(OwnerType()))))))
+           varDecl(RefCountVarInitializedOrAssigned(CallReturningOwner()))
                .bind("owner_var"),
            "owner_var")) {
     AnnotateVarOwner(var);
@@ -626,8 +626,7 @@ void Annotator::Propagate() const {
   // already does that for the first argument
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
            NonTemplateCallOrConstruct(forEachArgumentWithParam(
-               anyOf(cxxNewExpr(),
-                     callExpr(callee(functionDecl(returns(OwnerType()))))),
+               anyOf(cxxNewExpr(), CallReturningOwner()),
                parmVarDecl(hasType(RefCountPointerType())).bind("param"))),
            "param")) {
     AnnotateParameter(param, OwnerType(), kOwnerAnnotation);
