@@ -81,15 +81,16 @@ TEST_F(PropagateTest, fRetConst) {
 TEST_F(PropagateTest, pfStructArr) {
   std::string code = R"C++(
     gpos::owner<T*> G();
+    using INT = int;
     typedef T* FPOwn();
     typedef T* (*PfPOwn)();
     struct Q {
-      int i;
+      INT i;
       FPOwn* pf;
     };
     struct P {
+      INT* l;
       PfPOwn pf;
-      long l;
     };
 
     void f() {
@@ -98,21 +99,22 @@ TEST_F(PropagateTest, pfStructArr) {
       };
 
       P ps[] = {
-          {&G, 42},
+          {nullptr, &G},
       };
     }
   )C++",
               expected_changed_code = R"C++(
     gpos::owner<T*> G();
+    using INT = int;
     typedef gpos::owner<T*> FPOwn();
     typedef gpos::owner<T*> (*PfPOwn)();
     struct Q {
-      int i;
+      INT i;
       FPOwn* pf;
     };
     struct P {
+      INT* l;
       PfPOwn pf;
-      long l;
     };
 
     void f() {
@@ -121,7 +123,7 @@ TEST_F(PropagateTest, pfStructArr) {
       };
 
       P ps[] = {
-          {&G, 42},
+          {nullptr, &G},
       };
     }
   )C++";

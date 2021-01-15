@@ -124,8 +124,12 @@ using ProtoTypeMatcher = decltype(functionProtoType().bind(""));
 static DeclarationMatcher VarInitWithTypedefFunctionPointers(
     const DeclarationMatcher& typedef_matcher,
     const ProtoTypeMatcher& fproto_matcher) {
-  auto typedef_or_points_to_typedef = qualType(
-      anyOf(hasDeclaration(typedef_matcher), pointsTo(typedef_matcher)));
+  auto typedef_or_points_to_typedef = qualType(anyOf(
+      hasDeclaration(typedefNameDecl(
+          hasType(hasCanonicalType(pointsTo(functionProtoType()))),
+          typedef_matcher)),
+      pointsTo(typedefNameDecl(hasType(hasCanonicalType(functionProtoType())),
+                               typedef_matcher))));
   return varDecl(
       hasType(qualType(anyOf(
           typedef_or_points_to_typedef,
