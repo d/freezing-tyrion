@@ -42,7 +42,7 @@ __attribute__((const)) static auto RefCountPointerType() {
 }
 
 __attribute__((const)) static StatementMatcher CallReturningOwner() {
-  return callExpr(callee(functionDecl(returns(OwnerType()))));
+  return callExpr(hasType(OwnerType()));
 }
 
 static void CantFail(llvm::Error error) noexcept {

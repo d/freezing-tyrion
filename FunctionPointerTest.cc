@@ -192,4 +192,19 @@ TEST_F(PropagateTest, pfParamRet) {
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
+
+TEST_F(PropagateTest, retOwnPf) {
+  std::string code = R"C++(
+    using FOwn = gpos::owner<T*>(S*);
+    T* G(FOwn fown, S* s) { return fown(s); }
+  )C++",
+              expected_changed_code = R"C++(
+    using FOwn = gpos::owner<T*>(S*);
+    gpos::owner<T*> G(FOwn fown, S* s) { return fown(s); }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
 }  // namespace orca_tidy
