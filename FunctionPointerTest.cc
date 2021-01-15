@@ -78,32 +78,50 @@ TEST_F(PropagateTest, fRetConst) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
-TEST_F(PropagateTest, fStructArr) {
+TEST_F(PropagateTest, pfStructArr) {
   std::string code = R"C++(
     gpos::owner<T*> G();
     typedef T* FPOwn();
+    typedef T* (*PfPOwn)();
     struct Q {
       int i;
       FPOwn* pf;
+    };
+    struct P {
+      PfPOwn pf;
+      long l;
     };
 
     void f() {
       Q qs[] = {
           {42, G},
       };
+
+      P ps[] = {
+          {&G, 42},
+      };
     }
   )C++",
               expected_changed_code = R"C++(
     gpos::owner<T*> G();
     typedef gpos::owner<T*> FPOwn();
+    typedef gpos::owner<T*> (*PfPOwn)();
     struct Q {
       int i;
       FPOwn* pf;
+    };
+    struct P {
+      PfPOwn pf;
+      long l;
     };
 
     void f() {
       Q qs[] = {
           {42, G},
+      };
+
+      P ps[] = {
+          {&G, 42},
       };
     }
   )C++";

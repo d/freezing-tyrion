@@ -124,12 +124,13 @@ using ProtoTypeMatcher = decltype(functionProtoType().bind(""));
 static DeclarationMatcher VarInitWithTypedefFunctionPointers(
     const DeclarationMatcher& typedef_matcher,
     const ProtoTypeMatcher& fproto_matcher) {
+  auto typedef_or_points_to_typedef = qualType(
+      anyOf(hasDeclaration(typedef_matcher), pointsTo(typedef_matcher)));
   return varDecl(
-      anyOf(hasType(typedef_matcher),
-            hasType(qualType(anyOf(
-                pointsTo(typedef_matcher),
-                arrayType(hasElementType(hasDeclaration(recordDecl(HasField(
-                    fieldDecl(hasType(pointsTo(typedef_matcher)))))))))))),
+      hasType(qualType(anyOf(
+          typedef_or_points_to_typedef,
+          arrayType(hasElementType(hasDeclaration(recordDecl(
+              HasField(fieldDecl(hasType(typedef_or_points_to_typedef)))))))))),
       hasInitializer(anyOf(expr(hasType(pointsTo(fproto_matcher))),
                            initListExpr(hasDescendant(initListExpr(has(
                                expr(hasType(pointsTo(fproto_matcher))))))))));
