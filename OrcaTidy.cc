@@ -81,6 +81,8 @@ static auto AddRefOn(ExpressionMatcher const& expr_matcher) {
                            on(expr_matcher));
 }
 
+AST_MATCHER(clang::NamedDecl, Unnamed) { return !Node.getDeclName(); }
+
 using DeclSet = llvm::DenseSet<const clang::Decl*>;
 AST_MATCHER_P(clang::Decl, IsInSet, DeclSet, nodes) {
   return nodes.contains(&Node);
@@ -381,8 +383,8 @@ struct Annotator {
                                   const char* annotation) const {
     auto rt = f->getReturnType();
     auto rt_range = f->getReturnTypeSourceRange();
-    if (rt->getPointeeType().isConstQualified()) {
-      FindConstTokenBefore(f->getSourceRange().getBegin(), rt_range);
+    if (rt->getPointeeType().isLocalConstQualified()) {
+      FindConstTokenBefore(f->getBeginLoc(), rt_range);
     }
     AnnotateSourceRange(rt_range, annotation);
   }
@@ -427,7 +429,9 @@ struct Annotator {
       if (Match(annotation_matcher, v->getType())) return;
 
       auto source_range = v->getTypeSourceInfo()->getTypeLoc().getSourceRange();
-
+      if (v->getType()->getPointeeType().isLocalConstQualified()) {
+        FindConstTokenBefore(v->getBeginLoc(), source_range);
+      }
       AnnotateSourceRange(source_range, annotation);
     }
   }
@@ -752,6 +756,14 @@ void Annotator::MoveSourceRange(clang::SourceRange source_range) const {
 }
 
 void Annotator::AnnotateBaseCases() const {
+  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+           parmVarDecl(hasType(RefCountPointerType()), Unnamed(),
+                       hasDeclContext(functionDecl(hasBody(stmt()))))
+               .bind("param"),
+           "param")) {
+    AnnotateVarPointer(param);
+  }
+
   auto field_is_released = FieldReleased();
   for (const auto* field : NodesFromMatch<clang::FieldDecl>(
            fieldDecl(field_is_released).bind("owner_field"), "owner_field")) {
