@@ -608,19 +608,18 @@ void Annotator::Propagate() const {
   }
 
   for (const auto* method : NodesFromMatch<clang::CXXMethodDecl>(
-           returnStmt(hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
-                          fieldDecl(hasType(PointerType())).bind("field")))),
-                      forFunction(
-                          cxxMethodDecl(
-                              unless(hasAnyBody(hasDescendant(stmt(anyOf(
-                                  AddRefOn(FieldReferenceFor(
-                                      equalsBoundNode("field"))),
-                                  binaryOperator(
-                                      hasOperatorName("="),
-                                      hasOperands(FieldReferenceFor(
-                                                      equalsBoundNode("field")),
-                                                  CallReturningOwner()))))))))
-                              .bind("method"))),
+           returnStmt(
+               hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
+                   fieldDecl(hasType(PointerType())).bind("field")))),
+               forFunction(
+                   cxxMethodDecl(
+                       unless(hasAnyBody(hasDescendant(stmt(anyOf(
+                           AddRefOn(
+                               FieldReferenceFor(equalsBoundNode("field"))),
+                           binaryOperator(hasOperatorName("="),
+                                          hasLHS(FieldReferenceFor(
+                                              equalsBoundNode("field"))))))))))
+                       .bind("method"))),
            "method")) {
     AnnotateFunctionReturnPointer(method);
   }
