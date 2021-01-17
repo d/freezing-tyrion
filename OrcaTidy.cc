@@ -126,6 +126,19 @@ AST_MATCHER_P(clang::RecordDecl, HasField, DeclarationMatcher, field_matcher) {
                                     Builder) != Node.field_end();
 }
 
+StatementMatcher AssignTo(const ExpressionMatcher& lhs) {
+  return binaryOperator(hasOperatorName("="), hasLHS(lhs));
+}
+
+StatementMatcher AssignTo(const ExpressionMatcher& lhs,
+                          const ExpressionMatcher& rhs) {
+  return binaryOperator(hasOperatorName("="), hasLHS(lhs), hasRHS(rhs));
+}
+
+StatementMatcher AddRefOrAssign(const ExpressionMatcher expr) {
+  return anyOf(AddRefOn(expr), AssignTo(expr));
+}
+
 static TypeMatcher TypeContainingTypedefFunctionPointer(
     const DeclarationMatcher& typedef_matcher) {
   auto typedef_or_points_to_typedef = qualType(anyOf(
@@ -296,16 +309,14 @@ struct Annotator {
 
     return varDecl(
         not_in_multi_decl,
-        anyOf(allOf(var_matcher,
-                    hasInitializer(ignoringParenCasts(expr_matcher))),
-              IsInSet(DeclSetFromMatch(
-                  binaryOperator(
-                      hasOperatorName("="),
-                      hasOperands(
-                          declRefExpr(to(varDecl(not_in_multi_decl, var_matcher)
-                                             .bind("owner_var"))),
-                          ignoringParenCasts(expr_matcher))),
-                  "owner_var"))));
+        anyOf(
+            allOf(var_matcher,
+                  hasInitializer(ignoringParenCasts(expr_matcher))),
+            IsInSet(DeclSetFromMatch(
+                AssignTo(declRefExpr(to(varDecl(not_in_multi_decl, var_matcher)
+                                            .bind("owner_var"))),
+                         ignoringParenCasts(expr_matcher)),
+                "owner_var"))));
   }
 
   auto RefCountVarInitializedOrAssigned(
@@ -597,12 +608,10 @@ void Annotator::Propagate() const {
            returnStmt(
                hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
                    fieldDecl(hasType(OwnerType())).bind("field")))),
-               forFunction(
-                   cxxMethodDecl(
-                       hasAnyBody(hasDescendant(binaryOperator(
-                           hasLHS(FieldReferenceFor(equalsBoundNode("field"))),
-                           hasOperatorName("=")))))
-                       .bind("method"))),
+               forFunction(cxxMethodDecl(hasAnyBody(hasDescendant(
+                                             AssignTo(FieldReferenceFor(
+                                                 equalsBoundNode("field"))))))
+                               .bind("method"))),
            "method")) {
     AnnotateFunctionReturnPointer(method);
   }
@@ -611,15 +620,10 @@ void Annotator::Propagate() const {
            returnStmt(
                hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
                    fieldDecl(hasType(PointerType())).bind("field")))),
-               forFunction(
-                   cxxMethodDecl(
-                       unless(hasAnyBody(hasDescendant(stmt(anyOf(
-                           AddRefOn(
-                               FieldReferenceFor(equalsBoundNode("field"))),
-                           binaryOperator(hasOperatorName("="),
-                                          hasLHS(FieldReferenceFor(
-                                              equalsBoundNode("field"))))))))))
-                       .bind("method"))),
+               forFunction(cxxMethodDecl(unless(hasAnyBody(hasDescendant(stmt(
+                                             AddRefOrAssign(FieldReferenceFor(
+                                                 equalsBoundNode("field"))))))))
+                               .bind("method"))),
            "method")) {
     AnnotateFunctionReturnPointer(method);
   }
@@ -704,12 +708,9 @@ void Annotator::PropagateTailCall() const {
                    declRefExpr(to(varDecl(
                        hasLocalStorage(), hasType(PointerType()),
                        varDecl().bind("var"),
-                       hasDeclContext(functionDecl(hasAnyBody(stmt(
-                           unless(hasDescendant(AddRefOn(
-                               declRefExpr(to(equalsBoundNode("var")))))),
-                           unless(hasDescendant(binaryOperator(
-                               hasLHS(declRefExpr(to(equalsBoundNode("var")))),
-                               hasOperatorName("="))))))))))),
+                       hasDeclContext(functionDecl(hasAnyBody(
+                           stmt(unless(hasDescendant(AddRefOrAssign(declRefExpr(
+                               to(equalsBoundNode("var"))))))))))))),
                    parmVarDecl().bind("param"))))),
            "param")) {
     AnnotateVarPointer(param);
@@ -828,9 +829,8 @@ void Annotator::AnnotateBaseCases() const {
            "var", "f")) {
     AnnotateFunctionReturnOwner(f);
     if (v->hasLocalStorage() &&
-        Match(functionDecl(hasAnyBody(unless(hasDescendant(
-                  binaryOperator(hasOperatorName("="),
-                                 hasLHS(declRefExpr(to(equalsNode(v))))))))),
+        Match(functionDecl(hasAnyBody(unless(
+                  hasDescendant(AssignTo(declRefExpr(to(equalsNode(v)))))))),
               *f))
       AnnotateVarPointer(v);
   }
@@ -863,11 +863,8 @@ void Annotator::AnnotateBaseCases() const {
                        hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
                            fieldDecl(hasType(RefCountPointerType()))
                                .bind("field")))))),
-                   unless(hasDescendant(stmt(anyOf(
-                       AddRefOn(FieldReferenceFor(equalsBoundNode("field"))),
-                       binaryOperator(hasOperatorName("="),
-                                      hasLHS(FieldReferenceFor(
-                                          equalsBoundNode("field")))))))))))
+                   unless(hasDescendant(stmt(AddRefOrAssign(
+                       FieldReferenceFor(equalsBoundNode("field")))))))))
                .bind("f"),
            "f")) {
     AnnotateFunctionReturnPointer(f);
