@@ -871,33 +871,37 @@ TEST_F(PropagateTest, varOwnInitAssignOwnFunc) {
     gpos::owner<T *> MakeT(int);
     gpos::pointer<T *> GetT();
 
-    struct R {
-      void foo(int i, int j) {
-        // multiple declarations here, leave them alone
-        T *a = MakeT(i), *b = MakeT(j);
+    void foo(int i, int j) {
+      // multiple declarations here, leave them alone
+      T *a = MakeT(i), *b = MakeT(j);
 
-        T *var_init_own_func = MakeT(i);
-        T *var_assign_own_func = MakeT(i);
-        T *var_init_point_func = GetT();
-        S *var_init_cast_own_func = static_cast<S *>(MakeT(i));
-      }
-    };
+      T *var_init_own_func = MakeT(i);
+      T *var_assign_own_func;
+      var_assign_own_func = MakeT(i);
+      T *var_init_point_func = GetT();
+      S *var_init_cast_own_func = static_cast<S *>(MakeT(i));
+
+      Sink(var_init_own_func, var_assign_own_func, var_init_point_func,
+           var_init_cast_own_func);
+    }
   )C++",
               expected_changed_code = R"C++(
     gpos::owner<T *> MakeT(int);
     gpos::pointer<T *> GetT();
 
-    struct R {
-      void foo(int i, int j) {
-        // multiple declarations here, leave them alone
-        T *a = MakeT(i), *b = MakeT(j);
+    void foo(int i, int j) {
+      // multiple declarations here, leave them alone
+      T *a = MakeT(i), *b = MakeT(j);
 
-        gpos::owner<T *> var_init_own_func = MakeT(i);
-        gpos::owner<T *> var_assign_own_func = MakeT(i);
-        T *var_init_point_func = GetT();
-        gpos::owner<S *> var_init_cast_own_func = static_cast<S *>(MakeT(i));
-      }
-    };
+      gpos::owner<T *> var_init_own_func = MakeT(i);
+      gpos::owner<T *> var_assign_own_func;
+      var_assign_own_func = MakeT(i);
+      T *var_init_point_func = GetT();
+      gpos::owner<S *> var_init_cast_own_func = static_cast<S *>(MakeT(i));
+
+      Sink(var_init_own_func, var_assign_own_func, var_init_point_func,
+           var_init_cast_own_func);
+    }
   )C++";
 
   auto changed_code = annotateAndFormat(code);
@@ -915,6 +919,7 @@ TEST_F(PropagateTest, paramOwnInitAssignOwnFunc) {
                T *var_init_point_func = GetT(),
                T *var_init_own_func = MakeT()) {
         var_assign_own_func = MakeT(i);
+        Sink(var_init_point_func, var_init_own_func);
       }
 
       virtual void bar(T *var_assign_own_func, T *var_init_own_func = MakeT());
@@ -926,6 +931,7 @@ TEST_F(PropagateTest, paramOwnInitAssignOwnFunc) {
 
     void Q::bar(T *var_assign_own_func, T *var_init_own_func) {
       var_assign_own_func = MakeT(0);
+      Sink(var_assign_own_func, var_init_own_func);
     }
   )C++",
               expected_changed_code = R"C++(
@@ -937,6 +943,7 @@ TEST_F(PropagateTest, paramOwnInitAssignOwnFunc) {
                T *var_init_point_func = GetT(),
                gpos::owner<T *> var_init_own_func = MakeT()) {
         var_assign_own_func = MakeT(i);
+        Sink(var_init_point_func, var_init_own_func);
       }
 
       virtual void bar(gpos::owner<T *> var_assign_own_func,
@@ -951,6 +958,7 @@ TEST_F(PropagateTest, paramOwnInitAssignOwnFunc) {
     void Q::bar(gpos::owner<T *> var_assign_own_func,
                 gpos::owner<T *> var_init_own_func) {
       var_assign_own_func = MakeT(0);
+      Sink(var_assign_own_func, var_init_own_func);
     }
   )C++";
 
