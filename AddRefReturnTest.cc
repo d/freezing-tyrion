@@ -177,25 +177,6 @@ TEST_F(BaseTest, varPointAddRefReturnNegativeCases) {
       return global_u;
     }
   )C++",
-              common_add_ref = R"C++(
-    gpos::pointer<T*> F();
-    gpos::owner<T*> G(gpos::owner<T*>);
-
-    gpos::owner<T*> foo(int i, bool b) {
-      // this is actually a pointer, but the code is a bit too clever for our
-      // dumb tool to recognize it
-      T* ambiguous_pointer = F();
-
-      // If we can do some fancy schmancy CFG analysis, we should see that
-      // there is a code path where we return ambiguous_pointer almost "right
-      // after" AddRef() (when we take the b == false branch in the
-      // conditional)
-      ambiguous_pointer->AddRef();
-      if (b) return G(ambiguous_pointer);
-
-      return ambiguous_pointer;
-    }
-  )C++",
               two_face = R"C++(
 #include <cstddef>
     gpos::pointer<T*> F(int);
@@ -212,9 +193,17 @@ TEST_F(BaseTest, varPointAddRefReturnNegativeCases) {
       two_face = G(42);
       return two_face;
     }
+  )C++",
+              init_addref_return = R"C++(
+    T* F();
+    gpos::owner<T*> foo() {
+      gpos::owner<T*> t = F();
+      t->AddRef();
+      return t;
+    }
   )C++";
 
-  for (const auto& code : {global_var, common_add_ref, two_face}) {
+  for (const auto& code : {global_var, two_face, init_addref_return}) {
     auto changed_code = annotateAndFormat(code);
 
     ASSERT_EQ(format(kPreamble + code), changed_code);

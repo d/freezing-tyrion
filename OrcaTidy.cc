@@ -120,6 +120,24 @@ AST_MATCHER_P2(clang::CompoundStmt, HasBoundStmtImmediatelyFollowing,
   return false;
 }
 
+AST_MATCHER_P2(clang::CompoundStmt, HasBoundStmtImmediatelyBefore, std::string,
+               id, StatementMatcher, rhs) {
+  if (Node.size() < 2) return false;
+  StatementMatcher equals_bound_node = equalsBoundNode(id);
+
+  auto next_range =
+      llvm::make_range(std::next(Node.body_begin()), Node.body_end());
+  for (auto [next_stmt, stmt] : llvm::zip_first(next_range, Node.body())) {
+    auto builder = *Builder;
+    if (equals_bound_node.matches(*stmt, Finder, &builder) &&
+        rhs.matches(*next_stmt, Finder, &builder)) {
+      *Builder = std::move(builder);
+      return true;
+    }
+  }
+  return false;
+}
+
 AST_MATCHER_P(clang::RecordDecl, HasField, DeclarationMatcher, field_matcher) {
   return matchesFirstInPointerRange(field_matcher, Node.field_begin(),
                                     Node.field_end(), Finder,
@@ -565,6 +583,7 @@ struct Annotator {
       const clang::TypedefNameDecl* typedef_decl) const;
   void PropagateReturnOwnerVar() const;
   void InferAddRefReturn() const;
+  void InferInitAddRef() const;
 };
 
 void Annotator::Propagate() const {
@@ -795,6 +814,8 @@ void Annotator::AnnotateBaseCases() const {
     AnnotateVarPointer(param);
   }
 
+  InferInitAddRef();
+
   auto field_is_released = FieldReleased();
   for (const auto* field : NodesFromMatch<clang::FieldDecl>(
            fieldDecl(field_is_released).bind("owner_field"), "owner_field")) {
@@ -875,6 +896,18 @@ void Annotator::AnnotateBaseCases() const {
   }
 }
 
+void Annotator::InferInitAddRef() const {
+  for (const auto* var : NodesFromMatch<clang::VarDecl>(
+           declStmt(hasSingleDecl(varDecl(hasLocalStorage()).bind("var")),
+                    declStmt().bind("decl"),
+                    hasParent(compoundStmt(HasBoundStmtImmediatelyBefore(
+                        "decl",
+                        AddRefOn(declRefExpr(to(equalsBoundNode("var")))))))),
+           "var")) {
+    AnnotateVarOwner(var);
+  }
+}
+
 void Annotator::InferAddRefReturn() const {
   for (auto [v, f] : NodesFromMatch<clang::VarDecl, clang::FunctionDecl>(
            returnStmt(
@@ -884,9 +917,17 @@ void Annotator::InferAddRefReturn() const {
            "var", "f")) {
     AnnotateFunctionReturnOwner(f);
     if (v->hasLocalStorage() &&
-        Match(functionDecl(hasAnyBody(unless(
-                  hasDescendant(AssignTo(declRefExpr(to(equalsNode(v)))))))),
-              *f))
+        !Match(functionDecl(hasAnyBody(
+                   hasDescendant(AssignTo(declRefExpr(to(equalsNode(v))))))),
+               *f) &&
+        !Match(
+            varDecl(
+                hasLocalStorage(),
+                hasParent(declStmt(
+                    declCountIs(1), stmt().bind("decl"),
+                    hasParent(compoundStmt(HasBoundStmtImmediatelyBefore(
+                        "decl", AddRefOn(declRefExpr(to(equalsNode(v)))))))))),
+            *v))
       AnnotateVarPointer(v);
   }
 
