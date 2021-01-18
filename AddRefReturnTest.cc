@@ -169,10 +169,7 @@ TEST_F(BaseTest, parmVfunPointAddRefReturn) {
 
 TEST_F(BaseTest, varPointAddRefReturnNegativeCases) {
   std::string global_var = R"C++(
-    T* F();
-
     gpos::pointer<T*> F();
-    gpos::owner<T*> G(gpos::owner<T*>);
 
     gpos::owner<T*> foo(int i, bool b) {
       static T* global_u = F();
@@ -181,8 +178,6 @@ TEST_F(BaseTest, varPointAddRefReturnNegativeCases) {
     }
   )C++",
               common_add_ref = R"C++(
-    T* F();
-
     gpos::pointer<T*> F();
     gpos::owner<T*> G(gpos::owner<T*>);
 
@@ -206,24 +201,10 @@ TEST_F(BaseTest, varPointAddRefReturnNegativeCases) {
     gpos::pointer<T*> F(int);
     gpos::owner<T*> G(int);
 
-    gpos::owner<T*> foo(int i) {
-      T* two_face;
-      if (i < 42) {
-        two_face = F(0);
-        // pointer phase
-        if (two_face != nullptr) {
-          two_face->AddRef();
-          return two_face;
-        }
-        two_face = F(1);
-        if (two_face) {
-          two_face->AddRef();
-          return two_face;
-        }
-      }
-      // pointers still
-      two_face = F(2);
-      if (NULL != two_face) {
+    gpos::owner<T*> foo() {
+      T* two_face = F(0);
+      // pointer phase
+      if (two_face) {
         two_face->AddRef();
         return two_face;
       }
