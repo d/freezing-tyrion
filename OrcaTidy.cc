@@ -584,6 +584,11 @@ struct Annotator {
   void PropagateReturnOwnerVar() const;
   void InferAddRefReturn() const;
   void InferInitAddRef() const;
+  void InferPointerVar() const;
+  void InferFields() const;
+  void InferGetters() const;
+  void InferOwnerVars() const;
+  void InferReturnNew() const;
 };
 
 void Annotator::Propagate() const {
@@ -806,16 +811,71 @@ void Annotator::MoveSourceRange(clang::SourceRange source_range) const {
 }
 
 void Annotator::AnnotateBaseCases() const {
-  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
-           parmVarDecl(hasType(RefCountPointerType()), Unnamed(),
-                       hasDeclContext(functionDecl(hasBody(stmt()))))
-               .bind("param"),
-           "param")) {
-    AnnotateVarPointer(param);
-  }
+  InferPointerVar();
 
   InferInitAddRef();
 
+  InferFields();
+
+  InferOwnerVars();
+
+  InferAddRefReturn();
+
+  InferReturnNew();
+
+  InferGetters();
+}
+
+void Annotator::InferReturnNew() const {
+  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+           functionDecl(returns(RefCountPointerType()),
+                        hasAnyBody(hasDescendant(returnStmt(hasReturnValue(
+                            ignoringParenImpCasts(cxxNewExpr()))))))
+               .bind("f"),
+           "f")) {
+    AnnotateFunctionReturnOwner(f);
+  }
+}
+void Annotator::InferOwnerVars()
+    const {  // N.B. we don't need to use the fully qualified name
+  // gpos::CRefCount::SafeRelease because
+  // 1. unqualified name matching is much faster
+  // 2. this leaves room for a CRTP implementation in the future
+  // 3. But hopefully with the introduction of smart pointers, SafeRelease
+  // will disappear...
+  for (const auto* owner_var : NodesFromMatch<clang::VarDecl>(
+           ReleaseCallExpr(
+               declRefExpr(to(varDecl().bind("owner_var")),
+                           unless(forFunction(hasName("SafeRelease"))))),
+           "owner_var")) {
+    AnnotateVarOwner(owner_var);
+  }
+
+  for (const auto* owner_var : NodesFromMatch<clang::VarDecl>(
+           varDecl(varDecl().bind("owner_var"),
+                   RefCountVarInitializedOrAssigned(cxxNewExpr())),
+           "owner_var")) {
+    AnnotateVarOwner(owner_var);
+  }
+}
+
+void Annotator::InferGetters() const {
+  for (const auto* f : NodesFromMatch<clang::CXXMethodDecl>(
+           cxxMethodDecl(
+               hasAnyBody(stmt(
+                   hasDescendant(returnStmt(
+                       hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
+                           fieldDecl(hasType(RefCountPointerType()))
+                               .bind("field")))))),
+                   unless(hasDescendant(stmt(AddRefOrAssign(
+                       FieldReferenceFor(equalsBoundNode("field")))))))))
+               .bind("f"),
+           "f")) {
+    AnnotateFunctionReturnPointer(f);
+  }
+}
+
+void Annotator::InferFields() const {
   auto field_is_released = FieldReleased();
   for (const auto* field : NodesFromMatch<clang::FieldDecl>(
            fieldDecl(field_is_released).bind("owner_field"), "owner_field")) {
@@ -848,51 +908,15 @@ void Annotator::AnnotateBaseCases() const {
            "field")) {
     AnnotateFieldPointer(field_decl);
   }
+}
 
-  // N.B. we don't need to use the fully qualified name
-  // gpos::CRefCount::SafeRelease because
-  // 1. unqualified name matching is much faster
-  // 2. this leaves room for a CRTP implementation in the future
-  // 3. But hopefully with the introduction of smart pointers, SafeRelease
-  // will disappear...
-  for (const auto* owner_var : NodesFromMatch<clang::VarDecl>(
-           ReleaseCallExpr(
-               declRefExpr(to(varDecl().bind("owner_var")),
-                           unless(forFunction(hasName("SafeRelease"))))),
-           "owner_var")) {
-    AnnotateVarOwner(owner_var);
-  }
-
-  for (const auto* owner_var : NodesFromMatch<clang::VarDecl>(
-           varDecl(varDecl().bind("owner_var"),
-                   RefCountVarInitializedOrAssigned(cxxNewExpr())),
-           "owner_var")) {
-    AnnotateVarOwner(owner_var);
-  }
-
-  InferAddRefReturn();
-
-  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
-           functionDecl(returns(RefCountPointerType()),
-                        hasAnyBody(hasDescendant(returnStmt(hasReturnValue(
-                            ignoringParenImpCasts(cxxNewExpr()))))))
-               .bind("f"),
-           "f")) {
-    AnnotateFunctionReturnOwner(f);
-  }
-
-  for (const auto* f : NodesFromMatch<clang::CXXMethodDecl>(
-           cxxMethodDecl(
-               hasAnyBody(stmt(
-                   hasDescendant(returnStmt(
-                       hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
-                           fieldDecl(hasType(RefCountPointerType()))
-                               .bind("field")))))),
-                   unless(hasDescendant(stmt(AddRefOrAssign(
-                       FieldReferenceFor(equalsBoundNode("field")))))))))
-               .bind("f"),
-           "f")) {
-    AnnotateFunctionReturnPointer(f);
+void Annotator::InferPointerVar() const {
+  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+           parmVarDecl(hasType(RefCountPointerType()), Unnamed(),
+                       hasDeclContext(functionDecl(hasBody(stmt()))))
+               .bind("param"),
+           "param")) {
+    AnnotateVarPointer(param);
   }
 }
 
