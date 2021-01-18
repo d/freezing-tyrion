@@ -126,6 +126,15 @@ AST_MATCHER_P(clang::RecordDecl, HasField, DeclarationMatcher, field_matcher) {
                                     Builder) != Node.field_end();
 }
 
+using ReturnMatcher = decltype(hasReturnValue(expr()));
+static ReturnMatcher ReturnAfterAddRef(const ExpressionMatcher& retval,
+                                       const ExpressionMatcher& addref_ref) {
+  return returnStmt(hasReturnValue(ignoringParenCasts(retval)),
+                    returnStmt().bind("return"),
+                    hasParent(compoundStmt(HasBoundStmtImmediatelyFollowing(
+                        "return", AddRefOn(addref_ref)))));
+}
+
 StatementMatcher AssignTo(const ExpressionMatcher& lhs) {
   return binaryOperator(hasOperatorName("="), hasLHS(lhs));
 }
@@ -555,6 +564,7 @@ struct Annotator {
   void AnnotateTypedefFunctionProtoTypeReturnOwner(
       const clang::TypedefNameDecl* typedef_decl) const;
   void PropagateReturnOwnerVar() const;
+  void InferAddRefReturn() const;
 };
 
 void Annotator::Propagate() const {
@@ -839,34 +849,7 @@ void Annotator::AnnotateBaseCases() const {
     AnnotateVarOwner(owner_var);
   }
 
-  for (auto [v, f] : NodesFromMatch<clang::VarDecl, clang::FunctionDecl>(
-           returnStmt(returnStmt().bind("return"),
-                      hasReturnValue(ignoringParenCasts(
-                          declRefExpr(to(varDecl().bind("var"))))),
-                      hasParent(compoundStmt(HasBoundStmtImmediatelyFollowing(
-                          "return",
-                          AddRefOn(declRefExpr(to(equalsBoundNode("var"))))))),
-                      forFunction(functionDecl().bind("f"))),
-           "var", "f")) {
-    AnnotateFunctionReturnOwner(f);
-    if (v->hasLocalStorage() &&
-        Match(functionDecl(hasAnyBody(unless(
-                  hasDescendant(AssignTo(declRefExpr(to(equalsNode(v)))))))),
-              *f))
-      AnnotateVarPointer(v);
-  }
-
-  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
-           returnStmt(returnStmt().bind("return"),
-                      hasReturnValue(ignoringParenCasts(
-                          FieldReferenceFor(fieldDecl().bind("field")))),
-                      hasParent(compoundStmt(HasBoundStmtImmediatelyFollowing(
-                          "return", AddRefOn(FieldReferenceFor(
-                                        equalsBoundNode("field")))))),
-                      forFunction(functionDecl().bind("f"))),
-           "f")) {
-    AnnotateFunctionReturnOwner(f);
-  }
+  InferAddRefReturn();
 
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
            functionDecl(returns(RefCountPointerType()),
@@ -889,6 +872,31 @@ void Annotator::AnnotateBaseCases() const {
                .bind("f"),
            "f")) {
     AnnotateFunctionReturnPointer(f);
+  }
+}
+
+void Annotator::InferAddRefReturn() const {
+  for (auto [v, f] : NodesFromMatch<clang::VarDecl, clang::FunctionDecl>(
+           returnStmt(
+               ReturnAfterAddRef(declRefExpr(to(varDecl().bind("var"))),
+                                 declRefExpr(to(equalsBoundNode("var")))),
+               forFunction(functionDecl().bind("f"))),
+           "var", "f")) {
+    AnnotateFunctionReturnOwner(f);
+    if (v->hasLocalStorage() &&
+        Match(functionDecl(hasAnyBody(unless(
+                  hasDescendant(AssignTo(declRefExpr(to(equalsNode(v)))))))),
+              *f))
+      AnnotateVarPointer(v);
+  }
+
+  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+           returnStmt(
+               ReturnAfterAddRef(FieldReferenceFor(fieldDecl().bind("field")),
+                                 FieldReferenceFor(equalsBoundNode("field"))),
+               forFunction(functionDecl().bind("f"))),
+           "f")) {
+    AnnotateFunctionReturnOwner(f);
   }
 }
 
