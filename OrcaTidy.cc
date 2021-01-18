@@ -204,6 +204,14 @@ static auto CallOrConstruct(Matchers... matchers) {
   return expr(anyOf(callExpr(matchers...), cxxConstructExpr(matchers...)));
 }
 
+static StatementMatcher PassedAsArgumentToNonPointerParam(
+    const DeclarationMatcher& var_matcher) {
+  auto ref_to_var = declRefExpr(to(var_matcher));
+  return anyOf(CallOrConstruct(forEachArgumentWithParamType(
+                   ref_to_var, unless(PointerType()))),
+               parenListExpr(has(ref_to_var)), initListExpr(has(ref_to_var)));
+}
+
 struct Annotator {
   ActionOptions action_options;
   FileToReplacements& replacements;
@@ -546,20 +554,20 @@ struct Annotator {
   void PropagateFunctionPointers() const;
   void AnnotateTypedefFunctionProtoTypeReturnOwner(
       const clang::TypedefNameDecl* typedef_decl) const;
+  void PropagateReturnOwnerVar() const;
 };
 
 void Annotator::Propagate() const {
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
            functionDecl(returns(RefCountPointerType()),
-                        hasAnyBody(hasDescendant(returnStmt(
-                            hasReturnValue(ignoringParenImpCasts(anyOf(
-                                declRefExpr(to(varDecl(hasLocalStorage(),
-                                                       hasType(OwnerType())))),
-                                CallReturningOwner())))))))
+                        hasAnyBody(hasDescendant(returnStmt(hasReturnValue(
+                            ignoringParenImpCasts(CallReturningOwner()))))))
                .bind("f"),
            "f")) {
     AnnotateFunctionReturnOwner(f);
   }
+
+  PropagateReturnOwnerVar();
 
   PropagateVirtualFunctionReturnTypes();
 
@@ -651,6 +659,22 @@ void Annotator::Propagate() const {
   PropagateFunctionPointers();
 }
 
+void Annotator::PropagateReturnOwnerVar() const {
+  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+           returnStmt(
+               hasReturnValue(ignoringParenImpCasts(declRefExpr(to(varDecl(
+                   hasLocalStorage(), hasType(OwnerType()), decl().bind("var"),
+                   hasDeclContext(
+                       functionDecl(unless(isInstantiated()),
+                                    hasBody(unless(hasDescendant(
+                                        PassedAsArgumentToNonPointerParam(
+                                            equalsBoundNode("var"))))))
+                           .bind("f")))))))),
+           "f")) {
+    AnnotateFunctionReturnOwner(f);
+  }
+}
+
 // We can infer a lot from the function call expressions contained in the full
 // expression being returned:
 //
@@ -692,11 +716,8 @@ void Annotator::PropagateTailCall() const {
                    PointerType()))),
                stmt().bind("r")),
            "var", "arg", "r")) {
-    if (Match(returnStmt(unless(
-                  hasDescendant(CallOrConstruct(forEachArgumentWithParamType(
-                      expr(unless(equalsNode(arg)),
-                           declRefExpr(to(equalsNode(var)))),
-                      unless(PointerType())))))),
+    if (Match(returnStmt(unless(hasDescendant(
+                  PassedAsArgumentToNonPointerParam(equalsNode(var))))),
               *r)) {
       AnnotateVarPointer(var);
     }
