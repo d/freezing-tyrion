@@ -101,41 +101,32 @@ AST_MATCHER(clang::FunctionDecl, HasRedecls) {
   return Node.getFirstDecl() != Node.getMostRecentDecl();
 }
 
-AST_MATCHER_P2(clang::CompoundStmt, HasBoundStmtImmediatelyFollowing,
-               std::string, id, StatementMatcher, lhs) {
-  if (Node.size() < 2) return false;
-  StatementMatcher equals_bound_node = equalsBoundNode(id);
-
-  auto prev_range =
-      llvm::make_range(std::next(Node.body_rbegin()), Node.body_rend());
-  for (auto [prev_stmt, stmt] :
-       llvm::zip_first(prev_range, llvm::reverse(Node.body()))) {
-    auto builder = *Builder;
-    if (equals_bound_node.matches(*stmt, Finder, &builder) &&
-        lhs.matches(*prev_stmt, Finder, &builder)) {
-      *Builder = std::move(builder);
-      return true;
-    }
-  }
-  return false;
+template <class Parent, class Node>
+const Parent* GetParentAs(const Node& node, clang::ASTContext& ast_context) {
+  for (auto potential_parent : ast_context.getParents(node))
+    if (const auto* parent = potential_parent.template get<Parent>(); parent)
+      return parent;
+  return nullptr;
 }
 
-AST_MATCHER_P2(clang::CompoundStmt, HasBoundStmtImmediatelyBefore, std::string,
-               id, StatementMatcher, rhs) {
-  if (Node.size() < 2) return false;
-  StatementMatcher equals_bound_node = equalsBoundNode(id);
+AST_MATCHER_P(clang::Stmt, StmtIsImmediatelyBefore, StatementMatcher, rhs) {
+  const auto* compound_stmt =
+      GetParentAs<clang::CompoundStmt>(Node, Finder->getASTContext());
+  if (!compound_stmt) return false;
+  const auto* node_it = llvm::find(compound_stmt->body(), &Node);
+  const auto* rhs_it = std::next(node_it);
+  return rhs_it != compound_stmt->body_end() &&
+         rhs.matches(**rhs_it, Finder, Builder);
+}
 
-  auto next_range =
-      llvm::make_range(std::next(Node.body_begin()), Node.body_end());
-  for (auto [next_stmt, stmt] : llvm::zip_first(next_range, Node.body())) {
-    auto builder = *Builder;
-    if (equals_bound_node.matches(*stmt, Finder, &builder) &&
-        rhs.matches(*next_stmt, Finder, &builder)) {
-      *Builder = std::move(builder);
-      return true;
-    }
-  }
-  return false;
+AST_MATCHER_P(clang::Stmt, StmtIsImmediatelyAfter, StatementMatcher, lhs) {
+  const auto* compound_stmt =
+      GetParentAs<clang::CompoundStmt>(Node, Finder->getASTContext());
+  if (!compound_stmt) return false;
+  const auto* node_it = llvm::find(compound_stmt->body(), &Node);
+  const auto* lhs_it = std::prev(node_it);
+  return node_it != compound_stmt->body_begin() &&
+         lhs.matches(**lhs_it, Finder, Builder);
 }
 
 AST_MATCHER_P(clang::RecordDecl, HasField, DeclarationMatcher, field_matcher) {
@@ -148,9 +139,7 @@ using ReturnMatcher = decltype(hasReturnValue(expr()));
 static ReturnMatcher ReturnAfterAddRef(const ExpressionMatcher& retval,
                                        const ExpressionMatcher& addref_ref) {
   return returnStmt(hasReturnValue(ignoringParenCasts(retval)),
-                    returnStmt().bind("return"),
-                    hasParent(compoundStmt(HasBoundStmtImmediatelyFollowing(
-                        "return", AddRefOn(addref_ref)))));
+                    StmtIsImmediatelyAfter(AddRefOn(addref_ref)));
 }
 
 StatementMatcher AssignTo(const ExpressionMatcher& lhs) {
@@ -923,10 +912,8 @@ void Annotator::InferPointerVar() const {
 void Annotator::InferInitAddRef() const {
   for (const auto* var : NodesFromMatch<clang::VarDecl>(
            declStmt(hasSingleDecl(varDecl(hasLocalStorage()).bind("var")),
-                    declStmt().bind("decl"),
-                    hasParent(compoundStmt(HasBoundStmtImmediatelyBefore(
-                        "decl",
-                        AddRefOn(declRefExpr(to(equalsBoundNode("var")))))))),
+                    StmtIsImmediatelyBefore(
+                        AddRefOn(declRefExpr(to(equalsBoundNode("var")))))),
            "var")) {
     AnnotateVarOwner(var);
   }
@@ -945,12 +932,10 @@ void Annotator::InferAddRefReturn() const {
                    hasDescendant(AssignTo(declRefExpr(to(equalsNode(v))))))),
                *f) &&
         !Match(
-            varDecl(
-                hasLocalStorage(),
-                hasParent(declStmt(
-                    declCountIs(1), stmt().bind("decl"),
-                    hasParent(compoundStmt(HasBoundStmtImmediatelyBefore(
-                        "decl", AddRefOn(declRefExpr(to(equalsNode(v)))))))))),
+            varDecl(hasLocalStorage(),
+                    hasParent(declStmt(declCountIs(1),
+                                       StmtIsImmediatelyBefore(AddRefOn(
+                                           declRefExpr(to(equalsNode(v)))))))),
             *v))
       AnnotateVarPointer(v);
   }
