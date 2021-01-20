@@ -64,6 +64,7 @@ static auto FieldReferenceFor(DeclarationMatcher const& field_matcher) {
                     hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
 }
 
+using VarMatcher = decltype(hasLocalStorage());
 using ExpressionMatcher = decltype(ignoringParenImpCasts(anything()));
 
 static auto ReleaseCallExpr(ExpressionMatcher const& reference_to_field) {
@@ -82,6 +83,15 @@ static auto AddRefOn(ExpressionMatcher const& expr_matcher) {
 }
 
 AST_MATCHER(clang::NamedDecl, Unnamed) { return !Node.getDeclName(); }
+
+AST_MATCHER(clang::NamedDecl, Unused) {
+  return Node.hasAttr<clang::UnusedAttr>() || !Node.getDeclName() ||
+         !Node.isReferenced();
+}
+
+static DeclarationMatcher SingleDecl() {
+  return unless(hasParent(declStmt(unless(declCountIs(1)))));
+}
 
 using DeclSet = llvm::DenseSet<const clang::Decl*>;
 AST_MATCHER_P(clang::Decl, IsInSet, DeclSet, nodes) {
@@ -228,6 +238,18 @@ static StatementMatcher PassedAsArgumentToNonPointerParam(
                parenListExpr(has(ref_to_var)), initListExpr(has(ref_to_var)));
 }
 
+static StatementMatcher InitializingOrAssigningWith(
+    const ExpressionMatcher& expr) {
+  return anyOf(declStmt(has(varDecl(hasInitializer(ignoringParenCasts(expr))))),
+               AssignTo(anything(), ignoringParenCasts(expr)));
+}
+
+AST_MATCHER(clang::VarDecl, IsImmediatelyBeforeAddRef) {
+  return varDecl(hasParent(declStmt(StmtIsImmediatelyBefore(
+                     AddRefOn(declRefExpr(to(equalsNode(&Node))))))))
+      .matches(Node, Finder, Builder);
+}
+
 struct Annotator {
   ActionOptions action_options;
   FileToReplacements& replacements;
@@ -322,14 +344,12 @@ struct Annotator {
     return node_set;
   }
 
-  using VarMatcher = decltype(hasLocalStorage());
   auto VarInitializedOrAssigned(const VarMatcher& var_matcher,
                                 const ExpressionMatcher& expr_matcher) const {
     // We're not quite ready to handle multiple-declaration yet, so here's a
     // best effort to walk (carefully) around them. Amazingly, this doesn't seem
     // to disrupt any of the base cases.
-    auto not_in_multi_decl =
-        unless(hasParent(declStmt(unless(declCountIs(1)))));
+    auto not_in_multi_decl = SingleDecl();
 
     return varDecl(
         not_in_multi_decl,
@@ -464,7 +484,8 @@ struct Annotator {
       if (Match(annotation_matcher, v->getType())) continue;
 
       auto source_range = v->getTypeSourceInfo()->getTypeLoc().getSourceRange();
-      if (v->getType()->getPointeeType().isLocalConstQualified()) {
+      if (v->getType()->getPointeeType().isLocalConstQualified() &&
+          !v->getType()->isTypedefNameType()) {
         FindConstTokenBefore(v->getBeginLoc(), source_range);
       }
       AnnotateSourceRange(source_range, annotation);
@@ -573,14 +594,17 @@ struct Annotator {
   void PropagateReturnOwnerVar() const;
   void InferAddRefReturn() const;
   void InferInitAddRef() const;
-  void InferPointerVar() const;
+  void InferPointerVars() const;
   void InferFields() const;
   void InferGetters() const;
   void InferOwnerVars() const;
   void InferReturnNew() const;
+  void PropagatePointerVars() const;
 };
 
 void Annotator::Propagate() const {
+  PropagatePointerVars();
+
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
            functionDecl(returns(RefCountPointerType()),
                         hasAnyBody(hasDescendant(returnStmt(hasReturnValue(
@@ -797,7 +821,7 @@ void Annotator::MoveSourceRange(clang::SourceRange source_range) const {
 }
 
 void Annotator::AnnotateBaseCases() const {
-  InferPointerVar();
+  InferPointerVars();
 
   InferInitAddRef();
 
@@ -896,7 +920,7 @@ void Annotator::InferFields() const {
   }
 }
 
-void Annotator::InferPointerVar() const {
+void Annotator::InferPointerVars() const {
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
            parmVarDecl(hasType(RefCountPointerType()), Unnamed(),
                        unless(isInstantiated()),
@@ -1040,6 +1064,43 @@ void Annotator::AnnotateTypedefFunctionProtoTypeReturnType(
   if (return_type->getPointeeType().isLocalConstQualified())
     FindConstTokenBefore(typedef_decl->getBeginLoc(), return_source_range);
   AnnotateSourceRange(return_source_range, annotation);
+}
+
+void Annotator::PropagatePointerVars() const {
+  auto CounterexampleForVar = [](auto var) {
+    auto ref_to_var = declRefExpr(to(var));
+    return stmt(
+        anyOf(PassedAsArgumentToNonPointerParam(var),
+              returnStmt(hasReturnValue(ignoringParenCasts(ref_to_var))),
+              InitializingOrAssigningWith(ref_to_var),
+              AssignTo(ref_to_var, unless(hasType(PointerType()))),
+              ReleaseCallExpr(ref_to_var)));
+  };
+  for (const auto* var : NodesFromMatch<clang::VarDecl>(
+           varDecl(
+               hasLocalStorage(), hasType(RefCountPointerType()), SingleDecl(),
+               unless(IsImmediatelyBeforeAddRef()), unless(isInstantiated()),
+               unless(hasType(autoType())),
+               unless(hasInitializer(ignoringParenCasts(anyOf(
+                   cxxNewExpr(), hasType(qualType(unless(PointerType()))))))),
+               decl().bind("var"),
+               hasDeclContext(functionDecl(hasBody(stmt()))),
+               anyOf(
+                   Unused(),
+                   hasDeclContext(functionDecl(unless(anyOf(
+                       hasBody(hasDescendant(
+                           CounterexampleForVar(equalsBoundNode("var")))),
+                       cxxConstructorDecl(
+                           hasAnyConstructorInitializer(withInitializer(anyOf(
+                               ignoringParenCasts(
+                                   declRefExpr(to(equalsBoundNode("var")))),
+                               PassedAsArgumentToNonPointerParam(
+                                   equalsBoundNode("var")),
+                               hasDescendant(PassedAsArgumentToNonPointerParam(
+                                   equalsBoundNode("var"))))))))))))),
+           "var")) {
+    AnnotateVarPointer(var);
+  }
 }
 
 class AnnotateASTConsumer : public clang::ASTConsumer {

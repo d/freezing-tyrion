@@ -919,7 +919,7 @@ TEST_F(PropagateTest, paramOwnInitAssignOwnFunc) {
                T *var_init_point_func = GetT(),
                T *var_init_own_func = MakeT()) {
         var_assign_own_func = MakeT(i);
-        Sink(var_init_point_func, var_init_own_func);
+        Sink(var_assign_own_func, var_init_point_func, var_init_own_func);
       }
 
       virtual void bar(T *var_assign_own_func, T *var_init_own_func = MakeT());
@@ -943,7 +943,7 @@ TEST_F(PropagateTest, paramOwnInitAssignOwnFunc) {
                T *var_init_point_func = GetT(),
                gpos::owner<T *> var_init_own_func = MakeT()) {
         var_assign_own_func = MakeT(i);
-        Sink(var_init_point_func, var_init_own_func);
+        Sink(var_assign_own_func, var_init_point_func, var_init_own_func);
       }
 
       virtual void bar(gpos::owner<T *> var_assign_own_func,
