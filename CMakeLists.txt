@@ -29,8 +29,14 @@ set(INSTALL_GTEST
 add_subdirectory(vendor/googletest EXCLUDE_FROM_ALL)
 
 add_executable(
-  orca-tidy-test OrcaTidyTest.cc FunctionPointerTest.cc BaseTest.cc
-                 RetVarTest.cc AddRefReturnTest.cc PointerVarTest.cc)
+  orca-tidy-test
+  OrcaTidyTest.cc
+  FunctionPointerTest.cc
+  BaseTest.cc
+  RetVarTest.cc
+  AddRefReturnTest.cc
+  PointerVarTest.cc
+  TailCallTest.cc)
 target_link_libraries(orca-tidy-test orca_tidy gmock_main)
 
 include(GoogleTest)
