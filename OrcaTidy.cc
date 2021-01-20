@@ -754,17 +754,15 @@ void Annotator::PropagateTailCall() const {
     }
   }
 
-  for (auto [var, arg, r] :
-       NodesFromMatch<clang::VarDecl, clang::Expr, clang::ReturnStmt>(
+  for (auto [var, r] : NodesFromMatch<clang::VarDecl, clang::ReturnStmt>(
            returnStmt(
                forEachDescendant(CallOrConstruct(forEachArgumentWithParamType(
                    declRefExpr(
                        to(varDecl(unless(isInstantiated()), hasLocalStorage())
-                              .bind("var")))
-                       .bind("arg"),
+                              .bind("var"))),
                    PointerType()))),
                stmt().bind("r")),
-           "var", "arg", "r")) {
+           "var", "r")) {
     if (Match(returnStmt(unless(hasDescendant(
                   PassedAsArgumentToNonPointerParam(equalsNode(var))))),
               *r)) {
