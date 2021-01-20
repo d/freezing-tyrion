@@ -1,7 +1,9 @@
 #include "OrcaTidyTest.h"
 
 namespace orca_tidy {
-TEST_F(PropagateTest, varMoveOwnTailCall) {
+struct TailCall : PropagateTest {};
+
+TEST_F(TailCall, varMoveOwn) {
   std::string code = R"C++(
     struct R : T {
       R(int, gpos::owner<T*>);
@@ -84,7 +86,7 @@ TEST_F(PropagateTest, varMoveOwnTailCall) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
-TEST_F(PropagateTest, varPointTailCall) {
+TEST_F(TailCall, varPoint) {
   std::string code = R"C++(
     struct R {
       R(gpos::pointer<T*>);
@@ -141,7 +143,7 @@ TEST_F(PropagateTest, varPointTailCall) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
-TEST_F(PropagateTest, paramPointTailCall) {
+TEST_F(TailCall, paramPoint) {
   std::string code = R"C++(
     T* Unannotated();
     template <class U, class CleanupFn>
@@ -210,7 +212,7 @@ TEST_F(PropagateTest, paramPointTailCall) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
-TEST_F(PropagateTest, paramOwnTailCall) {
+TEST_F(TailCall, paramOwn) {
   std::string code = R"C++(
     template <class U, class CleanupFn>
     struct P {
