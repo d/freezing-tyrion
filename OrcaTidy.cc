@@ -734,7 +734,9 @@ void Annotator::PropagateTailCall() const {
        NodesFromMatch<clang::VarDecl, clang::Expr, clang::ReturnStmt>(
            returnStmt(
                forEachDescendant(CallOrConstruct(forEachArgumentWithParamType(
-                   declRefExpr(to(varDecl(hasLocalStorage()).bind("var")))
+                   declRefExpr(
+                       to(varDecl(unless(isInstantiated()), hasLocalStorage())
+                              .bind("var")))
                        .bind("arg"),
                    PointerType()))),
                stmt().bind("r")),
@@ -755,7 +757,7 @@ void Annotator::PropagateTailCall() const {
                        hasDeclContext(functionDecl(hasAnyBody(
                            stmt(unless(hasDescendant(AddRefOrAssign(declRefExpr(
                                to(equalsBoundNode("var"))))))))))))),
-                   parmVarDecl().bind("param"))))),
+                   parmVarDecl(unless(isInstantiated())).bind("param"))))),
            "param")) {
     AnnotateVarPointer(param);
   }
@@ -897,6 +899,7 @@ void Annotator::InferFields() const {
 void Annotator::InferPointerVar() const {
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
            parmVarDecl(hasType(RefCountPointerType()), Unnamed(),
+                       unless(isInstantiated()),
                        hasDeclContext(functionDecl(hasBody(stmt()))))
                .bind("param"),
            "param")) {
