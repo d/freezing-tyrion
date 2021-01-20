@@ -461,7 +461,7 @@ struct Annotator {
                       const TypeMatcher& annotation_matcher,
                       llvm::StringRef annotation) const {
     for (const auto* v : var->redecls()) {
-      if (Match(annotation_matcher, v->getType())) return;
+      if (Match(annotation_matcher, v->getType())) continue;
 
       auto source_range = v->getTypeSourceInfo()->getTypeLoc().getSourceRange();
       if (v->getType()->getPointeeType().isLocalConstQualified()) {
@@ -760,33 +760,28 @@ void Annotator::PropagateTailCall() const {
     AnnotateVarPointer(param);
   }
 
-  for (auto [param, var, arg, r, tmpl] :
+  for (auto [param, var, arg, r] :
        NodesFromMatch<clang::ParmVarDecl, clang::VarDecl, clang::Expr,
-                      clang::ReturnStmt, clang::NamedDecl>(
-           returnStmt(forEachDescendant(CallOrConstruct(
-                          forEachArgumentWithParam(
-                              declRefExpr(to(varDecl(hasLocalStorage(),
-                                                     hasType(OwnerType()))
-                                                 .bind("var")))
-                                  .bind("arg"),
-                              parmVarDecl().bind("param")),
-                          optionally(hasDeclaration(
-                              namedDecl(isInstantiated()).bind("tmpl"))))),
-                      stmt().bind("r")),
-           "param", "var", "arg", "r", "tmpl")) {
+                      clang::ReturnStmt>(
+           returnStmt(
+               forEachDescendant(CallOrConstruct(
+                   forEachArgumentWithParam(
+                       declRefExpr(
+                           to(varDecl(hasLocalStorage(), hasType(OwnerType()))
+                                  .bind("var")))
+                           .bind("arg"),
+                       optionally(parmVarDecl(unless(isInstantiated()))
+                                      .bind("param"))),
+                   hasDeclaration(functionDecl(unless(hasName("std::move")))))),
+               stmt().bind("r")),
+           "param", "var", "arg", "r")) {
     if (Match(returnStmt(hasDescendant(
                   declRefExpr(unless(equalsNode(arg)), to(equalsNode(var))))),
               *r))
       continue;
-    // be conservative about inferring ownership of params when callee is a
-    // function template. Note that we don't have to be conservative a couple
-    // lines above when we infer the ownership of a param in the *caller*
-    if (!tmpl) {
-      AnnotateVarOwner(param);
-    }
-    if (!tmpl || Match(namedDecl(unless(hasName("std::move"))), *tmpl)) {
-      MoveSourceRange(arg->getSourceRange());
-    }
+
+    if (param) AnnotateVarOwner(param);
+    MoveSourceRange(arg->getSourceRange());
   }
 }
 
