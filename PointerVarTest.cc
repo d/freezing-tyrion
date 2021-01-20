@@ -102,6 +102,24 @@ TEST_F(PropagateTest, varPointNegativeCases) {
     void f(T* t) { R r{t}; }
     void g(T* t) { Q r(t); }
   )C++",
+              passed_to_overload_expr = R"C++(
+    struct R {
+      template <class U>
+      void TMF(gpos::pointer<T*>);
+    };
+    template <class U>
+    void TF(gpos::pointer<T*>);
+
+    template <class U>
+    void f(T* t, R* r) {
+      r->TMF<U>(t);
+    }
+
+    template <class U>
+    void g(T* t) {
+      TF<U>(t);
+    }
+  )C++",
               returned = R"C++(
     T* f(T* t) { return t; }
   )C++",
@@ -161,9 +179,10 @@ TEST_F(PropagateTest, varPointNegativeCases) {
 
   for (const auto& code :
        {func_without_def, passed_to_non_pointer_param_of_func,
-        passed_to_non_pointer_param_of_ctor, returned, released, init_assigned,
-        assigned_non_pointer, passed_to_ctor_init, followed_by_addref,
-        auto_type, init_to_new, init_to_owner, init_to_non_pointer}) {
+        passed_to_non_pointer_param_of_ctor, passed_to_overload_expr, returned,
+        released, init_assigned, assigned_non_pointer, passed_to_ctor_init,
+        followed_by_addref, auto_type, init_to_new, init_to_owner,
+        init_to_non_pointer}) {
     auto changed_code = annotateAndFormat(code);
 
     ASSERT_EQ(format(kPreamble + code), changed_code);

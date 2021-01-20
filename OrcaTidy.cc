@@ -233,9 +233,13 @@ static auto CallOrConstruct(Matchers... matchers) {
 static StatementMatcher PassedAsArgumentToNonPointerParam(
     const DeclarationMatcher& var_matcher) {
   auto ref_to_var = declRefExpr(to(var_matcher));
-  return anyOf(CallOrConstruct(forEachArgumentWithParamType(
-                   ref_to_var, unless(PointerType()))),
-               parenListExpr(has(ref_to_var)), initListExpr(has(ref_to_var)));
+  return anyOf(
+      CallOrConstruct(
+          forEachArgumentWithParamType(ref_to_var, unless(PointerType()))),
+      parenListExpr(has(ref_to_var)), initListExpr(has(ref_to_var)),
+      callExpr(
+          callee(expr(anyOf(unresolvedLookupExpr(), unresolvedMemberExpr()))),
+          hasAnyArgument(ignoringParenCasts(ref_to_var))));
 }
 
 static StatementMatcher InitializingOrAssigningWith(

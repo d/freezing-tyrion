@@ -124,13 +124,25 @@ TEST_F(TailCall, varPointNegative) {
   std::string code = R"C++(
     struct R {
       R(gpos::owner<T*>);
+      template <class U>
+      bool TMF(gpos::pointer<T*>);
     };
     bool F(gpos::pointer<T*>);
     bool H(R);
     bool G(T* unannotated_param);
+    template <class U>
+    bool TF(gpos::pointer<T*>);
 
     bool foo(T* t) { return F(t) && H(R(t)); }
     bool bar(T* t2) { return F(t2) || G(t2); }
+    template <class U>
+    bool bazz(T* t) {
+      return TF<U>(t);
+    }
+    template <class U>
+    bool jazz(T* t, R* r) {
+      return r->TMF<U>(t);
+    }
   )C++";
 
   auto changed_code = annotateAndFormat(code);
