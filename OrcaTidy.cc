@@ -28,8 +28,13 @@ __attribute__((const)) static auto PointerType() {
   return AnnotationType(hasName("::gpos::pointer"));
 }
 
+__attribute__((const)) static auto LeakedType() {
+  return AnnotationType(hasName("::gpos::leaked"));
+}
+
 __attribute__((const)) static auto AnnotatedType() {
-  return AnnotationType(hasAnyName("::gpos::pointer", "::gpos::owner"));
+  return AnnotationType(
+      hasAnyName("::gpos::pointer", "::gpos::owner", "::gpos::leaked"));
 }
 
 __attribute__((const)) static auto RefCountPointerType() {
@@ -486,6 +491,7 @@ struct Annotator {
                       llvm::StringRef annotation) const {
     for (const auto* v : var->redecls()) {
       if (Match(annotation_matcher, v->getType())) continue;
+      if (IsLeaked(var)) continue;
 
       auto source_range = v->getTypeSourceInfo()->getTypeLoc().getSourceRange();
       if (v->getType()->getPointeeType().isLocalConstQualified() &&
@@ -567,6 +573,10 @@ struct Annotator {
 
   bool IsPointer(const clang::QualType& type) const {
     return Match(PointerType(), type);
+  }
+
+  bool IsLeaked(const clang::VarDecl* var) const {
+    return Match(LeakedType(), var->getType());
   }
 
   bool IsAnnotated(const clang::QualType& type) const {
