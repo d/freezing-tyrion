@@ -1092,10 +1092,7 @@ void Annotator::PropagatePointerVars() const {
            varDecl(
                hasLocalStorage(), hasType(RefCountPointerType()), SingleDecl(),
                unless(IsImmediatelyBeforeAddRef()), unless(isInstantiated()),
-               unless(hasType(autoType())),
-               unless(hasInitializer(ignoringParenCasts(anyOf(
-                   cxxNewExpr(), hasType(qualType(unless(PointerType()))))))),
-               decl().bind("var"),
+               unless(hasType(autoType())), decl().bind("var"),
                hasDeclContext(functionDecl(hasBody(stmt()))),
                anyOf(
                    Unused(),

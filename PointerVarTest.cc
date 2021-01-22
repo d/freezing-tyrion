@@ -164,25 +164,21 @@ TEST_F(PropagateTest, varPointNegativeCases) {
               auto_type = R"C++(
     T* F();
     void f() { auto t = F(); }
-  )C++",
-              init_to_new = R"C++(
-    void f() { T* t = new T; }
-  )C++",
-              init_to_owner = R"C++(
-    gpos::owner<T*> F();
-    void f() { gpos::owner<T*> t = F(); }
-  )C++",
-              init_to_non_pointer = R"C++(
-    T* F();
-    void f() { T* t = F(); }
   )C++";
 
-  for (const auto& code :
-       {func_without_def, passed_to_non_pointer_param_of_func,
-        passed_to_non_pointer_param_of_ctor, passed_to_overload_expr, returned,
-        released, init_assigned, assigned_non_pointer, passed_to_ctor_init,
-        followed_by_addref, auto_type, init_to_new, init_to_owner,
-        init_to_non_pointer}) {
+  for (const auto& code : {
+           func_without_def,
+           passed_to_non_pointer_param_of_func,
+           passed_to_non_pointer_param_of_ctor,
+           passed_to_overload_expr,
+           returned,
+           released,
+           init_assigned,
+           assigned_non_pointer,
+           passed_to_ctor_init,
+           followed_by_addref,
+           auto_type,
+       }) {
     auto changed_code = annotateAndFormat(code);
 
     ASSERT_EQ(format(kPreamble + code), changed_code);
