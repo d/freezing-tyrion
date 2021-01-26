@@ -1,4 +1,4 @@
-#include "OrcaTidyTest.h"
+#include "AnnotateTest.h"
 
 namespace orca_tidy {
 struct TailCall : PropagateTest {};
