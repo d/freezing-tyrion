@@ -22,6 +22,13 @@ static cl::SubCommand base("base");
 static cl::SubCommand propagate("propagate");
 static cl::SubCommand fix_include("fix-include");
 
+static cl::opt<orca_tidy::FixIncludeMode> fix_include_mode(
+    "mode", cl::desc("mode of fix-include"),
+    cl::values(clEnumValN(orca_tidy::kOwner, "owner", "insert \"owner.h\""),
+               clEnumValN(orca_tidy::kRef, "ref",
+                          "remove \"owner.h\" and insert \"Ref.h\"")),
+    cl::cat(common_options), cl::sub(fix_include));
+
 int AnnotateMain(clang::tooling::RefactoringTool& tool) {
   orca_tidy::ActionOptions action_options;
   if (base) {
@@ -37,7 +44,7 @@ int AnnotateMain(clang::tooling::RefactoringTool& tool) {
 
 int FixIncludeMain(tooling::RefactoringTool& tool) {
   orca_tidy::IncludeFixerActionFactory include_fixer_factory(
-      tool.getReplacements());
+      tool.getReplacements(), fix_include_mode);
   if (export_fixes.empty()) {
     return tool.runAndSave(&include_fixer_factory);
   } else {

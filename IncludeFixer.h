@@ -8,13 +8,20 @@
 #include "clang/Tooling/Tooling.h"
 
 namespace orca_tidy {
+enum FixIncludeMode {
+  kOwner,
+  kRef,
+};
+
 struct IncludeFixer : clang::PreprocessorFrontendAction {
   std::map<std::string, clang::tooling::Replacements> &file_to_replaces;
+  FixIncludeMode mode;
 
  protected:
  public:
   explicit IncludeFixer(
-      std::map<std::string, clang::tooling::Replacements> &file_to_replaces);
+      std::map<std::string, clang::tooling::Replacements> &file_to_replaces,
+      FixIncludeMode mode);
 
  protected:
   bool BeginSourceFileAction(clang::CompilerInstance &CI) override;
@@ -23,9 +30,11 @@ struct IncludeFixer : clang::PreprocessorFrontendAction {
 
 struct IncludeFixerActionFactory : clang::tooling::FrontendActionFactory {
   std::map<std::string, clang::tooling::Replacements> &file_to_replaces;
+  FixIncludeMode fix_include_mode;
 
   explicit IncludeFixerActionFactory(
-      std::map<std::string, clang::tooling::Replacements> &file_to_replaces);
+      std::map<std::string, clang::tooling::Replacements> &file_to_replaces,
+      FixIncludeMode fix_include_mode);
   std::unique_ptr<clang::FrontendAction> create() override;
 };
 }  // namespace orca_tidy
