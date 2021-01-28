@@ -16,7 +16,7 @@ add_executable(ctors-saving-refs ConstructorsSavingReferences.cc)
 target_link_libraries(ctors-saving-refs clangASTMatchers clangTooling)
 target_include_directories(ctors-saving-refs PRIVATE ${LLVM_INCLUDE_DIR})
 
-add_library(orca_tidy STATIC OrcaTidy.cc IncludeFixer.cc IncludeFixer.h)
+add_library(orca_tidy STATIC OrcaTidy.cc IncludeFixer.cc Converter.cc)
 target_include_directories(orca_tidy PUBLIC ${LLVM_INCLUDE_DIR})
 target_link_libraries(orca_tidy PUBLIC clangTooling)
 
@@ -37,7 +37,9 @@ add_executable(
   AddRefReturnTest.cc
   PointerVarTest.cc
   TailCallTest.cc
-  AnnotateTest.cc)
+  AnnotateTest.cc
+  ConverterTest.cc
+  ConvertFieldTest.cc)
 target_link_libraries(orca-tidy-test orca_tidy gmock_main)
 
 include(GoogleTest)
