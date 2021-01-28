@@ -1,4 +1,5 @@
 #include "OrcaTidy.h"
+#include "AstHelpers.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Refactoring.h"
@@ -11,31 +12,6 @@ using namespace clang::ast_matchers;
 namespace tooling = clang::tooling;
 
 using FileToReplacements = std::map<std::string, tooling::Replacements>;
-
-static const char* const kOwnerAnnotation = "gpos::owner";
-static const char* const kPointerAnnotation = "gpos::pointer";
-
-using NamedMatcher = decltype(hasName(""));
-static auto AnnotationType(NamedMatcher named_matcher) {
-  return qualType(hasDeclaration(typeAliasTemplateDecl(named_matcher)));
-}
-
-__attribute__((const)) static auto OwnerType() {
-  return AnnotationType(hasName("::gpos::owner"));
-}
-
-__attribute__((const)) static auto PointerType() {
-  return AnnotationType(hasName("::gpos::pointer"));
-}
-
-__attribute__((const)) static auto LeakedType() {
-  return AnnotationType(hasName("::gpos::leaked"));
-}
-
-__attribute__((const)) static auto AnnotatedType() {
-  return AnnotationType(
-      hasAnyName("::gpos::pointer", "::gpos::owner", "::gpos::leaked"));
-}
 
 __attribute__((const)) static auto RefCountPointerType() {
   auto ref_count_record_decl = cxxRecordDecl(isSameOrDerivedFrom(cxxRecordDecl(
@@ -57,13 +33,6 @@ static void CantFail(llvm::Error error) noexcept {
   std::terminate();
 }
 
-template <class Range>
-static auto MakeVector(Range&& range) {
-  llvm::SmallVector<typename decltype(range.begin())::value_type> nodes(
-      range.begin(), range.end());
-  return nodes;
-}
-
 static auto FieldReferenceFor(DeclarationMatcher const& field_matcher) {
   return memberExpr(member(field_matcher),
                     hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
@@ -80,7 +49,7 @@ static auto ReleaseCallExpr(ExpressionMatcher const& reference_to_field) {
       callee(functionDecl(hasName("SafeRelease"), parameterCountIs(1))),
       hasArgument(0, reference_to_field));
   return callExpr(anyOf(release, safe_release));
-};
+}
 
 static auto AddRefOn(ExpressionMatcher const& expr_matcher) {
   return cxxMemberCallExpr(callee(cxxMethodDecl(hasName("AddRef"))),
@@ -259,12 +228,18 @@ AST_MATCHER(clang::VarDecl, IsImmediatelyBeforeAddRef) {
       .matches(Node, Finder, Builder);
 }
 
-struct Annotator {
+struct Annotator : NodesFromMatchBase<Annotator> {
   ActionOptions action_options;
   FileToReplacements& replacements;
   clang::ASTContext& ast_context;
   const clang::SourceManager& source_manager;
   const clang::LangOptions& lang_opts;
+
+  Annotator(const ActionOptions& action_options,
+            FileToReplacements& replacements, clang::ASTContext& ast_context,
+            const clang::SourceManager& source_manager,
+            const clang::LangOptions& lang_opts);
+  clang::ASTContext& AstContext() const;
 
   void Annotate() {
     if (action_options.Base) AnnotateBaseCases();
@@ -276,75 +251,6 @@ struct Annotator {
   void Propagate() const;
 
   void AnnotateBaseCases() const;
-
-  template <class... Nodes, class... IDs>
-  static auto GetNode(const BoundNodes& bound_nodes, IDs... ids) {
-    if constexpr (sizeof...(ids) == 1)
-      return bound_nodes.template getNodeAs<Nodes...>(ids...);
-    else
-      return std::tuple{bound_nodes.template getNodeAs<Nodes>(ids)...};
-  }
-
-  /// Convenience interface to go through the results of an AST match by
-  /// directly iterating over node. For example, instead of saying
-  ///
-  /// \code
-  /// for (const auto& bound_nodes : match(varDecl().bind("v"), ast_context)) {
-  ///   const auto* v = bound_nodes.getNodeAs<VarDecl>("v");
-  ///   ...
-  /// }
-  /// \endcode We get to say
-  ///
-  /// \code
-  /// for (const auto* v = NodesFromMatch<VarDecl>(varDecl().bind("v"))) {
-  /// ...
-  /// }
-  /// \endcode
-  ///
-  /// In addition, when you pass in two or more bindings, the returned sequence
-  /// can be iterated through structured binding:
-  ///
-  /// \code
-  /// for (auto [var, arg]: NodesFromMatch<VarDecl, Expr>(callExpr(
-  ///          hasAnyArgument(declRefExpr(to(varDecl().bind("var"))).bind("arg")))
-  ///          )) {
-  ///   ...
-  /// }
-  /// \endcode
-  ///
-  /// Caveat: the returned sequence does NOT own the clang::BoundNodes objects
-  /// returned from the original call to \code match() \endcode . Because most
-  /// nodes (\c Decl, \c Stmt, \c Type) are pointer-stable and stored in the
-  /// AST, this is practically not a problem. Notable exceptions are: \c
-  /// QualType, \c NestedNameSpecifierLoc, \c TypeLoc, \c TemplateArgument and
-  /// \c TemplateArgumentLoc. These are embedded as values (and stored as values
-  /// in a \c BoundNodes object) and passed around as values. When you want to
-  /// bind to one of those types, use the more ceremonious \code match()
-  /// \endcode API instead.
-  ///
-  /// One interesting workaround for binding to a \c QualType is to bind to a
-  /// \c Type instead, if you know your matcher doesn't examine the
-  /// cv-qualifiers: e.g. Instead of
-  ///
-  /// \code
-  /// functionDecl(returns(qualType.bind("t")))
-  /// \endcode
-  ///
-  /// you can use
-  ///
-  /// \code
-  /// functionDecl(returns(type.bind("t")))
-  /// \endcode
-  template <class... Nodes, class Matcher, class... Ids>
-  auto NodesFromMatch(Matcher matcher, Ids... ids) const {
-    auto matches = match(matcher, ast_context);
-    auto nodes = MakeVector(
-        llvm::map_range(matches, [ids...](const BoundNodes& bound_nodes) {
-          return GetNode<Nodes...>(bound_nodes, ids...);
-        }));
-
-    return nodes;
-  }
 
   template <class Matcher>
   DeclSet DeclSetFromMatch(Matcher matcher, llvm::StringRef id) const {
@@ -399,7 +305,7 @@ struct Annotator {
   void AnnotateFunctionParameter(const clang::FunctionDecl* function,
                                  unsigned int parameter_index,
                                  const TypeMatcher& annotation_matcher,
-                                 const char* annotation) const {
+                                 llvm::StringRef annotation) const {
     for (const auto* f : function->redecls()) {
       const auto* parm = f->getParamDecl(parameter_index);
       AnnotateOneVar(parm, annotation_matcher, annotation);
@@ -427,7 +333,7 @@ struct Annotator {
 
   void AnnotateFunctionReturnType(const clang::FunctionDecl* function,
                                   const TypeMatcher& annotation_matcher,
-                                  const char* annotation) const {
+                                  llvm::StringRef annotation) const {
     for (const auto* f : function->redecls()) {
       auto rt = f->getReturnType();
       if (Match(annotation_matcher, rt)) continue;
@@ -444,7 +350,7 @@ struct Annotator {
   }
 
   void AnnotateFunctionReturnType(const clang::FunctionDecl* f,
-                                  const char* annotation) const {
+                                  llvm::StringRef annotation) const {
     auto rt = f->getReturnType();
     auto rt_range = f->getReturnTypeSourceRange();
     if (rt->getPointeeType().isLocalConstQualified()) {
@@ -457,7 +363,7 @@ struct Annotator {
       const clang::TypedefNameDecl* typedef_name_decl) const;
   void AnnotateTypedefFunctionProtoTypeReturnType(
       const clang::TypedefNameDecl* typedef_decl,
-      const TypeMatcher& annotation_matcher, const char* annotation) const;
+      const TypeMatcher& annotation_matcher, llvm::StringRef annotation) const;
 
   void FindConstTokenBefore(clang::SourceLocation begin_loc,
                             clang::SourceRange& rt_range) const {
@@ -593,13 +499,13 @@ struct Annotator {
 
   void AnnotateParameter(const clang::ParmVarDecl* p,
                          const TypeMatcher& annotation_matcher,
-                         const char* annotation) const;
+                         llvm::StringRef annotation) const;
   void AnnotateVarOwner(const clang::VarDecl* var) const;
   void AnnotateVarPointer(const clang::VarDecl* v) const;
 
   void AnnotateVar(const clang::VarDecl* v,
                    const TypeMatcher& annotation_matcher,
-                   const char* annotation) const;
+                   llvm::StringRef annotation) const;
   void MoveSourceRange(clang::SourceRange source_range) const;
   void PropagateTailCall() const;
   void PropagateFunctionPointers() const;
@@ -994,7 +900,7 @@ void Annotator::AnnotateVarPointer(const clang::VarDecl* v) const {
 
 void Annotator::AnnotateVar(const clang::VarDecl* v,
                             const TypeMatcher& annotation_matcher,
-                            const char* annotation) const {
+                            llvm::StringRef annotation) const {
   if (const auto* p = llvm::dyn_cast<clang::ParmVarDecl>(v)) {
     AnnotateParameter(p, annotation_matcher, annotation);
   } else {
@@ -1004,7 +910,7 @@ void Annotator::AnnotateVar(const clang::VarDecl* v,
 
 void Annotator::AnnotateParameter(const clang::ParmVarDecl* p,
                                   const TypeMatcher& annotation_matcher,
-                                  const char* annotation) const {
+                                  llvm::StringRef annotation) const {
   const auto* f =
       llvm::cast<clang::FunctionDecl>(p->getParentFunctionOrMethod());
   auto parameter_index = p->getFunctionScopeIndex();
@@ -1053,7 +959,7 @@ void Annotator::AnnotateTypedefFunctionProtoTypeReturnPointer(
 
 void Annotator::AnnotateTypedefFunctionProtoTypeReturnType(
     const clang::TypedefNameDecl* typedef_decl,
-    const TypeMatcher& annotation_matcher, const char* annotation) const {
+    const TypeMatcher& annotation_matcher, llvm::StringRef annotation) const {
   auto underlying_type = typedef_decl->getUnderlyingType();
   if (auto t = underlying_type; !t->isFunctionPointerType() &&
                                 !t->isFunctionProtoType() &&
@@ -1111,6 +1017,18 @@ void Annotator::PropagatePointerVars() const {
     AnnotateVarPointer(var);
   }
 }
+
+clang::ASTContext& Annotator::AstContext() const { return ast_context; }
+Annotator::Annotator(const ActionOptions& action_options,
+                     FileToReplacements& replacements,
+                     clang::ASTContext& ast_context,
+                     const clang::SourceManager& source_manager,
+                     const clang::LangOptions& lang_opts)
+    : action_options(action_options),
+      replacements(replacements),
+      ast_context(ast_context),
+      source_manager(source_manager),
+      lang_opts(lang_opts) {}
 
 class AnnotateASTConsumer : public clang::ASTConsumer {
   FileToReplacements& replacements_;
