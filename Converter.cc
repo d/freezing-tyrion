@@ -1,4 +1,5 @@
 #include "Converter.h"
+#include "AstHelpers.h"
 #include "clang/Lex/Lexer.h"
 
 // NOLINTNEXTLINE: google-build-using-namespace
@@ -22,9 +23,11 @@ auto IgnoringElaboratedQualified(clang::TypeLoc type_loc) {
   return type_loc;
 }
 
-class ConverterAstConsumer : public clang::ASTConsumer {
+class ConverterAstConsumer : public clang::ASTConsumer,
+                             public NodesFromMatchBase<ConverterAstConsumer> {
  public:
   void Initialize(clang::ASTContext& context) override { context_ = &context; }
+  clang::ASTContext& AstContext() const { return *context_; }
 
   ConverterAstConsumer(
       std::map<std::string, tooling::Replacements>& file_to_replaces)
@@ -62,13 +65,9 @@ class ConverterAstConsumer : public clang::ASTConsumer {
   }
 
   void HandleTranslationUnit(clang::ASTContext& context) override {
-    for (const auto& bound_nodes :
-         match(fieldDecl(
-                   hasType(typeAliasTemplateDecl(hasName("::gpos::pointer"))))
-                   .bind("pointer_field"),
-               context)) {
-      const auto* field =
-          bound_nodes.getNodeAs<clang::FieldDecl>("pointer_field");
+    for (const auto* field : NodesFromMatch<clang::FieldDecl>(
+             fieldDecl(hasType(PointerType())).bind("pointer_field"),
+             "pointer_field")) {
       StripPointer(field);
     }
   }
