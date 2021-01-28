@@ -36,4 +36,21 @@ TEST_F(ConvertField, constPointerToRaw) {
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
+
+TEST_F(ConvertField, ownerToRef) {
+  std::string code = R"C++(
+    struct R {
+      gpos::owner<T*> t;
+    };
+  )C++",
+              expected_changed_code = R"C++(
+    struct R {
+      Ref<T> t;
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
 }  // namespace orca_tidy

@@ -17,13 +17,29 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
     };
 
     template <class T>
-    void SafeRelease(CRefCount<T> *);
+    void SafeRelease(CRefCount<T>*);
 
     template <class T>
     using owner = T;
-
     template <class T>
     using pointer = T;
+
+    template <class T>
+    class Ref {
+      T* p_;
+
+     public:
+      Ref(T* p = nullptr);
+      ~Ref();
+      Ref(const Ref&);
+      Ref(Ref&&);
+      Ref& operator=(const Ref&);
+      Ref& operator=(Ref&&);
+      explicit operator bool() const;
+      T* operator->() const;
+      T& operator*() const;
+      T* get() const;
+    };
     }  // namespace gpos
 
     struct T : gpos::CRefCount<T> {};
