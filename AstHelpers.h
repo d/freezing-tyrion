@@ -101,5 +101,7 @@ struct NodesFromMatchBase {
     return nodes;
   }
 };
+
+clang::TypeLoc IgnoringElaboratedQualified(clang::TypeLoc type_loc);
 }  // namespace orca_tidy
 #endif  // ORCATIDY__ASTHELPERS_H_
