@@ -22,7 +22,7 @@ static cl::SubCommand base("base");
 static cl::SubCommand propagate("propagate");
 static cl::SubCommand fix_include("fix-include");
 
-int AnnotateMain(clang::tooling::RefactoringTool& tool) {
+int AnnotateMain(tooling::RefactoringTool& tool) {
   orca_tidy::ActionOptions action_options;
   if (base) {
     action_options = {true, false};
@@ -31,8 +31,7 @@ int AnnotateMain(clang::tooling::RefactoringTool& tool) {
   }
   orca_tidy::AnnotateAction annotate_action{tool.getReplacements(),
                                             action_options};
-  return tool.run(
-      clang::tooling::newFrontendActionFactory(&annotate_action).get());
+  return tool.run(tooling::newFrontendActionFactory(&annotate_action).get());
 }
 
 int FixIncludeMain(tooling::RefactoringTool& tool) {
