@@ -154,62 +154,28 @@ TEST_F(BaseTest, fieldPointExcludeTemplate) {
   std::string code = R"C++(
     template <class U>
     struct R {
-      T* released;
       T* not_released;
-
-      ~R() { released->Release(); }
-    };
-
-    void f(R<T>*) {}
-  )C++",
-              expected_changed_code = R"C++(
-    template <class U>
-    struct R {
-      gpos::owner<T*> released;
-      T* not_released;
-
-      ~R() { released->Release(); }
     };
 
     void f(R<T>*) {}
   )C++";
 
-  auto changed_code = annotateAndFormat(std::move(code));
-
-  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + code), annotateAndFormat(code));
 }
 
 TEST_F(BaseTest, Idempotence) {
   std::string code = R"C++(
     struct R {
-      gpos::owner<T*> t;   // don't annotate me again
-      gpos::owner<T*> t2;  // don't annotate me again
-      T* t3;
+      gpos::owner<T*> t;     // don't annotate me again
+      gpos::owner<T*> t2;    // don't annotate me again
       gpos::pointer<T*> t4;  // don't annotate me again
-      T* t5;
       ~R() {
         t->Release();
         gpos::SafeRelease(t2);
-        t3->Release();
-      }
-    };)C++",
-              expected_changed_code = R"C++(
-    struct R {
-      gpos::owner<T*> t;   // don't annotate me again
-      gpos::owner<T*> t2;  // don't annotate me again
-      gpos::owner<T*> t3;
-      gpos::pointer<T*> t4;  // don't annotate me again
-      gpos::pointer<T*> t5;
-      ~R() {
-        t->Release();
-        gpos::SafeRelease(t2);
-        t3->Release();
       }
     };)C++";
 
-  auto changed_code = annotateAndFormat(std::move(code));
-
-  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+  ASSERT_EQ(format(kPreamble + code), annotateAndFormat(code));
 }
 
 }  // namespace orca_tidy
