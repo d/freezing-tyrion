@@ -45,6 +45,20 @@ TEST_F(BaseTest, FieldOwnSafeRelease) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(BaseTest, FieldOwnExcludeTemplate) {
+  std::string code = R"C++(
+    template <class T>
+    struct R {
+      T t;
+      ~R() { t->Release(); }
+    };
+
+    template struct R<T*>;
+  )C++";
+
+  ASSERT_EQ(format(kPreamble + code), annotateAndFormat(code));
+}
+
 TEST_F(BaseTest, ConstQualifiersOnField) {
   std::string code = R"C++(
     struct R {
@@ -52,7 +66,6 @@ TEST_F(BaseTest, ConstQualifiersOnField) {
       T* const cp;
       mutable T* mp;
       mutable const T* mcp;
-      const mutable T* mcp2;
       ~R() {}
     };)C++",
               expected_changed_code = R"C++(
@@ -61,7 +74,6 @@ TEST_F(BaseTest, ConstQualifiersOnField) {
       gpos::pointer<T*> const cp;
       mutable gpos::pointer<T*> mp;
       mutable gpos::pointer<const T*> mcp;
-      mutable gpos::pointer<const T*> mcp2;
       ~R() {}
     };)C++";
 

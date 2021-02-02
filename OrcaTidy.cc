@@ -436,36 +436,22 @@ struct Annotator : NodesFromMatchBase<Annotator> {
     if (Match(annotation_matcher, field_decl->getType())) return;
 
     auto field_type_loc = field_decl->getTypeSourceInfo()->getTypeLoc();
+    auto pointer_loc = IgnoringElaboratedQualified(field_type_loc)
+                           .getAs<clang::PointerTypeLoc>();
+    // While the underlying type is a pointer type, the source code isn't
+    // spelled out in a pointer form (i.e. "T*". e.g. a typedef, or a
+    // template type parameter substitution). Annotating such things will be
+    // problematic.
+    if (!pointer_loc) return;
+
+    auto pointee_loc = pointer_loc.getPointeeLoc();
     clang::SourceRange type_range = field_type_loc.getSourceRange();
-    auto field_qual_type = field_decl->getType();
-    auto pointee_type = field_qual_type->getPointeeType();
+    auto pointee_type = pointee_loc.getType();
 
-    const char* opt_mutable = field_decl->isMutable() ? "mutable " : "";
-    std::string pointee_cv;
-    auto pointee_local_qualifiers = pointee_type.getLocalQualifiers();
-    if (pointee_local_qualifiers.hasConst()) {
-      pointee_cv = "const ";
-    }
-    if (pointee_local_qualifiers.hasVolatile()) {
-      pointee_cv += "volatile ";
-    }
-    auto field_type_text = clang::Lexer::getSourceText(
-        clang::CharSourceRange::getTokenRange(type_range), source_manager,
-        lang_opts);
-    std::string new_text =
-        (opt_mutable + annotation + "<" + pointee_cv + field_type_text + ">")
-            .str();
+    if (pointee_type.isLocalConstQualified())
+      FindConstTokenBefore(field_decl->getBeginLoc(), type_range);
 
-    // HACK: notice that the replacement range isn't just the type but it also
-    // extends to the beginning of the declarator. This is so that we cover
-    // the cases of "const mutable T*" or "mutable const volatile T*"
-    tooling::Replacement annotation_rep(
-        source_manager,
-        clang::CharSourceRange::getTokenRange(field_decl->getBeginLoc(),
-                                              field_type_loc.getEndLoc()),
-        new_text, lang_opts);
-    std::string file_path = annotation_rep.getFilePath().str();
-    CantFail(replacements[file_path].add(annotation_rep));
+    AnnotateSourceRange(type_range, annotation);
   }
 
   template <class Matcher, class Node>

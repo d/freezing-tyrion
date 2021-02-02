@@ -15,14 +15,6 @@ static void CantFail(llvm::Error error) noexcept {
 }
 
 namespace {
-auto IgnoringElaboratedQualified(clang::TypeLoc type_loc) {
-  while (type_loc.getTypeLocClass() == clang::TypeLoc::Elaborated ||
-         type_loc.getTypeLocClass() == clang::TypeLoc::Qualified) {
-    type_loc = type_loc.getNextTypeLoc();
-  }
-  return type_loc;
-}
-
 class ConverterAstConsumer : public clang::ASTConsumer,
                              public NodesFromMatchBase<ConverterAstConsumer> {
  public:
