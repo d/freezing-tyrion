@@ -1,3 +1,4 @@
+#include "Converter.h"
 #include "IncludeFixer.h"
 #include "OrcaTidy.h"
 
@@ -21,6 +22,7 @@ code with clang-apply-replacements.
 static cl::SubCommand base("base");
 static cl::SubCommand propagate("propagate");
 static cl::SubCommand fix_include("fix-include");
+static cl::SubCommand convert("convert");
 
 static cl::opt<orca_tidy::FixIncludeMode> fix_include_mode(
     "mode", cl::desc("mode of fix-include"),
@@ -29,6 +31,7 @@ static cl::opt<orca_tidy::FixIncludeMode> fix_include_mode(
                           "remove \"owner.h\" and insert \"Ref.h\"")),
     cl::cat(common_options), cl::sub(fix_include));
 
+int ConvertMain(tooling::RefactoringTool& tool);
 int AnnotateMain(clang::tooling::RefactoringTool& tool) {
   orca_tidy::ActionOptions action_options;
   if (base) {
@@ -72,8 +75,10 @@ int main(int argc, const char* argv[]) {
   int exit_code = [&tool]() {
     if (fix_include) {
       return FixIncludeMain(tool);
-    } else {
+    } else if (base || propagate) {
       return AnnotateMain(tool);
+    } else {
+      return ConvertMain(tool);
     }
   }();
 
@@ -107,4 +112,9 @@ int main(int argc, const char* argv[]) {
   }
 
   return 0;
+}
+
+int ConvertMain(tooling::RefactoringTool& tool) {
+  orca_tidy::Converter converter{tool.getReplacements()};
+  return tool.run(tooling::newFrontendActionFactory(&converter).get());
 }
