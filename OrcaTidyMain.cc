@@ -32,7 +32,7 @@ static cl::opt<orca_tidy::FixIncludeMode> fix_include_mode(
     cl::cat(common_options), cl::sub(fix_include));
 
 int ConvertMain(tooling::RefactoringTool& tool);
-int AnnotateMain(clang::tooling::RefactoringTool& tool) {
+int AnnotateMain(tooling::RefactoringTool& tool) {
   orca_tidy::ActionOptions action_options;
   if (base) {
     action_options = {true, false};
@@ -41,8 +41,7 @@ int AnnotateMain(clang::tooling::RefactoringTool& tool) {
   }
   orca_tidy::AnnotateAction annotate_action{tool.getReplacements(),
                                             action_options};
-  return tool.run(
-      clang::tooling::newFrontendActionFactory(&annotate_action).get());
+  return tool.run(tooling::newFrontendActionFactory(&annotate_action).get());
 }
 
 int FixIncludeMain(tooling::RefactoringTool& tool) {
