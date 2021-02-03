@@ -15,10 +15,9 @@ fmt() {
 }
 
 chk() {
-	# --tty: enables colorful diagnostics
 	# --halt: fail as soon as we encounter the first formatting diagnostic
-	files_to_format | parallel -P +0 -0 \
-		--halt now,fail=1 --tty \
+	files_to_format | parallel -q -0 \
+		--halt now,fail=1 \
 		"${CLANG_FORMAT}" -dry-run -ferror-limit 1 -Werror
 }
 
