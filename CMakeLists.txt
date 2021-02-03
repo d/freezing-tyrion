@@ -41,7 +41,8 @@ add_executable(
   AnnotateTest.cc
   ConverterTest.cc
   ConvertFieldTest.cc
-  FieldTest.cc)
+  FieldTest.cc
+  ConvertCcacheTest.cc)
 target_link_libraries(orca-tidy-test orca_tidy gmock_main)
 
 include(GoogleTest)

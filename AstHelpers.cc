@@ -31,15 +31,26 @@ void AnnotateSourceRange(
     clang::SourceRange source_range, llvm::StringRef annotation,
     const clang::ASTContext& ast_context,
     std::map<std::string, tooling::Replacements>& replacements) {
-  auto range = clang::CharSourceRange::getTokenRange(source_range);
+  AnnotateSourceRange(source_range, source_range, annotation, ast_context,
+                      replacements);
+}
+
+void AnnotateSourceRange(
+    clang::SourceRange source_range, clang::SourceRange sub_range,
+    llvm::StringRef annotation, const clang::ASTContext& ast_context,
+    std::map<std::string, tooling::Replacements>& replacements) {
   const auto& source_manager = ast_context.getSourceManager();
   const auto& lang_opts = ast_context.getLangOpts();
-  auto type_text =
-      clang::Lexer::getSourceText(range, source_manager, lang_opts);
+
+  auto replace_range = clang::CharSourceRange::getTokenRange(source_range);
+  auto type_text = clang::Lexer::getSourceText(
+      clang::CharSourceRange::getTokenRange(sub_range), source_manager,
+      lang_opts);
 
   std::string new_text = (annotation + "<" + type_text + ">").str();
 
-  tooling::Replacement replacement(source_manager, range, new_text, lang_opts);
+  tooling::Replacement replacement(source_manager, replace_range, new_text,
+                                   lang_opts);
   std::string file_path = replacement.getFilePath().str();
   CantFail(replacements[file_path].add(replacement));
 }

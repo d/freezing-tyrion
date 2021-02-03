@@ -7,6 +7,8 @@ using namespace clang::ast_matchers;
 namespace tooling = clang::tooling;
 
 namespace orca_tidy {
+static const constexpr llvm::StringRef kRefAnnotation = "gpos::Ref";
+
 namespace {
 class ConverterAstConsumer : public clang::ASTConsumer,
                              public NodesFromMatchBase<ConverterAstConsumer> {
@@ -18,7 +20,9 @@ class ConverterAstConsumer : public clang::ASTConsumer,
       std::map<std::string, tooling::Replacements>& file_to_replaces)
       : file_to_replaces_(file_to_replaces) {}
 
+  void ConvertCcacheTypedefs() const;
   void HandleTranslationUnit(clang::ASTContext& context) override {
+    ConvertCcacheTypedefs();
     ConvertPointerFields();
     ConvertOwnerFields();
   }
@@ -103,6 +107,27 @@ void orca_tidy::ConverterAstConsumer::OwnerToRef(
 
   tooling::Replacement r{SourceManager(), range, replacement_text, LangOpts()};
   CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
+}
+
+void orca_tidy::ConverterAstConsumer::ConvertCcacheTypedefs() const {
+  for (const auto* t : NodesFromMatch<clang::TypedefNameDecl>(
+           typedefNameDecl(
+               hasType(qualType(hasDeclaration(classTemplateSpecializationDecl(
+                   hasName("CCache"),
+                   hasTemplateArgument(0, refersToType(pointerType())))))))
+               .bind("typedef_decl"),
+           "typedef_decl")) {
+    auto type_loc = t->getTypeSourceInfo()
+                        ->getTypeLoc()
+                        .getAsAdjusted<clang::TemplateSpecializationTypeLoc>();
+    auto arg_loc = type_loc.getArgLoc(0)
+                       .getTypeSourceInfo()
+                       ->getTypeLoc()
+                       .getAsAdjusted<clang::PointerTypeLoc>();
+    AnnotateSourceRange(arg_loc.getSourceRange(),
+                        arg_loc.getPointeeLoc().getSourceRange(),
+                        kRefAnnotation, AstContext(), file_to_replaces_);
+  }
 }
 }  // namespace
 

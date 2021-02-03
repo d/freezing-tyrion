@@ -108,6 +108,11 @@ clang::TypeLoc IgnoringElaboratedQualified(clang::TypeLoc type_loc);
 void CantFail(llvm::Error error) noexcept;
 
 void AnnotateSourceRange(
+    clang::SourceRange source_range, clang::SourceRange sub_range,
+    llvm::StringRef annotation, const clang::ASTContext& ast_context,
+    std::map<std::string, clang::tooling::Replacements>& replacements);
+
+void AnnotateSourceRange(
     clang::SourceRange source_range, llvm::StringRef annotation,
     const clang::ASTContext& ast_context,
     std::map<std::string, clang::tooling::Replacements>& replacements);

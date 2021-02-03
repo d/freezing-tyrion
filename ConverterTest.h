@@ -40,6 +40,12 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
       T& operator*() const;
       T* get() const;
     };
+
+    template <class T, class K>
+    class CCache {
+     public:
+    };
+
     }  // namespace gpos
 
     struct T : gpos::CRefCount<T> {};
