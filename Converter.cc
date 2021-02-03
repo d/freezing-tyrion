@@ -110,17 +110,36 @@ void orca_tidy::ConverterAstConsumer::OwnerToRef(
 }
 
 void orca_tidy::ConverterAstConsumer::ConvertCcacheTypedefs() const {
-  for (const auto* t : NodesFromMatch<clang::TypedefNameDecl>(
-           typedefNameDecl(
-               hasType(qualType(hasDeclaration(classTemplateSpecializationDecl(
-                   hasAnyName("CCache", "CCacheAccessor"),
-                   hasTemplateArgument(0, refersToType(pointerType())))))))
-               .bind("typedef_decl"),
-           "typedef_decl")) {
-    auto type_loc = t->getTypeSourceInfo()
-                        ->getTypeLoc()
-                        .getAsAdjusted<clang::TemplateSpecializationTypeLoc>();
-    auto arg_loc = type_loc.getArgLoc(0)
+  auto specialization = classTemplateSpecializationDecl(
+      hasAnyName("CCache", "CCacheAccessor"),
+      hasTemplateArgument(0, refersToType(pointerType())));
+  for (auto [tt, vv] : NodesFromMatch<clang::TypedefNameDecl, clang::VarDecl>(
+           decl(anyOf(
+               typedefNameDecl(
+                   hasType(qualType(hasDeclaration(specialization))))
+                   .bind("typedef_decl"),
+               varDecl(unless(isInstantiated()),
+                       hasType(qualType(anyOf(hasDeclaration(specialization),
+                                              pointsTo(specialization)))))
+                   .bind("var"))),
+           "typedef_decl", "var")) {
+    // We cannot capture structured bindings in lambdas, see
+    // https://wg21.cmeerw.net/cwg/issue2308 and https://wg21.link/P0588R1
+    const auto* t = tt;
+    const auto* v = vv;
+    auto specialization_loc = [t, v]() {
+      if (t) {
+        return t->getTypeSourceInfo()
+            ->getTypeLoc()
+            .getAsAdjusted<clang::TemplateSpecializationTypeLoc>();
+      }
+      auto loc = v->getTypeSourceInfo()->getTypeLoc();
+      if (auto pointer_loc = loc.getAsAdjusted<clang::PointerTypeLoc>();
+          pointer_loc)
+        loc = pointer_loc.getPointeeLoc();
+      return loc.getAsAdjusted<clang::TemplateSpecializationTypeLoc>();
+    }();
+    auto arg_loc = specialization_loc.getArgLoc(0)
                        .getTypeSourceInfo()
                        ->getTypeLoc()
                        .getAsAdjusted<clang::PointerTypeLoc>();
