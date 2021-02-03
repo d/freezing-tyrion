@@ -47,7 +47,8 @@ add_executable(
   OutputParamTest.cc
   OwnerVarTest.cc
   ConverterTest.cc
-  ConvertFieldTest.cc)
+  ConvertFieldTest.cc
+  ConvertCcacheTest.cc)
 target_link_libraries(orca-tidy-test orca_tidy gmock_main)
 
 include(GoogleTest)
