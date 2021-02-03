@@ -113,7 +113,7 @@ void orca_tidy::ConverterAstConsumer::ConvertCcacheTypedefs() const {
   for (const auto* t : NodesFromMatch<clang::TypedefNameDecl>(
            typedefNameDecl(
                hasType(qualType(hasDeclaration(classTemplateSpecializationDecl(
-                   hasName("CCache"),
+                   hasAnyName("CCache", "CCacheAccessor"),
                    hasTemplateArgument(0, refersToType(pointerType())))))))
                .bind("typedef_decl"),
            "typedef_decl")) {

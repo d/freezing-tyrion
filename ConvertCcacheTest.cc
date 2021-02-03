@@ -27,4 +27,21 @@ TEST_F(ConvertCcacheAndFriends, CCacheTemplateParam) {
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
+
+TEST_F(ConvertCcacheAndFriends, CCacheAccessorTemplateParam) {
+  std::string code = R"C++(
+    struct R {
+      typedef gpos::CCacheAccessor<T*, int*> TCache;
+    };
+  )C++",
+              expected_changed_code = R"C++(
+    struct R {
+      typedef gpos::CCacheAccessor<gpos::Ref<T>, int*> TCache;
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
 }  // namespace orca_tidy
