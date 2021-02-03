@@ -2,6 +2,7 @@
 #define ORCATIDY__ASTHELPERS_H_
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/Tooling/Core/Replacement.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -103,5 +104,13 @@ struct NodesFromMatchBase {
 };
 
 clang::TypeLoc IgnoringElaboratedQualified(clang::TypeLoc type_loc);
+
+void CantFail(llvm::Error error) noexcept;
+
+void AnnotateSourceRange(
+    clang::SourceRange source_range, llvm::StringRef annotation,
+    const clang::ASTContext& ast_context,
+    std::map<std::string, clang::tooling::Replacements>& replacements);
+
 }  // namespace orca_tidy
 #endif  // ORCATIDY__ASTHELPERS_H_

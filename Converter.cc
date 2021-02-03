@@ -7,13 +7,6 @@ using namespace clang::ast_matchers;
 namespace tooling = clang::tooling;
 
 namespace orca_tidy {
-static void CantFail(llvm::Error error) noexcept {
-  if (!error) [[likely]]
-    return;
-  llvm::errs() << llvm::toString(std::move(error)) << '\n';
-  std::terminate();
-}
-
 namespace {
 class ConverterAstConsumer : public clang::ASTConsumer,
                              public NodesFromMatchBase<ConverterAstConsumer> {
