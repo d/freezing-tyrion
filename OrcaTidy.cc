@@ -1,10 +1,7 @@
 #include "OrcaTidy.h"
 #include "AstHelpers.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
-#include "clang/Tooling/CommonOptionsParser.h"
-#include "clang/Tooling/Refactoring.h"
 #include "clang/Tooling/Tooling.h"
-#include "llvm/Support/YAMLTraits.h"
 
 namespace orca_tidy {
 // NOLINTNEXTLINE(google-build-using-namespace)
@@ -24,13 +21,6 @@ __attribute__((const)) static auto RefCountPointerType() {
 
 __attribute__((const)) static StatementMatcher CallReturningOwner() {
   return callExpr(hasType(OwnerType()));
-}
-
-static void CantFail(llvm::Error error) noexcept {
-  if (!error) [[likely]]
-    return;
-  llvm::errs() << llvm::toString(std::move(error)) << '\n';
-  std::terminate();
 }
 
 static auto FieldReferenceFor(DeclarationMatcher const& field_matcher) {
@@ -409,17 +399,9 @@ struct Annotator : NodesFromMatchBase<Annotator> {
   }
 
   void AnnotateSourceRange(clang::SourceRange source_range,
-                           const llvm::StringRef& annotation) const {
-    auto range = clang::CharSourceRange::getTokenRange(source_range);
-    auto type_text =
-        clang::Lexer::getSourceText(range, source_manager, lang_opts);
-
-    std::string new_text = (annotation + "<" + type_text + ">").str();
-
-    tooling::Replacement replacement(source_manager, range, new_text,
-                                     lang_opts);
-    std::string file_path = replacement.getFilePath().str();
-    CantFail(replacements[file_path].add(replacement));
+                           llvm::StringRef annotation) const {
+    orca_tidy::AnnotateSourceRange(source_range, annotation, ast_context,
+                                   replacements);
   }
 
   void AnnotateFieldOwner(const clang::FieldDecl* field) const {

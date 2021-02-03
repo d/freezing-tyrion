@@ -4,7 +4,6 @@
 #include <utility>
 #include "OrcaTidy.h"
 #include "clang/Format/Format.h"
-#include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Refactoring.h"
 #include "gtest/gtest.h"
 
