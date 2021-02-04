@@ -12,6 +12,8 @@ static const constexpr llvm::StringRef kOwnerAnnotation = "gpos::owner";
 static const constexpr llvm::StringRef kPointerAnnotation = "gpos::pointer";
 
 using ExpressionMatcher = decltype(clang::ast_matchers::nullPointerConstant());
+using VarMatcher = decltype(clang::ast_matchers::hasLocalStorage());
+using clang::ast_matchers::DeclarationMatcher;
 using clang::ast_matchers::StatementMatcher;
 using clang::ast_matchers::TypeMatcher;
 
@@ -28,6 +30,22 @@ __attribute__((const)) TypeMatcher AnnotatedType();
 
 __attribute__((const)) StatementMatcher
 CallCcacheAccessorMethodsReturningOwner();
+
+__attribute__((const)) DeclarationMatcher SingleDecl();
+
+StatementMatcher AssignTo(const ExpressionMatcher& lhs);
+
+StatementMatcher AssignTo(const ExpressionMatcher& lhs,
+                          const ExpressionMatcher& rhs);
+
+VarMatcher VarAssigned(const ExpressionMatcher& expr_matcher);
+DeclarationMatcher VarInitializedOrAssigned(
+    const VarMatcher& var_matcher, const ExpressionMatcher& expr_matcher);
+
+using DeclSet = llvm::DenseSet<const clang::Decl*>;
+AST_MATCHER_P(clang::Decl, IsInSet, DeclSet, nodes) {
+  return nodes.contains(&Node);
+}
 
 template <class Range>
 auto MakeVector(Range&& range) {
@@ -105,6 +123,13 @@ struct NodesFromMatchBase {
           return GetNode<Nodes...>(bound_nodes, ids...);
         }));
     return nodes;
+  }
+
+  template <class Matcher>
+  DeclSet DeclSetFromMatch(Matcher matcher, llvm::StringRef id) const {
+    auto nodes_from_match = NodesFromMatch<clang::Decl>(matcher, id);
+    DeclSet node_set{nodes_from_match.begin(), nodes_from_match.end()};
+    return node_set;
   }
 };
 

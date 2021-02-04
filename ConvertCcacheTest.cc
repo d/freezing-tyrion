@@ -63,6 +63,8 @@ TEST_F(ConvertCcacheAndFriends, CCacheAccessorInsertOrValOrNext) {
       T* inserted = accessor.Insert(key, t);
       T* val = accessor.Val();
       T* next = accessor.Next();
+      T* var;
+      var = accessor.Val();
     }
   )C++",
               expected_changed_code = R"C++(
@@ -71,6 +73,8 @@ TEST_F(ConvertCcacheAndFriends, CCacheAccessorInsertOrValOrNext) {
       gpos::Ref<T> inserted = accessor.Insert(key, t);
       gpos::Ref<T> val = accessor.Val();
       gpos::Ref<T> next = accessor.Next();
+      gpos::Ref<T> var;
+      var = accessor.Val();
     }
   )C++";
 

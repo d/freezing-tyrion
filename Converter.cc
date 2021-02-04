@@ -171,9 +171,9 @@ void orca_tidy::ConverterAstConsumer::ConvertCcacheTypedefs() const {
 void orca_tidy::ConverterAstConsumer::ConvertCcacheAccessorInsertOrValOrNext()
     const {
   for (const auto* v : NodesFromMatch<clang::VarDecl>(
-           varDecl(hasInitializer(ignoringParenImpCasts(
-                       CallCcacheAccessorMethodsReturningOwner())))
-               .bind("var"),
+           VarInitializedOrAssigned(
+               varDecl().bind("var"),
+               ignoringParenCasts(CallCcacheAccessorMethodsReturningOwner())),
            "var")) {
     auto pointer_loc = v->getTypeSourceInfo()
                            ->getTypeLoc()

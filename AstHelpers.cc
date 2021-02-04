@@ -67,4 +67,38 @@ StatementMatcher CallCcacheAccessorMethodsReturningOwner() {
       callee(cxxMethodDecl(hasAnyName("Insert", "Val", "Next"),
                            ofClass(hasName("gpos::CCacheAccessor")))));
 }
+
+DeclarationMatcher SingleDecl() {
+  return unless(hasParent(declStmt(unless(declCountIs(1)))));
+}
+
+StatementMatcher AssignTo(const ExpressionMatcher& lhs) {
+  return binaryOperator(hasOperatorName("="), hasLHS(lhs));
+}
+
+StatementMatcher AssignTo(const ExpressionMatcher& lhs,
+                          const ExpressionMatcher& rhs) {
+  return binaryOperator(hasOperatorName("="), hasLHS(lhs), hasRHS(rhs));
+}
+
+namespace {
+AST_MATCHER_P(clang::VarDecl, VarAssignedImpl, ExpressionMatcher,
+              expr_matcher) {
+  return varDecl(hasDeclContext(functionDecl(hasBody(hasDescendant(AssignTo(
+                     declRefExpr(to(equalsNode(&Node))), expr_matcher))))))
+      .matches(Node, Finder, Builder);
+}
+}  // namespace
+
+DeclarationMatcher VarInitializedOrAssigned(
+    const VarMatcher& var_matcher, const ExpressionMatcher& expr_matcher) {
+  return varDecl(
+      hasLocalStorage(), var_matcher,
+      anyOf(hasInitializer(expr_matcher), VarAssigned(expr_matcher)));
+}
+
+VarMatcher VarAssigned(const ExpressionMatcher& expr_matcher) {
+  return VarAssignedImpl(expr_matcher);
+}
+
 }  // namespace orca_tidy
