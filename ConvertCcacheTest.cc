@@ -37,4 +37,23 @@ TEST_F(ConvertCcacheAndFriends, CCacheTemplateParamInVar) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(ConvertCcacheAndFriends, CCacheReturnTypeTemplateParam) {
+  std::string code = R"C++(
+    template <class T, class K>
+    gpos::CCache<T, K>* CreateCache();
+
+    void foo() { CreateCache<T*, int*>(); }
+  )C++",
+              expected_changed_code = R"C++(
+    template <class T, class K>
+    gpos::CCache<T, K>* CreateCache();
+
+    void foo() { CreateCache<gpos::Ref<T>, int*>(); }
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 }  // namespace orca_tidy

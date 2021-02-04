@@ -147,7 +147,24 @@ void orca_tidy::ConverterAstConsumer::ConvertCcacheTypedefs() const {
                         arg_loc.getPointeeLoc().getSourceRange(),
                         kRefAnnotation, AstContext(), file_to_replaces_);
   }
+
+  for (const auto* ref : NodesFromMatch<clang::DeclRefExpr>(
+           callExpr(callee(expr(ignoringParenImpCasts(
+               declRefExpr(to(functionDecl(isTemplateInstantiation(),
+                                           returns(pointsTo(specialization)))))
+                   .bind("ref"))))),
+           "ref")) {
+    if (ref->getNumTemplateArgs() != 2) continue;
+    auto arg = ref->template_arguments()[0];
+    auto arg_loc = arg.getTypeSourceInfo()
+                       ->getTypeLoc()
+                       .getAsAdjusted<clang::PointerTypeLoc>();
+    AnnotateSourceRange(arg_loc.getSourceRange(),
+                        arg_loc.getPointeeLoc().getSourceRange(),
+                        kRefAnnotation, AstContext(), file_to_replaces_);
+  }
 }
+
 }  // namespace
 
 Converter::Converter(
