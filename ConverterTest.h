@@ -46,7 +46,12 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
      public:
     };
     template <class T, class K>
-    class CCacheAccessor {};
+    class CCacheAccessor {
+     public:
+      T Insert(K key, T val);
+      T Val();
+      T Next();
+    };
     }  // namespace gpos
 
     struct T : gpos::CRefCount<T> {};

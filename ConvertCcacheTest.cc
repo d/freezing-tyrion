@@ -56,4 +56,27 @@ TEST_F(ConvertCcacheAndFriends, CCacheReturnTypeTemplateParam) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(ConvertCcacheAndFriends, CCacheAccessorInsertOrValOrNext) {
+  std::string code = R"C++(
+    using TCacheAccessor = gpos::CCacheAccessor<T*, int*>;
+    void foo(TCacheAccessor accessor, int* key, T* t) {
+      T* inserted = accessor.Insert(key, t);
+      T* val = accessor.Val();
+      T* next = accessor.Next();
+    }
+  )C++",
+              expected_changed_code = R"C++(
+    using TCacheAccessor = gpos::CCacheAccessor<gpos::Ref<T>, int*>;
+    void foo(TCacheAccessor accessor, int* key, T* t) {
+      gpos::Ref<T> inserted = accessor.Insert(key, t);
+      gpos::Ref<T> val = accessor.Val();
+      gpos::Ref<T> next = accessor.Next();
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 }  // namespace orca_tidy

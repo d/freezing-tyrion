@@ -21,10 +21,13 @@ class ConverterAstConsumer : public clang::ASTConsumer,
       : file_to_replaces_(file_to_replaces) {}
 
   void ConvertCcacheTypedefs() const;
+  void ConvertCcacheAccessorInsertOrValOrNext() const;
+
   void HandleTranslationUnit(clang::ASTContext& context) override {
     ConvertCcacheTypedefs();
     ConvertPointerFields();
     ConvertOwnerFields();
+    ConvertCcacheAccessorInsertOrValOrNext();
   }
 
  private:
@@ -165,6 +168,21 @@ void orca_tidy::ConverterAstConsumer::ConvertCcacheTypedefs() const {
   }
 }
 
+void orca_tidy::ConverterAstConsumer::ConvertCcacheAccessorInsertOrValOrNext()
+    const {
+  for (const auto* v : NodesFromMatch<clang::VarDecl>(
+           varDecl(hasInitializer(ignoringParenImpCasts(
+                       CallCcacheAccessorMethodsReturningOwner())))
+               .bind("var"),
+           "var")) {
+    auto pointer_loc = v->getTypeSourceInfo()
+                           ->getTypeLoc()
+                           .getAsAdjusted<clang::PointerTypeLoc>();
+    AnnotateSourceRange(pointer_loc.getSourceRange(),
+                        pointer_loc.getPointeeLoc().getSourceRange(),
+                        kRefAnnotation, AstContext(), file_to_replaces_);
+  }
+}
 }  // namespace
 
 Converter::Converter(

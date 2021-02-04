@@ -61,4 +61,10 @@ void CantFail(llvm::Error error) noexcept {
   llvm::errs() << llvm::toString(std::move(error)) << '\n';
   std::terminate();
 }
+
+StatementMatcher CallCcacheAccessorMethodsReturningOwner() {
+  return callExpr(
+      callee(cxxMethodDecl(hasAnyName("Insert", "Val", "Next"),
+                           ofClass(hasName("gpos::CCacheAccessor")))));
+}
 }  // namespace orca_tidy

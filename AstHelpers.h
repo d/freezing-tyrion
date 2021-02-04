@@ -11,6 +11,8 @@ namespace orca_tidy {
 static const constexpr llvm::StringRef kOwnerAnnotation = "gpos::owner";
 static const constexpr llvm::StringRef kPointerAnnotation = "gpos::pointer";
 
+using ExpressionMatcher = decltype(clang::ast_matchers::nullPointerConstant());
+using clang::ast_matchers::StatementMatcher;
 using clang::ast_matchers::TypeMatcher;
 
 using NamedMatcher = decltype(clang::ast_matchers::hasName(""));
@@ -23,6 +25,9 @@ __attribute__((const)) TypeMatcher PointerType();
 __attribute__((const)) TypeMatcher LeakedType();
 
 __attribute__((const)) TypeMatcher AnnotatedType();
+
+__attribute__((const)) StatementMatcher
+CallCcacheAccessorMethodsReturningOwner();
 
 template <class Range>
 auto MakeVector(Range&& range) {

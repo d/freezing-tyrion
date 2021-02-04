@@ -29,7 +29,6 @@ static auto FieldReferenceFor(DeclarationMatcher const& field_matcher) {
 }
 
 using VarMatcher = decltype(hasLocalStorage());
-using ExpressionMatcher = decltype(ignoringParenImpCasts(anything()));
 
 static auto ReleaseCallExpr(ExpressionMatcher const& reference_to_field) {
   auto release = cxxMemberCallExpr(
