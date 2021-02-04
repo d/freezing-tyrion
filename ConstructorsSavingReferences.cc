@@ -66,8 +66,13 @@ Fomo Action() { return {}; }
 int main(int argc, const char** argv) {
   llvm::cl::OptionCategory ctros_saving_refs_category(
       "dummy tool option category");
-  clang::tooling::CommonOptionsParser parser(argc, argv,
-                                             ctros_saving_refs_category);
+  auto expected_parser = clang::tooling::CommonOptionsParser::create(
+      argc, argv, ctros_saving_refs_category);
+  if (!expected_parser) {
+    llvm::WithColor::error() << llvm::toString(expected_parser.takeError());
+    return 2;
+  }
+  auto parser = std::move(expected_parser.get());
   clang::tooling::ClangTool tool(parser.getCompilations(),
                                  parser.getSourcePathList());
 

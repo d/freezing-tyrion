@@ -46,8 +46,14 @@ int FixIncludeMain(tooling::RefactoringTool& tool) {
 }
 
 int main(int argc, const char* argv[]) {
-  tooling::CommonOptionsParser parser(argc, argv, common_options,
-                                      "A tool to annotate and rewrite ORCA");
+  auto expected_parser = tooling::CommonOptionsParser::create(
+      argc, argv, common_options, cl::OneOrMore,
+      "A tool to annotate and rewrite ORCA");
+  if (!expected_parser) {
+    llvm::WithColor::error() << llvm::toString(expected_parser.takeError());
+    return 2;
+  }
+  auto parser = std::move(expected_parser.get());
   tooling::RefactoringTool tool(parser.getCompilations(),
                                 parser.getSourcePathList());
 
