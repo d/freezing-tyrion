@@ -112,8 +112,9 @@ void ConverterAstConsumer::ConvertCcacheTypedefs() const {
   auto specialization = classTemplateSpecializationDecl(
       hasAnyName("CCache", "CCacheAccessor"),
       hasTemplateArgument(0, refersToType(pointerType())));
-  for (auto [tt, vv] :
-       NodesFromMatchAST<clang::TypedefNameDecl, clang::VarDecl>(
+  for (auto [tt, vv, auto_p] :
+       NodesFromMatchAST<clang::TypedefNameDecl, clang::VarDecl,
+                         clang::VarDecl>(
            decl(anyOf(
                typedefNameDecl(
                    hasType(qualType(hasDeclaration(specialization))))
@@ -121,15 +122,30 @@ void ConverterAstConsumer::ConvertCcacheTypedefs() const {
                varDecl(unless(isInstantiated()),
                        hasType(qualType(anyOf(hasDeclaration(specialization),
                                               pointsTo(specialization)))))
-                   .bind("var"))),
-           "typedef_decl", "var")) {
+                   .bind("var"),
+               varDecl(
+                   hasType(classTemplateSpecializationDecl(hasTemplateArgument(
+                       0, refersToType(hasDeclaration(specialization))))))
+                   .bind("auto_p"))),
+           "typedef_decl", "var", "auto_p")) {
     // We cannot capture structured bindings in lambdas, see
     // https://wg21.cmeerw.net/cwg/issue2308 and https://wg21.link/P0588R1
     const auto* t = tt;
     const auto* v = vv;
-    auto specialization_loc = [t, v]() {
+    const auto* ap = auto_p;
+    auto specialization_loc = [=]() {
       if (t) {
         return t->getTypeSourceInfo()
+            ->getTypeLoc()
+            .getAsAdjusted<clang::TemplateSpecializationTypeLoc>();
+      }
+      if (ap) {
+        auto auto_p_instantiation_loc =
+            ap->getTypeSourceInfo()
+                ->getTypeLoc()
+                .getAsAdjusted<clang::TemplateSpecializationTypeLoc>();
+        return auto_p_instantiation_loc.getArgLoc(0)
+            .getTypeSourceInfo()
             ->getTypeLoc()
             .getAsAdjusted<clang::TemplateSpecializationTypeLoc>();
       }

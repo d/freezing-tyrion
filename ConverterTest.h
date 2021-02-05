@@ -41,6 +41,12 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
       T* get() const;
     };
 
+    template <class T>
+    class CAutoP {
+     public:
+      CAutoP const& operator=(T*);
+    };
+
     template <class T, class K>
     class CCache {
      public:
