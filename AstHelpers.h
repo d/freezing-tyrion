@@ -47,6 +47,9 @@ AST_MATCHER_P(clang::Decl, IsInSet, DeclSet, nodes) {
   return nodes.contains(&Node);
 }
 
+clang::QualType StripElaborated(clang::QualType qual_type);
+TypeMatcher IgnoringElaborated(TypeMatcher type_matcher);
+
 template <class Range>
 auto MakeVector(Range&& range) {
   using value_type = typename decltype(range.begin())::value_type;

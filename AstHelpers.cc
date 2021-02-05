@@ -88,6 +88,11 @@ AST_MATCHER_P(clang::VarDecl, VarAssignedImpl, ExpressionMatcher,
                      declRefExpr(to(equalsNode(&Node))), expr_matcher))))))
       .matches(Node, Finder, Builder);
 }
+
+AST_MATCHER_P(clang::QualType, IgnoringElaboratedImpl, TypeMatcher,
+              type_matcher) {
+  return type_matcher.matches(StripElaborated(Node), Finder, Builder);
+}
 }  // namespace
 
 DeclarationMatcher VarInitializedOrAssigned(
@@ -99,6 +104,17 @@ DeclarationMatcher VarInitializedOrAssigned(
 
 VarMatcher VarAssigned(const ExpressionMatcher& expr_matcher) {
   return VarAssignedImpl(expr_matcher);
+}
+
+clang::QualType StripElaborated(clang::QualType qual_type) {
+  while (const auto* elaborated = qual_type->getAs<clang::ElaboratedType>()) {
+    qual_type = elaborated->desugar();
+  }
+  return qual_type;
+}
+
+TypeMatcher IgnoringElaborated(TypeMatcher type_matcher) {
+  return IgnoringElaboratedImpl(type_matcher);
 }
 
 }  // namespace orca_tidy
