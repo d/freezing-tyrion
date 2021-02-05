@@ -43,12 +43,20 @@ TEST_F(ConvertCcacheAndFriends, CCacheReturnTypeTemplateParam) {
     gpos::CCache<T, K>* CreateCache();
 
     void foo() { CreateCache<T*, int*>(); }
+    void bar() {
+      gpos::CAutoP<gpos::CCache<T*, int*>> apcache;
+      apcache = CreateCache<T*, int*>();
+    }
   )C++",
               expected_changed_code = R"C++(
     template <class T, class K>
     gpos::CCache<T, K>* CreateCache();
 
     void foo() { CreateCache<gpos::Ref<T>, int*>(); }
+    void bar() {
+      gpos::CAutoP<gpos::CCache<gpos::Ref<T>, int*>> apcache;
+      apcache = CreateCache<gpos::Ref<T>, int*>();
+    }
   )C++";
 
   auto changed_code = annotateAndFormat(std::move(code));
