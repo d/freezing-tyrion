@@ -123,9 +123,9 @@ void ConverterAstConsumer::ConvertCcacheTypedefs() const {
                        hasType(qualType(anyOf(hasDeclaration(specialization),
                                               pointsTo(specialization)))))
                    .bind("var"),
-               varDecl(
-                   hasType(classTemplateSpecializationDecl(hasTemplateArgument(
-                       0, refersToType(hasDeclaration(specialization))))))
+               varDecl(hasType(IgnoringElaborated(templateSpecializationType(
+                           hasTemplateArgument(0, refersToType(hasDeclaration(
+                                                      specialization)))))))
                    .bind("auto_p"))),
            "typedef_decl", "var", "auto_p")) {
     // We cannot capture structured bindings in lambdas, see
