@@ -28,9 +28,6 @@ static auto FieldReferenceFor(DeclarationMatcher const& field_matcher) {
                     hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
 }
 
-using VarMatcher = decltype(hasLocalStorage());
-using ExpressionMatcher = decltype(ignoringParenImpCasts(anything()));
-
 static auto ReleaseCallExpr(ExpressionMatcher const& reference_to_field) {
   auto release = cxxMemberCallExpr(
       callee(cxxMethodDecl(hasName("Release"), parameterCountIs(0))),
@@ -51,15 +48,6 @@ AST_MATCHER(clang::NamedDecl, Unnamed) { return !Node.getDeclName(); }
 AST_MATCHER(clang::NamedDecl, Unused) {
   return Node.hasAttr<clang::UnusedAttr>() || !Node.getDeclName() ||
          !Node.isReferenced();
-}
-
-static DeclarationMatcher SingleDecl() {
-  return unless(hasParent(declStmt(unless(declCountIs(1)))));
-}
-
-using DeclSet = llvm::DenseSet<const clang::Decl*>;
-AST_MATCHER_P(clang::Decl, IsInSet, DeclSet, nodes) {
-  return nodes.contains(&Node);
 }
 
 using CXXMethodMatcher = decltype(isOverride());
@@ -114,15 +102,6 @@ static ReturnMatcher ReturnAfterAddRef(const ExpressionMatcher& retval,
                                        const ExpressionMatcher& addref_ref) {
   return returnStmt(hasReturnValue(ignoringParenCasts(retval)),
                     StmtIsImmediatelyAfter(AddRefOn(addref_ref)));
-}
-
-StatementMatcher AssignTo(const ExpressionMatcher& lhs) {
-  return binaryOperator(hasOperatorName("="), hasLHS(lhs));
-}
-
-StatementMatcher AssignTo(const ExpressionMatcher& lhs,
-                          const ExpressionMatcher& rhs) {
-  return binaryOperator(hasOperatorName("="), hasLHS(lhs), hasRHS(rhs));
 }
 
 StatementMatcher AddRefOrAssign(const ExpressionMatcher expr) {
@@ -241,13 +220,6 @@ struct Annotator : NodesFromMatchBase<Annotator> {
   void Propagate() const;
 
   void AnnotateBaseCases() const;
-
-  template <class Matcher>
-  DeclSet DeclSetFromMatch(Matcher matcher, llvm::StringRef id) const {
-    auto nodes_from_match = NodesFromMatch<clang::Decl>(matcher, id);
-    DeclSet node_set{nodes_from_match.begin(), nodes_from_match.end()};
-    return node_set;
-  }
 
   auto VarInitializedOrAssigned(const VarMatcher& var_matcher,
                                 const ExpressionMatcher& expr_matcher) const {
