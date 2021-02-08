@@ -28,6 +28,8 @@ __attribute__((const)) TypeMatcher LeakedType();
 
 __attribute__((const)) TypeMatcher AnnotatedType();
 
+__attribute__((const)) TypeMatcher RefCountPointerType();
+
 __attribute__((const)) StatementMatcher
 CallCcacheAccessorMethodsReturningOwner();
 
@@ -37,10 +39,6 @@ StatementMatcher AssignTo(const ExpressionMatcher& lhs);
 
 StatementMatcher AssignTo(const ExpressionMatcher& lhs,
                           const ExpressionMatcher& rhs);
-
-VarMatcher VarAssigned(const ExpressionMatcher& expr_matcher);
-DeclarationMatcher VarInitializedOrAssigned(
-    const VarMatcher& var_matcher, const ExpressionMatcher& expr_matcher);
 
 using DeclSet = llvm::DenseSet<const clang::Decl*>;
 AST_MATCHER_P(clang::Decl, IsInSet, DeclSet, nodes) {
@@ -133,6 +131,45 @@ struct NodesFromMatchBase {
     auto nodes_from_match = NodesFromMatch<clang::Decl>(matcher, id);
     DeclSet node_set{nodes_from_match.begin(), nodes_from_match.end()};
     return node_set;
+  }
+
+  VarMatcher Assigned(const ExpressionMatcher& expr_matcher) const {
+    // NOLINTNEXTLINE(google-build-using-namespace)
+    using namespace clang::ast_matchers;
+
+    // N.B. IsInSet here is not merely an optimization: we CANNOT use
+    // hasDescendant in a custom matcher: the memoization is designed to work in
+    // a monolithic matcher where the inner matcher outlives the "Finder"
+    // object. In a custom matcher that attempts to use hasDescendant, the inner
+    // matcher will be temporary that is destroyed with each invocation.
+    //
+    // As a consequence of this workaround, we cannot preserve any bindings from
+    // expr_matcher, so caller aware.
+    return IsInSet(
+        DeclSetFromMatch(AssignTo(declRefExpr(to(varDecl().bind("owner_var"))),
+                                  ignoringParenCasts(expr_matcher)),
+                         "owner_var"));
+  }
+
+  VarMatcher InitializedOrAssigned(
+      const ExpressionMatcher& expr_matcher) const {
+    // NOLINTNEXTLINE(google-build-using-namespace)
+    using namespace clang::ast_matchers;
+
+    // We're not quite ready to handle multiple-declaration yet, so here's a
+    // best effort to walk (carefully) around them. Amazingly, this doesn't seem
+    // to disrupt any of the base cases.
+    return allOf(SingleDecl(),
+                 anyOf(hasInitializer(expr_matcher), Assigned(expr_matcher)));
+  }
+
+  VarMatcher RefCountVarInitializedOrAssigned(
+      ExpressionMatcher const& expr_matcher) const {
+    // NOLINTNEXTLINE(google-build-using-namespace)
+    using namespace clang::ast_matchers;
+
+    return allOf(hasType(RefCountPointerType()),
+                 InitializedOrAssigned(expr_matcher));
   }
 };
 

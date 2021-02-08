@@ -10,15 +10,6 @@ namespace tooling = clang::tooling;
 
 using FileToReplacements = std::map<std::string, tooling::Replacements>;
 
-__attribute__((const)) static auto RefCountPointerType() {
-  auto ref_count_record_decl = cxxRecordDecl(isSameOrDerivedFrom(cxxRecordDecl(
-      hasMethod(cxxMethodDecl(hasName("Release"), parameterCountIs(0))))));
-
-  auto ref_count_pointer_type =
-      pointsTo(hasCanonicalType(hasDeclaration(ref_count_record_decl)));
-  return ref_count_pointer_type;
-}
-
 __attribute__((const)) static StatementMatcher CallReturningOwner() {
   return callExpr(hasType(OwnerType()));
 }
@@ -220,31 +211,6 @@ struct Annotator : NodesFromMatchBase<Annotator> {
   void Propagate() const;
 
   void AnnotateBaseCases() const;
-
-  auto VarInitializedOrAssigned(const VarMatcher& var_matcher,
-                                const ExpressionMatcher& expr_matcher) const {
-    // We're not quite ready to handle multiple-declaration yet, so here's a
-    // best effort to walk (carefully) around them. Amazingly, this doesn't seem
-    // to disrupt any of the base cases.
-    auto not_in_multi_decl = SingleDecl();
-
-    return varDecl(
-        not_in_multi_decl,
-        anyOf(
-            allOf(var_matcher,
-                  hasInitializer(ignoringParenCasts(expr_matcher))),
-            IsInSet(DeclSetFromMatch(
-                AssignTo(declRefExpr(to(varDecl(not_in_multi_decl, var_matcher)
-                                            .bind("owner_var"))),
-                         ignoringParenCasts(expr_matcher)),
-                "owner_var"))));
-  }
-
-  auto RefCountVarInitializedOrAssigned(
-      ExpressionMatcher const& expr_matcher) const {
-    return VarInitializedOrAssigned(hasType(RefCountPointerType()),
-                                    expr_matcher);
-  }
 
   auto FieldReleased() const {
     return IsInSet(DeclSetFromMatch(
@@ -544,7 +510,8 @@ void Annotator::Propagate() const {
   }
 
   for (const auto* var : NodesFromMatch<clang::VarDecl>(
-           varDecl(RefCountVarInitializedOrAssigned(CallReturningOwner()))
+           varDecl(RefCountVarInitializedOrAssigned(
+                       ignoringParenCasts(CallReturningOwner())))
                .bind("owner_var"),
            "owner_var")) {
     AnnotateVarOwner(var);
@@ -721,7 +688,8 @@ void Annotator::InferOwnerVars()
 
   for (const auto* owner_var : NodesFromMatch<clang::VarDecl>(
            varDecl(varDecl().bind("owner_var"),
-                   RefCountVarInitializedOrAssigned(cxxNewExpr())),
+                   RefCountVarInitializedOrAssigned(
+                       ignoringParenCasts(cxxNewExpr()))),
            "owner_var")) {
     AnnotateVarOwner(owner_var);
   }

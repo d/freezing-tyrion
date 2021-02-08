@@ -19,6 +19,15 @@ TypeMatcher AnnotatedType() {
       hasAnyName("::gpos::pointer", "::gpos::owner", "::gpos::leaked"));
 }
 
+TypeMatcher RefCountPointerType() {
+  auto ref_count_record_decl = cxxRecordDecl(isSameOrDerivedFrom(cxxRecordDecl(
+      hasMethod(cxxMethodDecl(hasName("Release"), parameterCountIs(0))))));
+
+  auto ref_count_pointer_type =
+      pointsTo(hasCanonicalType(hasDeclaration(ref_count_record_decl)));
+  return ref_count_pointer_type;
+}
+
 clang::TypeLoc IgnoringElaboratedQualified(clang::TypeLoc type_loc) {
   while (type_loc.getTypeLocClass() == clang::TypeLoc::Elaborated ||
          type_loc.getTypeLocClass() == clang::TypeLoc::Qualified) {
@@ -82,29 +91,11 @@ StatementMatcher AssignTo(const ExpressionMatcher& lhs,
 }
 
 namespace {
-AST_MATCHER_P(clang::VarDecl, VarAssignedImpl, ExpressionMatcher,
-              expr_matcher) {
-  return varDecl(hasDeclContext(functionDecl(hasBody(hasDescendant(AssignTo(
-                     declRefExpr(to(equalsNode(&Node))), expr_matcher))))))
-      .matches(Node, Finder, Builder);
-}
-
 AST_MATCHER_P(clang::QualType, IgnoringElaboratedImpl, TypeMatcher,
               type_matcher) {
   return type_matcher.matches(StripElaborated(Node), Finder, Builder);
 }
 }  // namespace
-
-DeclarationMatcher VarInitializedOrAssigned(
-    const VarMatcher& var_matcher, const ExpressionMatcher& expr_matcher) {
-  return varDecl(
-      hasLocalStorage(), var_matcher,
-      anyOf(hasInitializer(expr_matcher), VarAssigned(expr_matcher)));
-}
-
-VarMatcher VarAssigned(const ExpressionMatcher& expr_matcher) {
-  return VarAssignedImpl(expr_matcher);
-}
 
 clang::QualType StripElaborated(clang::QualType qual_type) {
   while (const auto* elaborated = qual_type->getAs<clang::ElaboratedType>()) {
