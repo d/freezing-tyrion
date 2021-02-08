@@ -11,7 +11,8 @@ namespace tooling = clang::tooling;
 using FileToReplacements = std::map<std::string, tooling::Replacements>;
 
 __attribute__((const)) static StatementMatcher CallReturningOwner() {
-  return callExpr(hasType(OwnerType()));
+  return callExpr(
+      anyOf(hasType(OwnerType()), CallCcacheAccessorMethodsReturningOwner()));
 }
 
 static auto FieldReferenceFor(DeclarationMatcher const& field_matcher) {
@@ -905,6 +906,8 @@ void Annotator::PropagatePointerVars() const {
   for (const auto* var : NodesFromMatch<clang::VarDecl>(
            varDecl(
                hasLocalStorage(), hasType(RefCountPointerType()), SingleDecl(),
+               unless(hasInitializer(ignoringParenImpCasts(
+                   CallCcacheAccessorMethodsReturningOwner()))),
                unless(IsImmediatelyBeforeAddRef()), unless(isInstantiated()),
                unless(hasType(autoType())), decl().bind("var"),
                hasDeclContext(functionDecl(hasBody(stmt()))),
