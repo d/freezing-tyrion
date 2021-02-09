@@ -418,7 +418,7 @@ struct Annotator : NodesFromMatchBase<Annotator> {
   void PropagateFunctionPointers() const;
   void AnnotateTypedefFunctionProtoTypeReturnOwner(
       const clang::TypedefNameDecl* typedef_decl) const;
-  void PropagateReturnOwnerVar() const;
+  void PropagateReturnOwner() const;
   void InferAddRefReturn() const;
   void InferInitAddRef() const;
   void InferPointerVars() const;
@@ -427,55 +427,21 @@ struct Annotator : NodesFromMatchBase<Annotator> {
   void InferOwnerVars() const;
   void InferReturnNew() const;
   void PropagatePointerVars() const;
+  void PropagateOwnerVars() const;
+  void PropagateVirtualFunctionParamTypes() const;
+  void PropagateParameterAmongRedecls() const;
 };
 
 void Annotator::Propagate() const {
   PropagatePointerVars();
 
-  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
-           functionDecl(returns(RefCountPointerType()),
-                        hasAnyBody(hasDescendant(returnStmt(hasReturnValue(
-                            ignoringParenImpCasts(CallReturningOwner()))))))
-               .bind("f"),
-           "f")) {
-    AnnotateFunctionReturnOwner(f);
-  }
-
-  PropagateReturnOwnerVar();
+  PropagateReturnOwner();
 
   PropagateVirtualFunctionReturnTypes();
 
-  for (const auto* derived_method : NodesFromMatch<clang::CXXMethodDecl>(
-           cxxMethodDecl(isOverride(), HasOverridden(hasAnyParameter(
-                                           hasType(AnnotatedType()))))
-               .bind("derived"),
-           "derived")) {
-    for (const auto* base_method : derived_method->overridden_methods()) {
-      for (const auto* base_param : base_method->parameters()) {
-        auto t = base_param->getType();
-        auto parameter_index = base_param->getFunctionScopeIndex();
+  PropagateVirtualFunctionParamTypes();
 
-        if (IsOwner(t))
-          AnnotateFunctionParameterOwner(derived_method, parameter_index);
-        else if (IsPointer(t))
-          AnnotateFunctionParameterPointer(derived_method, parameter_index);
-      }
-    }
-  }
-
-  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
-           functionDecl(HasRedecls(), hasAnyParameter(hasType(AnnotatedType())))
-               .bind("f"),
-           "f")) {
-    for (const auto* p : f->parameters()) {
-      auto t = p->getType();
-      auto parameter_index = p->getFunctionScopeIndex();
-      if (IsOwner(t))
-        AnnotateFunctionParameterOwner(f, parameter_index);
-      else if (IsPointer(t))
-        AnnotateFunctionParameterPointer(f, parameter_index);
-    }
-  }
+  PropagateParameterAmongRedecls();
 
   // Practical intuition: the lifetime of the field pointee is taken care of
   // by the object (presumably in its destructor, or less commonly, in a clean
@@ -510,13 +476,7 @@ void Annotator::Propagate() const {
     AnnotateFunctionReturnPointer(method);
   }
 
-  for (const auto* var : NodesFromMatch<clang::VarDecl>(
-           varDecl(RefCountVarInitializedOrAssigned(
-                       ignoringParenCasts(CallReturningOwner())))
-               .bind("owner_var"),
-           "owner_var")) {
-    AnnotateVarOwner(var);
-  }
+  PropagateOwnerVars();
 
   // It's tempting to wrap an \c ignoringParenImpCasts inside \c
   // forEachArgumentWithParam here, but note that \c forEachArgumentWithParam
@@ -534,7 +494,62 @@ void Annotator::Propagate() const {
   PropagateFunctionPointers();
 }
 
-void Annotator::PropagateReturnOwnerVar() const {
+void Annotator::PropagateParameterAmongRedecls() const {
+  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+           functionDecl(HasRedecls(), hasAnyParameter(hasType(AnnotatedType())))
+               .bind("f"),
+           "f")) {
+    for (const auto* p : f->parameters()) {
+      auto t = p->getType();
+      auto parameter_index = p->getFunctionScopeIndex();
+      if (IsOwner(t))
+        AnnotateFunctionParameterOwner(f, parameter_index);
+      else if (IsPointer(t))
+        AnnotateFunctionParameterPointer(f, parameter_index);
+    }
+  }
+}
+
+void Annotator::PropagateVirtualFunctionParamTypes() const {
+  for (const auto* derived_method : NodesFromMatch<clang::CXXMethodDecl>(
+           cxxMethodDecl(isOverride(), HasOverridden(hasAnyParameter(
+                                           hasType(AnnotatedType()))))
+               .bind("derived"),
+           "derived")) {
+    for (const auto* base_method : derived_method->overridden_methods()) {
+      for (const auto* base_param : base_method->parameters()) {
+        auto t = base_param->getType();
+        auto parameter_index = base_param->getFunctionScopeIndex();
+
+        if (IsOwner(t))
+          AnnotateFunctionParameterOwner(derived_method, parameter_index);
+        else if (IsPointer(t))
+          AnnotateFunctionParameterPointer(derived_method, parameter_index);
+      }
+    }
+  }
+}
+
+void Annotator::PropagateOwnerVars() const {
+  for (const auto* var : NodesFromMatch<clang::VarDecl>(
+           varDecl(RefCountVarInitializedOrAssigned(
+                       ignoringParenCasts(CallReturningOwner())))
+               .bind("owner_var"),
+           "owner_var")) {
+    AnnotateVarOwner(var);
+  }
+}
+
+void Annotator::PropagateReturnOwner() const {
+  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+           functionDecl(returns(RefCountPointerType()),
+                        hasAnyBody(hasDescendant(returnStmt(hasReturnValue(
+                            ignoringParenImpCasts(CallReturningOwner()))))))
+               .bind("f"),
+           "f")) {
+    AnnotateFunctionReturnOwner(f);
+  }
+
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
            returnStmt(
                hasReturnValue(ignoringParenImpCasts(declRefExpr(to(varDecl(
