@@ -38,7 +38,8 @@ add_executable(
   PointerVarTest.cc
   TailCallTest.cc
   AnnotateTest.cc
-  FieldTest.cc)
+  FieldTest.cc
+  ConstPointersTest.cc)
 target_link_libraries(orca-tidy-test orca_tidy gmock_main)
 
 include(GoogleTest)

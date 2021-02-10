@@ -426,6 +426,7 @@ struct Annotator : NodesFromMatchBase<Annotator> {
   void InferGetters() const;
   void InferOwnerVars() const;
   void InferReturnNew() const;
+  void InferConstPointers() const;
   void PropagatePointerVars() const;
   void PropagateOwnerVars() const;
   void PropagateVirtualFunctionParamTypes() const;
@@ -674,6 +675,8 @@ void Annotator::AnnotateBaseCases() const {
 
   InferReturnNew();
 
+  InferConstPointers();
+
   InferGetters();
 }
 
@@ -835,8 +838,13 @@ void Annotator::AnnotateVar(const clang::VarDecl* v,
 void Annotator::AnnotateParameter(const clang::ParmVarDecl* p,
                                   const TypeMatcher& annotation_matcher,
                                   llvm::StringRef annotation) const {
-  const auto* f =
-      llvm::cast<clang::FunctionDecl>(p->getParentFunctionOrMethod());
+  const auto* decl_context = p->getDeclContext();
+  if (!decl_context->isFunctionOrMethod()) {
+    // probably in a function prototype
+    AnnotateOneVar(p, annotation_matcher, annotation);
+    return;
+  }
+  const auto* f = llvm::cast<clang::FunctionDecl>(decl_context);
   auto parameter_index = p->getFunctionScopeIndex();
   AnnotateFunctionParameter(f, parameter_index, annotation_matcher, annotation);
 
@@ -955,6 +963,26 @@ Annotator::Annotator(const ActionOptions& action_options,
       ast_context(ast_context),
       source_manager(source_manager),
       lang_opts(lang_opts) {}
+
+void Annotator::InferConstPointers() const {
+  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+           functionDecl(unless(isInstantiated()),
+                        returns(qualType(RefCountPointerType(),
+                                         pointsTo(isConstQualified()))))
+               .bind("f"),
+           "f")) {
+    AnnotateFunctionReturnPointer(f);
+  }
+
+  for (const auto* v : NodesFromMatch<clang::VarDecl>(
+           varDecl(unless(isInstantiated()),
+                   hasType(qualType(RefCountPointerType(),
+                                    pointsTo(isConstQualified()))))
+               .bind("var"),
+           "var")) {
+    AnnotateVarPointer(v);
+  }
+}
 
 class AnnotateASTConsumer : public clang::ASTConsumer {
   FileToReplacements& replacements_;
