@@ -10,6 +10,7 @@ namespace orca_tidy {
 
 static const constexpr llvm::StringRef kOwnerAnnotation = "gpos::owner";
 static const constexpr llvm::StringRef kPointerAnnotation = "gpos::pointer";
+static const constexpr llvm::StringRef kCastAnnotation = "gpos::cast";
 
 using ExpressionMatcher = decltype(clang::ast_matchers::nullPointerConstant());
 using VarMatcher = decltype(clang::ast_matchers::hasLocalStorage());
@@ -25,6 +26,8 @@ __attribute__((const)) TypeMatcher OwnerType();
 __attribute__((const)) TypeMatcher PointerType();
 
 __attribute__((const)) TypeMatcher LeakedType();
+
+__attribute__((const)) TypeMatcher CastType();
 
 __attribute__((const)) TypeMatcher AnnotatedType();
 
@@ -47,6 +50,11 @@ AST_MATCHER_P(clang::Decl, IsInSet, DeclSet, nodes) {
 
 clang::QualType StripElaborated(clang::QualType qual_type);
 TypeMatcher IgnoringElaborated(TypeMatcher type_matcher);
+
+bool IsCastFunc(const clang::Decl* decl);
+const clang::Expr* IgnoreParenCastFuncs(const clang::Expr* expr);
+ExpressionMatcher IgnoringParenCastFuncs(
+    const ExpressionMatcher& inner_matcher);
 
 template <class Range>
 auto MakeVector(Range&& range) {
@@ -147,7 +155,7 @@ struct NodesFromMatchBase {
     // expr_matcher, so caller aware.
     return IsInSet(
         DeclSetFromMatch(AssignTo(declRefExpr(to(varDecl().bind("owner_var"))),
-                                  ignoringParenCasts(expr_matcher)),
+                                  IgnoringParenCastFuncs(expr_matcher)),
                          "owner_var"));
   }
 

@@ -39,7 +39,8 @@ add_executable(
   TailCallTest.cc
   AnnotateTest.cc
   FieldTest.cc
-  ConstPointersTest.cc)
+  ConstPointersTest.cc
+  CastTest.cc)
 target_link_libraries(orca-tidy-test orca_tidy gmock_main)
 
 include(GoogleTest)

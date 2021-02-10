@@ -92,7 +92,7 @@ AST_MATCHER_P(clang::RecordDecl, HasField, DeclarationMatcher, field_matcher) {
 using ReturnMatcher = decltype(hasReturnValue(expr()));
 static ReturnMatcher ReturnAfterAddRef(const ExpressionMatcher& retval,
                                        const ExpressionMatcher& addref_ref) {
-  return returnStmt(hasReturnValue(ignoringParenCasts(retval)),
+  return returnStmt(hasReturnValue(IgnoringParenCastFuncs(retval)),
                     StmtIsImmediatelyAfter(AddRefOn(addref_ref)));
 }
 
@@ -174,13 +174,14 @@ static StatementMatcher PassedAsArgumentToNonPointerParam(
       parenListExpr(has(ref_to_var)), initListExpr(has(ref_to_var)),
       callExpr(
           callee(expr(anyOf(unresolvedLookupExpr(), unresolvedMemberExpr()))),
-          hasAnyArgument(ignoringParenCasts(ref_to_var))));
+          hasAnyArgument(IgnoringParenCastFuncs(ref_to_var))));
 }
 
 static StatementMatcher InitializingOrAssigningWith(
     const ExpressionMatcher& expr) {
-  return anyOf(declStmt(has(varDecl(hasInitializer(ignoringParenCasts(expr))))),
-               AssignTo(anything(), ignoringParenCasts(expr)));
+  return anyOf(
+      declStmt(has(varDecl(hasInitializer(IgnoringParenCastFuncs(expr))))),
+      AssignTo(anything(), IgnoringParenCastFuncs(expr)));
 }
 
 AST_MATCHER(clang::VarDecl, IsImmediatelyBeforeAddRef) {
@@ -266,6 +267,7 @@ struct Annotator : NodesFromMatchBase<Annotator> {
     for (const auto* f : function->redecls()) {
       auto rt = f->getReturnType();
       if (Match(annotation_matcher, rt)) continue;
+      if (IsCast(rt)) continue;
       AnnotateFunctionReturnType(f, annotation);
     }
   }
@@ -388,6 +390,8 @@ struct Annotator : NodesFromMatchBase<Annotator> {
     return Match(PointerType(), type);
   }
 
+  bool IsCast(clang::QualType type) const { return Match(CastType(), type); }
+
   bool IsLeaked(const clang::VarDecl* var) const {
     return Match(LeakedType(), var->getType());
   }
@@ -418,6 +422,7 @@ struct Annotator : NodesFromMatchBase<Annotator> {
   void PropagateFunctionPointers() const;
   void AnnotateTypedefFunctionProtoTypeReturnOwner(
       const clang::TypedefNameDecl* typedef_decl) const;
+  void InferCastFunctions() const;
   void PropagateReturnOwner() const;
   void InferAddRefReturn() const;
   void InferInitAddRef() const;
@@ -534,7 +539,7 @@ void Annotator::PropagateVirtualFunctionParamTypes() const {
 void Annotator::PropagateOwnerVars() const {
   for (const auto* var : NodesFromMatch<clang::VarDecl>(
            varDecl(RefCountVarInitializedOrAssigned(
-                       ignoringParenCasts(CallReturningOwner())))
+                       IgnoringParenCastFuncs(CallReturningOwner())))
                .bind("owner_var"),
            "owner_var")) {
     AnnotateVarOwner(var);
@@ -588,11 +593,11 @@ void Annotator::PropagateTailCall() const {
                    OwnerType()))),
                stmt().bind("r")),
            "var", "arg", "r")) {
-    if (Match(
-            returnStmt(unless(hasDescendant(CallOrConstruct(hasAnyArgument(
-                ignoringParenCasts(expr(unless(equalsNode(arg)),
-                                        declRefExpr(to(equalsNode(var)))))))))),
-            *r)) {
+    if (Match(returnStmt(unless(hasDescendant(
+                  CallOrConstruct(hasAnyArgument(IgnoringParenCastFuncs(
+                      expr(unless(equalsNode(arg)),
+                           declRefExpr(to(equalsNode(var)))))))))),
+              *r)) {
       AnnotateVarOwner(var);
       MoveSourceRange(arg->getSourceRange());
     }
@@ -665,6 +670,8 @@ void Annotator::MoveSourceRange(clang::SourceRange source_range) const {
 void Annotator::AnnotateBaseCases() const {
   InferPointerVars();
 
+  InferCastFunctions();
+
   InferInitAddRef();
 
   InferFields();
@@ -708,7 +715,7 @@ void Annotator::InferOwnerVars()
   for (const auto* owner_var : NodesFromMatch<clang::VarDecl>(
            varDecl(varDecl().bind("owner_var"),
                    RefCountVarInitializedOrAssigned(
-                       ignoringParenCasts(cxxNewExpr()))),
+                       IgnoringParenCastFuncs(cxxNewExpr()))),
            "owner_var")) {
     AnnotateVarOwner(owner_var);
   }
@@ -921,7 +928,7 @@ void Annotator::PropagatePointerVars() const {
     auto ref_to_var = declRefExpr(to(var));
     return stmt(
         anyOf(PassedAsArgumentToNonPointerParam(var),
-              returnStmt(hasReturnValue(ignoringParenCasts(ref_to_var))),
+              returnStmt(hasReturnValue(IgnoringParenCastFuncs(ref_to_var))),
               InitializingOrAssigningWith(ref_to_var),
               AssignTo(ref_to_var, unless(hasType(PointerType()))),
               ReleaseCallExpr(ref_to_var)));
@@ -941,7 +948,7 @@ void Annotator::PropagatePointerVars() const {
                            CounterexampleForVar(equalsBoundNode("var")))),
                        cxxConstructorDecl(
                            hasAnyConstructorInitializer(withInitializer(anyOf(
-                               ignoringParenCasts(
+                               IgnoringParenCastFuncs(
                                    declRefExpr(to(equalsBoundNode("var")))),
                                PassedAsArgumentToNonPointerParam(
                                    equalsBoundNode("var")),
@@ -981,6 +988,21 @@ void Annotator::InferConstPointers() const {
                .bind("var"),
            "var")) {
     AnnotateVarPointer(v);
+  }
+}
+
+void Annotator::InferCastFunctions() const {
+  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+           functionDecl(parameterCountIs(1),
+                        returns(qualType(unless(pointsTo(isConstQualified())),
+                                         RefCountPointerType())),
+                        hasBody(hasDescendant(returnStmt(hasReturnValue(
+                            ignoringParenImpCasts(cxxDynamicCastExpr(
+                                hasSourceExpression(ignoringParenImpCasts(
+                                    declRefExpr(to(parmVarDecl())))))))))))
+               .bind("f"),
+           "f")) {
+    AnnotateFunctionReturnType(f, CastType(), kCastAnnotation);
   }
 }
 

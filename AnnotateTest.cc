@@ -34,6 +34,12 @@ std::string AnnotateTest::runToolOverCode(std::string code) {
 
     template <class T>
     using pointer = T;
+
+    template <class T>
+    using leaked = T;
+
+    template <class T>
+    using cast = T;
     }  // namespace gpos
 #endif
   )C++";

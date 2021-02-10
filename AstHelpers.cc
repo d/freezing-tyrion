@@ -1,4 +1,5 @@
 #include "AstHelpers.h"
+#include "clang/AST/IgnoreExpr.h"
 #include "clang/Lex/Lexer.h"
 
 // NOLINTNEXTLINE(google-build-using-namespace)
@@ -14,6 +15,7 @@ TypeMatcher AnnotationType(NamedMatcher named_matcher) {
 TypeMatcher OwnerType() { return AnnotationType(hasName("::gpos::owner")); }
 TypeMatcher PointerType() { return AnnotationType(hasName("::gpos::pointer")); }
 TypeMatcher LeakedType() { return AnnotationType(hasName("::gpos::leaked")); }
+TypeMatcher CastType() { return AnnotationType(hasName("::gpos::cast")); }
 TypeMatcher AnnotatedType() {
   return AnnotationType(
       hasAnyName("::gpos::pointer", "::gpos::owner", "::gpos::leaked"));
@@ -95,6 +97,19 @@ AST_MATCHER_P(clang::QualType, IgnoringElaboratedImpl, TypeMatcher,
               type_matcher) {
   return type_matcher.matches(StripElaborated(Node), Finder, Builder);
 }
+
+inline clang::Expr* IgnoreCastFuncsSingleStep(clang::Expr* e) {
+  if (auto* call = llvm::dyn_cast<clang::CallExpr>(e);
+      call && call->getNumArgs() > 0 && IsCastFunc(call->getCalleeDecl())) {
+    return call->getArg(0);
+  }
+  return e;
+}
+
+AST_MATCHER_P(clang::Expr, IgnoringParenCastFuncsImpl, ExpressionMatcher,
+              inner_matcher) {
+  return inner_matcher.matches(*IgnoreParenCastFuncs(&Node), Finder, Builder);
+}
 }  // namespace
 
 clang::QualType StripElaborated(clang::QualType qual_type) {
@@ -106,6 +121,23 @@ clang::QualType StripElaborated(clang::QualType qual_type) {
 
 TypeMatcher IgnoringElaborated(TypeMatcher type_matcher) {
   return IgnoringElaboratedImpl(type_matcher);
+}
+
+bool IsCastFunc(const clang::Decl* decl) {
+  if (!decl) return false;
+  return !match(functionDecl(returns(CastType())), *decl, decl->getASTContext())
+              .empty();
+}
+
+ExpressionMatcher IgnoringParenCastFuncs(
+    const ExpressionMatcher& inner_matcher) {
+  return IgnoringParenCastFuncsImpl(inner_matcher);
+}
+
+const clang::Expr* IgnoreParenCastFuncs(const clang::Expr* expr) {
+  return clang::IgnoreExprNodes(
+      const_cast<clang::Expr*>(expr), clang::IgnoreParensSingleStep,
+      clang::IgnoreCastsSingleStep, IgnoreCastFuncsSingleStep);
 }
 
 }  // namespace orca_tidy
