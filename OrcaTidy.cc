@@ -992,14 +992,17 @@ void Annotator::InferConstPointers() const {
 }
 
 void Annotator::InferCastFunctions() const {
+  auto dyncast_of_param =
+      ignoringParenImpCasts(cxxDynamicCastExpr(hasSourceExpression(
+          ignoringParenImpCasts(declRefExpr(to(parmVarDecl()))))));
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
            functionDecl(parameterCountIs(1),
                         returns(qualType(unless(pointsTo(isConstQualified())),
                                          RefCountPointerType())),
                         hasBody(hasDescendant(returnStmt(hasReturnValue(
-                            ignoringParenImpCasts(cxxDynamicCastExpr(
-                                hasSourceExpression(ignoringParenImpCasts(
-                                    declRefExpr(to(parmVarDecl())))))))))))
+                            anyOf(dyncast_of_param,
+                                  ignoringParenImpCasts(declRefExpr(to(varDecl(
+                                      hasInitializer(dyncast_of_param)))))))))))
                .bind("f"),
            "f")) {
     AnnotateFunctionReturnType(f, CastType(), kCastAnnotation);

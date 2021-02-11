@@ -14,6 +14,7 @@ static const constexpr llvm::StringRef kCastAnnotation = "gpos::cast";
 
 using ExpressionMatcher = decltype(clang::ast_matchers::nullPointerConstant());
 using VarMatcher = decltype(clang::ast_matchers::hasLocalStorage());
+using ParamMatcher = decltype(clang::ast_matchers::hasDefaultArgument());
 using clang::ast_matchers::DeclarationMatcher;
 using clang::ast_matchers::StatementMatcher;
 using clang::ast_matchers::TypeMatcher;
@@ -52,9 +53,29 @@ clang::QualType StripElaborated(clang::QualType qual_type);
 TypeMatcher IgnoringElaborated(TypeMatcher type_matcher);
 
 bool IsCastFunc(const clang::Decl* decl);
+const clang::Expr* IgnoreCastFuncs(const clang::Expr* expr);
+AST_MATCHER_P(clang::Expr, IgnoringCastFuncs, ExpressionMatcher,
+              inner_matcher) {
+  return inner_matcher.matches(*IgnoreCastFuncs(&Node), Finder, Builder);
+}
+
 const clang::Expr* IgnoreParenCastFuncs(const clang::Expr* expr);
-ExpressionMatcher IgnoringParenCastFuncs(
-    const ExpressionMatcher& inner_matcher);
+AST_MATCHER_P(clang::Expr, IgnoringParenCastFuncs, ExpressionMatcher,
+              inner_matcher) {
+  return inner_matcher.matches(*IgnoreParenCastFuncs(&Node), Finder, Builder);
+}
+
+inline auto ForEachArgumentWithParam(ExpressionMatcher arg_matcher,
+                                     ParamMatcher param_matcher) {
+  return clang::ast_matchers::forEachArgumentWithParam(
+      IgnoringParenCastFuncs(arg_matcher), param_matcher);
+}
+
+inline auto ForEachArgumentWithParamType(ExpressionMatcher arg_matcher,
+                                         TypeMatcher param_matcher) {
+  return clang::ast_matchers::forEachArgumentWithParamType(
+      IgnoringParenCastFuncs(arg_matcher), param_matcher);
+}
 
 template <class Range>
 auto MakeVector(Range&& range) {

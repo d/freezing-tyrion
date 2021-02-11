@@ -106,10 +106,6 @@ inline clang::Expr* IgnoreCastFuncsSingleStep(clang::Expr* e) {
   return e;
 }
 
-AST_MATCHER_P(clang::Expr, IgnoringParenCastFuncsImpl, ExpressionMatcher,
-              inner_matcher) {
-  return inner_matcher.matches(*IgnoreParenCastFuncs(&Node), Finder, Builder);
-}
 }  // namespace
 
 clang::QualType StripElaborated(clang::QualType qual_type) {
@@ -129,15 +125,15 @@ bool IsCastFunc(const clang::Decl* decl) {
               .empty();
 }
 
-ExpressionMatcher IgnoringParenCastFuncs(
-    const ExpressionMatcher& inner_matcher) {
-  return IgnoringParenCastFuncsImpl(inner_matcher);
-}
-
 const clang::Expr* IgnoreParenCastFuncs(const clang::Expr* expr) {
   return clang::IgnoreExprNodes(
       const_cast<clang::Expr*>(expr), clang::IgnoreParensSingleStep,
       clang::IgnoreCastsSingleStep, IgnoreCastFuncsSingleStep);
+}
+
+const clang::Expr* IgnoreCastFuncs(const clang::Expr* expr) {
+  return clang::IgnoreExprNodes(const_cast<clang::Expr*>(expr),
+                                IgnoreCastFuncsSingleStep);
 }
 
 }  // namespace orca_tidy

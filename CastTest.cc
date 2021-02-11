@@ -26,6 +26,39 @@ TEST_F(BaseTest, retCastDyncast) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(BaseTest, retCastInitDyncast) {
+  std::string code = R"C++(
+    struct R : gpos::CRefCount<R> {
+      virtual ~R() {}
+    };
+
+    struct Q : R {
+      static Q* Cast(R* r) {
+        Q* q = dynamic_cast<Q*>(r);
+        Assert(q != nullptr);
+        return q;
+      }
+    };
+  )C++",
+              expected_changed_code = R"C++(
+    struct R : gpos::CRefCount<R> {
+      virtual ~R() {}
+    };
+
+    struct Q : R {
+      static gpos::cast<Q*> Cast(R* r) {
+        Q* q = dynamic_cast<Q*>(r);
+        Assert(q != nullptr);
+        return q;
+      }
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 TEST_F(BaseTest, retCastNegativeCases) {
   std::string code = R"C++(
     struct R : gpos::CRefCount<R> {
