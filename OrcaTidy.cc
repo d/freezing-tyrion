@@ -153,16 +153,16 @@ static StatementMatcher CallPassingFunctionToTypedefFunctionPointer(
 /// (or methods of class templates) can exhibit different owning behavior
 /// depending on the instantiation (c.f. \c CDynamicPtrArrary::Append)
 template <class... Matchers>
-static auto NonTemplateCallOrConstruct(Matchers... matchers) {
-  auto non_template =
-      unless(hasDeclaration(functionDecl(isTemplateInstantiation())));
-  return expr(anyOf(callExpr(non_template, matchers...),
-                    cxxConstructExpr(non_template, matchers...)));
+static auto CallOrConstruct(Matchers... matchers) {
+  return expr(anyOf(IgnoringParenCastFuncs(callExpr(matchers...)),
+                    cxxConstructExpr(matchers...)));
 }
 
 template <class... Matchers>
-static auto CallOrConstruct(Matchers... matchers) {
-  return expr(anyOf(callExpr(matchers...), cxxConstructExpr(matchers...)));
+static auto NonTemplateCallOrConstruct(Matchers... matchers) {
+  return CallOrConstruct(
+      unless(hasDeclaration(functionDecl(isTemplateInstantiation()))),
+      matchers...);
 }
 
 static StatementMatcher PassedAsArgumentToNonPointerParam(
@@ -170,7 +170,7 @@ static StatementMatcher PassedAsArgumentToNonPointerParam(
   auto ref_to_var = declRefExpr(to(var_matcher));
   return anyOf(
       CallOrConstruct(
-          forEachArgumentWithParamType(ref_to_var, unless(PointerType()))),
+          ForEachArgumentWithParamType(ref_to_var, unless(PointerType()))),
       parenListExpr(has(ref_to_var)), initListExpr(has(ref_to_var)),
       callExpr(
           callee(expr(anyOf(unresolvedLookupExpr(), unresolvedMemberExpr()))),
@@ -488,7 +488,7 @@ void Annotator::Propagate() const {
   // forEachArgumentWithParam here, but note that \c forEachArgumentWithParam
   // already does that for the first argument
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
-           NonTemplateCallOrConstruct(forEachArgumentWithParam(
+           NonTemplateCallOrConstruct(ForEachArgumentWithParam(
                anyOf(cxxNewExpr(), CallReturningOwner()),
                parmVarDecl(hasType(RefCountPointerType())).bind("param"))),
            "param")) {
@@ -583,7 +583,7 @@ void Annotator::PropagateTailCall() const {
   for (auto [var, arg, r] :
        NodesFromMatch<clang::VarDecl, clang::Expr, clang::ReturnStmt>(
            returnStmt(
-               forEachDescendant(CallOrConstruct(forEachArgumentWithParamType(
+               forEachDescendant(CallOrConstruct(ForEachArgumentWithParamType(
                    expr(declRefExpr(to(varDecl(
                             hasLocalStorage(), varDecl().bind("var"),
                             hasDeclContext(functionDecl(unless(
@@ -605,7 +605,7 @@ void Annotator::PropagateTailCall() const {
 
   for (auto [var, r] : NodesFromMatch<clang::VarDecl, clang::ReturnStmt>(
            returnStmt(
-               forEachDescendant(CallOrConstruct(forEachArgumentWithParamType(
+               forEachDescendant(CallOrConstruct(ForEachArgumentWithParamType(
                    declRefExpr(
                        to(varDecl(unless(isInstantiated()), hasLocalStorage())
                               .bind("var"))),
@@ -621,7 +621,7 @@ void Annotator::PropagateTailCall() const {
 
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
            returnStmt(forEachDescendant(
-               NonTemplateCallOrConstruct(forEachArgumentWithParam(
+               NonTemplateCallOrConstruct(ForEachArgumentWithParam(
                    declRefExpr(to(varDecl(
                        hasLocalStorage(), hasType(PointerType()),
                        varDecl().bind("var"),
@@ -638,7 +638,7 @@ void Annotator::PropagateTailCall() const {
                       clang::ReturnStmt>(
            returnStmt(
                forEachDescendant(CallOrConstruct(
-                   forEachArgumentWithParam(
+                   ForEachArgumentWithParam(
                        declRefExpr(
                            to(varDecl(hasLocalStorage(), hasType(OwnerType()))
                                   .bind("var")))
