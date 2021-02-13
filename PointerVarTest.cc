@@ -80,6 +80,37 @@ TEST_F(PropagateTest, varPointPassedToPointerParam) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(PropagateTest, varPointInitAssignAnotherPointerVar) {
+  std::string code = R"C++(
+    bool f(T* t) {
+      gpos::pointer<U*> u = t;
+      return u == nullptr;
+    }
+
+    bool g(T* t) {
+      gpos::pointer<U*> u;
+      u = t;
+      return u == nullptr;
+    }
+  )C++",
+              expected_changed_code = R"C++(
+    bool f(gpos::pointer<T*> t) {
+      gpos::pointer<U*> u = t;
+      return u == nullptr;
+    }
+
+    bool g(gpos::pointer<T*> t) {
+      gpos::pointer<U*> u;
+      u = t;
+      return u == nullptr;
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 TEST_F(PropagateTest, varPointNegativeCases) {
   std::string func_without_def = R"C++(
     void f(T* t);

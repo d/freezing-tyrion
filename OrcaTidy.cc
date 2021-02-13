@@ -177,11 +177,13 @@ static StatementMatcher PassedAsArgumentToNonPointerParam(
           hasAnyArgument(IgnoringParenCastFuncs(ref_to_var))));
 }
 
-static StatementMatcher InitializingOrAssigningWith(
+static StatementMatcher InitOrAssignNonPointerVarWith(
     const ExpressionMatcher& expr) {
   return anyOf(
-      declStmt(has(varDecl(hasInitializer(IgnoringParenCastFuncs(expr))))),
-      AssignTo(anything(), IgnoringParenCastFuncs(expr)));
+      declStmt(has(varDecl(unless(hasType(PointerType())),
+                           hasInitializer(IgnoringParenCastFuncs(expr))))),
+      AssignTo(unless(declRefExpr(to(varDecl(hasType(PointerType()))))),
+               IgnoringParenCastFuncs(expr)));
 }
 
 AST_MATCHER(clang::VarDecl, IsImmediatelyBeforeAddRef) {
@@ -932,7 +934,7 @@ void Annotator::PropagatePointerVars() const {
     return stmt(
         anyOf(PassedAsArgumentToNonPointerParam(var),
               returnStmt(hasReturnValue(IgnoringParenCastFuncs(ref_to_var))),
-              InitializingOrAssigningWith(ref_to_var),
+              InitOrAssignNonPointerVarWith(ref_to_var),
               AssignTo(ref_to_var, unless(hasType(PointerType()))),
               ReleaseCallExpr(ref_to_var)));
   };
