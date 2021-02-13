@@ -423,6 +423,7 @@ struct Annotator : NodesFromMatchBase<Annotator> {
   void AnnotateTypedefFunctionProtoTypeReturnOwner(
       const clang::TypedefNameDecl* typedef_decl) const;
   void InferCastFunctions() const;
+  void InferPointerParamsForBoolFunctions() const;
   void PropagateReturnOwner() const;
   void InferAddRefReturn() const;
   void InferInitAddRef() const;
@@ -671,6 +672,8 @@ void Annotator::AnnotateBaseCases() const {
   InferPointerVars();
 
   InferCastFunctions();
+
+  InferPointerParamsForBoolFunctions();
 
   InferInitAddRef();
 
@@ -1006,6 +1009,17 @@ void Annotator::InferCastFunctions() const {
                .bind("f"),
            "f")) {
     AnnotateFunctionReturnType(f, CastType(), kCastAnnotation);
+  }
+}
+
+void Annotator::InferPointerParamsForBoolFunctions() const {
+  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+           parmVarDecl(hasType(RefCountPointerType()), unless(isInstantiated()),
+                       hasDeclContext(
+                           cxxMethodDecl(returns(booleanType()), IsStatic())))
+               .bind("param"),
+           "param")) {
+    AnnotateParameter(param, PointerType(), kPointerAnnotation);
   }
 }
 

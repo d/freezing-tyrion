@@ -44,6 +44,8 @@ StatementMatcher AssignTo(const ExpressionMatcher& lhs);
 StatementMatcher AssignTo(const ExpressionMatcher& lhs,
                           const ExpressionMatcher& rhs);
 
+AST_MATCHER(clang::CXXMethodDecl, IsStatic) { return Node.isStatic(); }
+
 using DeclSet = llvm::DenseSet<const clang::Decl*>;
 AST_MATCHER_P(clang::Decl, IsInSet, DeclSet, nodes) {
   return nodes.contains(&Node);
