@@ -937,7 +937,8 @@ void Annotator::PropagatePointerVars() const {
         anyOf(PassedAsArgumentToNonPointerParam(var),
               returnStmt(hasReturnValue(IgnoringParenCastFuncs(ref_to_var))),
               InitOrAssignNonPointerVarWith(ref_to_var),
-              AssignTo(ref_to_var, unless(hasType(PointerType()))),
+              AssignTo(ref_to_var,
+                       IgnoringParenCastFuncs(unless(hasType(PointerType())))),
               ReleaseCallExpr(ref_to_var)));
   };
   for (const auto* var : NodesFromMatch<clang::VarDecl>(
