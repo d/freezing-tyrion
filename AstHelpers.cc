@@ -17,8 +17,8 @@ TypeMatcher PointerType() { return AnnotationType(hasName("::gpos::pointer")); }
 TypeMatcher LeakedType() { return AnnotationType(hasName("::gpos::leaked")); }
 TypeMatcher CastType() { return AnnotationType(hasName("::gpos::cast")); }
 TypeMatcher AnnotatedType() {
-  return AnnotationType(
-      hasAnyName("::gpos::pointer", "::gpos::owner", "::gpos::leaked"));
+  return AnnotationType(hasAnyName("::gpos::pointer", "::gpos::owner",
+                                   "::gpos::leaked", "::gpos::cast"));
 }
 
 TypeMatcher RefCountPointerType() {
