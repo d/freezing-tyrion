@@ -192,13 +192,8 @@ AST_MATCHER(clang::VarDecl, IsImmediatelyBeforeAddRef) {
       .matches(Node, Finder, Builder);
 }
 
-struct Annotator : NodesFromMatchBase<Annotator> {
-  ActionOptions action_options;
-  FileToReplacements& replacements;
-  clang::ASTContext& ast_context;
-  const clang::SourceManager& source_manager;
-  const clang::LangOptions& lang_opts;
-
+class Annotator : public NodesFromMatchBase<Annotator> {
+ public:
   Annotator(const ActionOptions& action_options,
             FileToReplacements& replacements, clang::ASTContext& ast_context,
             const clang::SourceManager& source_manager,
@@ -206,12 +201,18 @@ struct Annotator : NodesFromMatchBase<Annotator> {
   clang::ASTContext& AstContext() const;
 
   void Annotate() {
-    if (action_options.Base) AnnotateBaseCases();
+    if (action_options_.Base) AnnotateBaseCases();
 
-    if (action_options.Propagate) Propagate();
+    if (action_options_.Propagate) Propagate();
   }
 
  private:
+  ActionOptions action_options_;
+  FileToReplacements& file_to_replaces_;
+  clang::ASTContext& ast_context_;
+  const clang::SourceManager& source_manager_;
+  const clang::LangOptions& lang_opts_;
+
   void Propagate() const;
 
   void AnnotateBaseCases() const;
@@ -301,24 +302,24 @@ struct Annotator : NodesFromMatchBase<Annotator> {
   void FindConstTokenBefore(clang::SourceLocation begin_loc,
                             clang::SourceRange& rt_range) const {
     auto end_loc = rt_range.getEnd();
-    auto [file_id, offset] = source_manager.getDecomposedLoc(begin_loc);
-    auto start_of_file = source_manager.getLocForStartOfFile(file_id);
-    clang::Lexer raw_lexer(start_of_file, lang_opts,
-                           source_manager.getCharacterData(start_of_file),
-                           source_manager.getCharacterData(begin_loc),
-                           source_manager.getCharacterData(end_loc));
+    auto [file_id, offset] = source_manager_.getDecomposedLoc(begin_loc);
+    auto start_of_file = source_manager_.getLocForStartOfFile(file_id);
+    clang::Lexer raw_lexer(start_of_file, lang_opts_,
+                           source_manager_.getCharacterData(start_of_file),
+                           source_manager_.getCharacterData(begin_loc),
+                           source_manager_.getCharacterData(end_loc));
     clang::Token token;
     while (!raw_lexer.LexFromRawLexer(token)) {
       if (!token.is(clang::tok::raw_identifier)) continue;
-      auto& identifier_info = ast_context.Idents.get(
-          llvm::StringRef(source_manager.getCharacterData(token.getLocation()),
+      auto& identifier_info = ast_context_.Idents.get(
+          llvm::StringRef(source_manager_.getCharacterData(token.getLocation()),
                           token.getLength()));
       token.setIdentifierInfo(&identifier_info);
       token.setKind(identifier_info.getTokenID());
 
       if (!token.is(clang::tok::kw_const)) continue;
-      if (source_manager.isBeforeInTranslationUnit(token.getLocation(),
-                                                   rt_range.getBegin())) {
+      if (source_manager_.isBeforeInTranslationUnit(token.getLocation(),
+                                                    rt_range.getBegin())) {
         rt_range.setBegin(token.getLocation());
         break;
       }
@@ -343,8 +344,8 @@ struct Annotator : NodesFromMatchBase<Annotator> {
 
   void AnnotateSourceRange(clang::SourceRange source_range,
                            llvm::StringRef annotation) const {
-    orca_tidy::AnnotateSourceRange(source_range, annotation, ast_context,
-                                   replacements);
+    orca_tidy::AnnotateSourceRange(source_range, annotation, ast_context_,
+                                   file_to_replaces_);
   }
 
   void AnnotateFieldOwner(const clang::FieldDecl* field) const {
@@ -381,7 +382,7 @@ struct Annotator : NodesFromMatchBase<Annotator> {
 
   template <class Matcher, class Node>
   bool Match(Matcher matcher, const Node& node) const {
-    return !match(matcher, node, ast_context).empty();
+    return !match(matcher, node, ast_context_).empty();
   }
 
   bool IsOwner(const clang::QualType& type) const {
@@ -663,11 +664,12 @@ void Annotator::PropagateTailCall() const {
 
 void Annotator::MoveSourceRange(clang::SourceRange source_range) const {
   auto range = clang::CharSourceRange::getTokenRange(source_range);
-  auto arg_text = clang::Lexer::getSourceText(range, source_manager, lang_opts);
+  auto arg_text =
+      clang::Lexer::getSourceText(range, source_manager_, lang_opts_);
   std::string new_arg = ("std::move(" + arg_text + ")").str();
-  tooling::Replacement replacement(source_manager, range, new_arg, lang_opts);
+  tooling::Replacement replacement(source_manager_, range, new_arg, lang_opts_);
   llvm::cantFail(
-      replacements[replacement.getFilePath().str()].add(replacement));
+      file_to_replaces_[replacement.getFilePath().str()].add(replacement));
 }
 
 void Annotator::AnnotateBaseCases() const {
@@ -964,17 +966,17 @@ void Annotator::PropagatePointerVars() const {
   }
 }
 
-clang::ASTContext& Annotator::AstContext() const { return ast_context; }
+clang::ASTContext& Annotator::AstContext() const { return ast_context_; }
 Annotator::Annotator(const ActionOptions& action_options,
                      FileToReplacements& replacements,
                      clang::ASTContext& ast_context,
                      const clang::SourceManager& source_manager,
                      const clang::LangOptions& lang_opts)
-    : action_options(action_options),
-      replacements(replacements),
-      ast_context(ast_context),
-      source_manager(source_manager),
-      lang_opts(lang_opts) {}
+    : action_options_(action_options),
+      file_to_replaces_(replacements),
+      ast_context_(ast_context),
+      source_manager_(source_manager),
+      lang_opts_(lang_opts) {}
 
 void Annotator::InferConstPointers() const {
   for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
