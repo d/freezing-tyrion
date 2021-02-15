@@ -75,9 +75,9 @@ AST_MATCHER_P(clang::Stmt, StmtIsImmediatelyAfter, StatementMatcher, lhs) {
   const auto* compound_stmt =
       GetParentAs<clang::CompoundStmt>(Node, Finder->getASTContext());
   if (!compound_stmt) return false;
-  const auto* node_it = llvm::find(compound_stmt->body(), &Node);
-  const auto* lhs_it = std::prev(node_it);
-  return node_it != compound_stmt->body_begin() &&
+  auto node_it = llvm::find(llvm::reverse(compound_stmt->body()), &Node);
+  auto lhs_it = std::next(node_it);
+  return lhs_it != compound_stmt->body_rend() &&
          lhs.matches(**lhs_it, Finder, Builder);
 }
 
