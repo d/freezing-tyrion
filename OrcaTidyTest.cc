@@ -5,6 +5,7 @@ namespace orca_tidy {
 std::string format(const std::string& code) {
   auto style =
       clang::format::getGoogleStyle(clang::format::FormatStyle::LK_Cpp);
+  style.DerivePointerAlignment = false;
   auto format_changes =
       clang::format::reformat(style, code, {{0, (unsigned int)code.size()}});
 
@@ -606,9 +607,6 @@ TEST_F(PropagateTest, varOwnInitAssignOwnFunc) {
     gpos::pointer<T *> GetT();
 
     void foo(int i, int j) {
-      // multiple declarations here, leave them alone
-      T *a = MakeT(i), *b = MakeT(j);
-
       T *var_init_own_func = MakeT(i);
       T *var_assign_own_func;
       var_assign_own_func = MakeT(i);
@@ -624,9 +622,6 @@ TEST_F(PropagateTest, varOwnInitAssignOwnFunc) {
     gpos::pointer<T *> GetT();
 
     void foo(int i, int j) {
-      // multiple declarations here, leave them alone
-      T *a = MakeT(i), *b = MakeT(j);
-
       gpos::owner<T *> var_init_own_func = MakeT(i);
       gpos::owner<T *> var_assign_own_func;
       var_assign_own_func = MakeT(i);

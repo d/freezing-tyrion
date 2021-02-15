@@ -2,6 +2,7 @@
 #include "AstHelpers.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Tooling/Tooling.h"
+#include "llvm/ADT/DenseSet.h"
 
 namespace orca_tidy {
 // NOLINTNEXTLINE(google-build-using-namespace)
@@ -210,6 +211,8 @@ class Annotator : public NodesFromMatchBase<Annotator> {
   clang::ASTContext& ast_context_;
   const clang::SourceManager& source_manager_;
   const clang::LangOptions& lang_opts_;
+  mutable llvm::StringMap<llvm::DenseSet<const clang::VarDecl*>>
+      annotation_to_var_decls_;
 
   void Propagate() const;
 
@@ -329,6 +332,7 @@ class Annotator : public NodesFromMatchBase<Annotator> {
                       llvm::StringRef annotation) const {
     for (const auto* v : var->redecls()) {
       if (!Match(SingleDecl(), *var)) {
+        annotation_to_var_decls_[annotation].insert(var);
         continue;
       }
       if (Match(annotation_matcher, v->getType())) continue;
@@ -441,6 +445,12 @@ class Annotator : public NodesFromMatchBase<Annotator> {
   void PropagateOwnerVars() const;
   void PropagateVirtualFunctionParamTypes() const;
   void PropagateParameterAmongRedecls() const;
+  void AnnotateMultiDecls() const;
+  void AnnotateMultiVar(const clang::DeclStmt* decl_stmt,
+                        llvm::StringRef annotation) const;
+  void AnnotateFirstVar(const clang::DeclStmt* decl_stmt,
+                        llvm::StringRef annotation) const;
+  void RemoveStarFromVar(const clang::VarDecl* var) const;
 };
 
 void Annotator::Propagate() const {
@@ -503,6 +513,8 @@ void Annotator::Propagate() const {
   PropagateTailCall();
 
   PropagateFunctionPointers();
+
+  AnnotateMultiDecls();
 }
 
 void Annotator::PropagateParameterAmongRedecls() const {
@@ -693,6 +705,8 @@ void Annotator::AnnotateBaseCases() const {
   InferConstPointers();
 
   InferGetters();
+
+  AnnotateMultiDecls();
 }
 
 void Annotator::InferReturnNew() const {
@@ -1020,6 +1034,61 @@ void Annotator::InferPointerParamsForBoolFunctions() const {
            "param")) {
     AnnotateParameter(param, PointerType(), kPointerAnnotation);
   }
+}
+
+void Annotator::AnnotateMultiDecls() const {
+  for (const auto* decl_stmt : NodesFromMatch<clang::DeclStmt>(
+           declStmt(unless(declCountIs(1)),
+                    containsDeclaration(
+                        0, varDecl(hasType(qualType(RefCountPointerType(),
+                                                    unless(AnnotatedType()))))))
+               .bind("decl_stmt"),
+           "decl_stmt")) {
+    auto decls_as_vars =
+        llvm::map_range(decl_stmt->decls(), [](const clang::Decl* decl) {
+          return llvm::dyn_cast<clang::VarDecl>(decl);
+        });
+    auto IsInCategory = [=](llvm::StringRef annotation) {
+      return [=](const clang::VarDecl* var) {
+        return var && annotation_to_var_decls_[annotation].contains(var);
+      };
+    };
+    auto IsPointer = IsInCategory(kPointerAnnotation);
+    auto IsOwner = IsInCategory(kOwnerAnnotation);
+
+    if (llvm::all_of(decls_as_vars, IsPointer))
+      AnnotateMultiVar(decl_stmt, kPointerAnnotation);
+    else if (llvm::all_of(decls_as_vars, IsOwner))
+      AnnotateMultiVar(decl_stmt, kOwnerAnnotation);
+  }
+}
+
+void Annotator::AnnotateMultiVar(const clang::DeclStmt* decl_stmt,
+                                 llvm::StringRef annotation) const {
+  AnnotateFirstVar(decl_stmt, annotation);
+  auto vars_except_first = llvm::map_range(
+      llvm::drop_begin(decl_stmt->decls()),
+      [](const clang::Decl* decl) { return llvm::cast<clang::VarDecl>(decl); });
+  for (const auto* var : vars_except_first) {
+    RemoveStarFromVar(var);
+  }
+}
+
+void Annotator::RemoveStarFromVar(const clang::VarDecl* var) const {
+  auto star_loc = var->getTypeSourceInfo()
+                      ->getTypeLoc()
+                      .getAsAdjusted<clang::PointerTypeLoc>()
+                      .getSigilLoc();
+  tooling::Replacement replacement{source_manager_, star_loc, 1, ""};
+  CantFail(file_to_replaces_[replacement.getFilePath().str()].add(replacement));
+}
+
+void Annotator::AnnotateFirstVar(const clang::DeclStmt* decl_stmt,
+                                 llvm::StringRef annotation) const {
+  auto* first_var = llvm::cast<clang::VarDecl>(*decl_stmt->decl_begin());
+  auto leading_type_source_range =
+      first_var->getTypeSourceInfo()->getTypeLoc().getSourceRange();
+  AnnotateSourceRange(leading_type_source_range, annotation);
 }
 
 class AnnotateASTConsumer : public clang::ASTConsumer {
