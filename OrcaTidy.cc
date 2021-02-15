@@ -35,8 +35,6 @@ static auto AddRefOn(ExpressionMatcher const& expr_matcher) {
                            on(expr_matcher));
 }
 
-AST_MATCHER(clang::NamedDecl, Unnamed) { return !Node.getDeclName(); }
-
 AST_MATCHER(clang::NamedDecl, Unused) {
   return Node.hasAttr<clang::UnusedAttr>() || !Node.getDeclName() ||
          !Node.isReferenced();
@@ -780,13 +778,13 @@ void Annotator::InferFields() const {
 }
 
 void Annotator::InferPointerVars() const {
-  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
-           parmVarDecl(hasType(RefCountPointerType()), Unnamed(),
-                       unless(isInstantiated()),
-                       hasDeclContext(functionDecl(hasBody(stmt()))))
-               .bind("param"),
-           "param")) {
-    AnnotateVarPointer(param);
+  for (const auto* var : NodesFromMatch<clang::VarDecl>(
+           varDecl(hasType(RefCountPointerType()), Unused(),
+                   unless(isInstantiated()),
+                   hasDeclContext(functionDecl(hasBody(stmt()))))
+               .bind("var"),
+           "var")) {
+    AnnotateVarPointer(var);
   }
 }
 

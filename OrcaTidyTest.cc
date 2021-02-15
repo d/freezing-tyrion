@@ -162,6 +162,7 @@ TEST_F(BaseTest, varOwnInitNew) {
       U *implicitly_converted = new S;
 
       gpos::owner<U *> annotated = new U;
+      Sink(s, implicitly_converted, annotated);
     }
   )C++",
               expected_changed_code = R"C++(
@@ -173,6 +174,7 @@ TEST_F(BaseTest, varOwnInitNew) {
       gpos::owner<U *> implicitly_converted = new S;
 
       gpos::owner<U *> annotated = new U;
+      Sink(s, implicitly_converted, annotated);
     }
   )C++";
 
