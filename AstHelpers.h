@@ -3,6 +3,7 @@
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/Tooling/Core/Replacement.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -187,11 +188,7 @@ struct NodesFromMatchBase {
     // NOLINTNEXTLINE(google-build-using-namespace)
     using namespace clang::ast_matchers;
 
-    // We're not quite ready to handle multiple-declaration yet, so here's a
-    // best effort to walk (carefully) around them. Amazingly, this doesn't seem
-    // to disrupt any of the base cases.
-    return allOf(SingleDecl(),
-                 anyOf(hasInitializer(expr_matcher), Assigned(expr_matcher)));
+    return anyOf(hasInitializer(expr_matcher), Assigned(expr_matcher));
   }
 
   VarMatcher RefCountVarInitializedOrAssigned(

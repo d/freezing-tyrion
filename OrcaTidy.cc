@@ -328,6 +328,9 @@ class Annotator : public NodesFromMatchBase<Annotator> {
                       const TypeMatcher& annotation_matcher,
                       llvm::StringRef annotation) const {
     for (const auto* v : var->redecls()) {
+      if (!Match(SingleDecl(), *var)) {
+        continue;
+      }
       if (Match(annotation_matcher, v->getType())) continue;
       if (IsLeaked(var)) continue;
 
@@ -790,9 +793,7 @@ void Annotator::InferPointerVars() const {
 
 void Annotator::InferInitAddRef() const {
   for (const auto* var : NodesFromMatch<clang::VarDecl>(
-           declStmt(hasSingleDecl(varDecl(hasLocalStorage()).bind("var")),
-                    StmtIsImmediatelyBefore(
-                        AddRefOn(declRefExpr(to(equalsBoundNode("var")))))),
+           varDecl(hasLocalStorage(), IsImmediatelyBeforeAddRef()).bind("var"),
            "var")) {
     AnnotateVarOwner(var);
   }
@@ -810,12 +811,7 @@ void Annotator::InferAddRefReturn() const {
         !Match(functionDecl(hasAnyBody(
                    hasDescendant(AssignTo(declRefExpr(to(equalsNode(v))))))),
                *f) &&
-        !Match(
-            varDecl(hasLocalStorage(),
-                    hasParent(declStmt(declCountIs(1),
-                                       StmtIsImmediatelyBefore(AddRefOn(
-                                           declRefExpr(to(equalsNode(v)))))))),
-            *v))
+        !Match(varDecl(hasLocalStorage(), IsImmediatelyBeforeAddRef()), *v))
       AnnotateVarPointer(v);
   }
 
@@ -941,7 +937,7 @@ void Annotator::PropagatePointerVars() const {
   };
   for (const auto* var : NodesFromMatch<clang::VarDecl>(
            varDecl(
-               hasLocalStorage(), hasType(RefCountPointerType()), SingleDecl(),
+               hasLocalStorage(), hasType(RefCountPointerType()),
                unless(hasInitializer(ignoringParenImpCasts(
                    CallCcacheAccessorMethodsReturningOwner()))),
                unless(IsImmediatelyBeforeAddRef()), unless(isInstantiated()),
