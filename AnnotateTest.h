@@ -8,8 +8,21 @@ class AnnotateTest : public OrcaTidyTest<AnnotateTest> {
       : action_options_(action_options) {}
 
   constexpr static const char* const kPreamble = R"C++(
+#include <cstdint>
 #include "CRefCount.h"
 #include "owner.h"
+    namespace gpos {
+    using ULONG = uint32_t;
+
+    template <class T>
+    void CleanupRelease(T *elem);
+
+    template <class T, void (*CleanupFn)(T *)>
+    class CDynamicPtrArray : public CRefCount<CDynamicPtrArray<T, CleanupFn>> {
+     public:
+      T *operator[](ULONG) const;
+    };
+    }  // namespace gpos
 
     struct T : gpos::CRefCount<T> {};
     using U = T;

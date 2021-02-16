@@ -746,13 +746,16 @@ void Annotator::InferOwnerVars()
 void Annotator::InferGetters() const {
   for (const auto* f : NodesFromMatch<clang::CXXMethodDecl>(
            cxxMethodDecl(
-               hasAnyBody(stmt(
-                   hasDescendant(returnStmt(
-                       hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
-                           fieldDecl(hasType(RefCountPointerType()))
-                               .bind("field")))))),
-                   unless(hasDescendant(stmt(AddRefOrAssign(
-                       FieldReferenceFor(equalsBoundNode("field")))))))))
+               hasAnyBody(anyOf(
+                   stmt(hasDescendant(returnStmt(hasReturnValue(
+                            ignoringParenImpCasts(FieldReferenceFor(
+                                fieldDecl(hasType(RefCountPointerType()))
+                                    .bind("field")))))),
+                        unless(hasDescendant(AddRefOrAssign(
+                            FieldReferenceFor(equalsBoundNode("field")))))),
+                   stmt(hasDescendant(returnStmt(hasReturnValue(
+                       ignoringParenImpCasts(CallCDynPtrArrSubscriptOn(
+                           FieldReferenceFor(fieldDecl()))))))))))
                .bind("f"),
            "f")) {
     AnnotateFunctionReturnPointer(f);

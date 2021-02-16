@@ -136,4 +136,14 @@ const clang::Expr* IgnoreCastFuncs(const clang::Expr* expr) {
                                 IgnoreCastFuncsSingleStep);
 }
 
+StatementMatcher CallCDynPtrArrSubscriptOn(const ExpressionMatcher& expr) {
+  return cxxOperatorCallExpr(
+      hasType(RefCountPointerType()),
+      callee(cxxMethodDecl(hasOverloadedOperatorName("[]"),
+                           ofClass(hasName("::gpos::CDynamicPtrArray")))),
+      hasArgument(0, ignoringParenCasts(unaryOperator(
+                         hasOperatorName("*"),
+                         hasUnaryOperand(ignoringParenCasts(expr))))));
+}
+
 }  // namespace orca_tidy

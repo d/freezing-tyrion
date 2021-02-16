@@ -81,6 +81,29 @@ TEST_F(BaseTest, retPointFieldNegativeCases) {
   ASSERT_EQ(format(kPreamble + code), annotateAndFormat(code));
 }
 
+TEST_F(BaseTest, retPointCDynPtrArrSubscriptGetter) {
+  std::string code = R"C++(
+    struct R {
+      gpos::owner<gpos::CDynamicPtrArray<T, gpos::CleanupRelease>*> tarr;
+
+      T* GetT(gpos::ULONG i) const { return (*tarr)[i]; }
+      ~R() { tarr->Release(); }
+    };
+  )C++",
+              expected_changed_code = R"C++(
+    struct R {
+      gpos::owner<gpos::CDynamicPtrArray<T, gpos::CleanupRelease>*> tarr;
+
+      gpos::pointer<T*> GetT(gpos::ULONG i) const { return (*tarr)[i]; }
+      ~R() { tarr->Release(); }
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 TEST_F(BaseTest, retPointFieldQualifiers) {
   std::string code = R"C++(
     struct R {

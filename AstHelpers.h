@@ -38,6 +38,9 @@ __attribute__((const)) TypeMatcher RefCountPointerType();
 __attribute__((const)) StatementMatcher
 CallCcacheAccessorMethodsReturningOwner();
 
+__attribute__((const)) StatementMatcher CallCDynPtrArrSubscriptOn(
+    const ExpressionMatcher& expr);
+
 __attribute__((const)) DeclarationMatcher SingleDecl();
 
 StatementMatcher AssignTo(const ExpressionMatcher& lhs);
