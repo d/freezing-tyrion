@@ -32,21 +32,9 @@ TEST_F(BaseTest, varOwnInitAddRef) {
 
 TEST_F(BaseTest, retPointField) {
   std::string code = R"C++(
-    struct Q {};
-
     struct R {
-      Q* s;
       gpos::owner<T*> t;
-      gpos::pointer<T*> p;
-
       T* GetT() const { return t; }
-
-      // even though we don't AddRef, we should be conservative with the
-      // assignment
-      T* GetP() {
-        p = new T;
-        return p;
-      }
       ~R() { t->Release(); }
     };
 
@@ -58,21 +46,9 @@ TEST_F(BaseTest, retPointField) {
     };
   )C++",
               expected_changed_code = R"C++(
-    struct Q {};
-
     struct R {
-      Q* s;
       gpos::owner<T*> t;
-      gpos::pointer<T*> p;
-
       gpos::pointer<T*> GetT() const { return t; }
-
-      // even though we don't AddRef, we should be conservative with the
-      // assignment
-      T* GetP() {
-        p = new T;
-        return p;
-      }
       ~R() { t->Release(); }
     };
 
@@ -87,6 +63,22 @@ TEST_F(BaseTest, retPointField) {
   auto changed_code = annotateAndFormat(code);
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
+TEST_F(BaseTest, retPointFieldNegativeCases) {
+  std::string code = R"C++(
+    struct R {
+      gpos::pointer<T*> p;
+      // even though we don't AddRef, we should be conservative with the
+      // assignment
+      T* GetP() {
+        p = new T;
+        return p;
+      }
+    };
+  )C++";
+
+  ASSERT_EQ(format(kPreamble + code), annotateAndFormat(code));
 }
 
 TEST_F(BaseTest, retPointFieldQualifiers) {
