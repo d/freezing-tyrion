@@ -34,12 +34,16 @@ __attribute__((const)) TypeMatcher CastType();
 __attribute__((const)) TypeMatcher AnnotatedType();
 
 __attribute__((const)) TypeMatcher RefCountPointerType();
+__attribute__((const)) TypeMatcher RefCountPointerPointerType();
 
 __attribute__((const)) StatementMatcher
 CallCcacheAccessorMethodsReturningOwner();
 
 __attribute__((const)) StatementMatcher CallCDynPtrArrSubscriptOn(
     const ExpressionMatcher& expr);
+
+StatementMatcher Deref(const ExpressionMatcher& expr);
+StatementMatcher AddrOf(const ExpressionMatcher& expr);
 
 __attribute__((const)) DeclarationMatcher SingleDecl();
 

@@ -141,9 +141,20 @@ StatementMatcher CallCDynPtrArrSubscriptOn(const ExpressionMatcher& expr) {
       hasType(RefCountPointerType()),
       callee(cxxMethodDecl(hasOverloadedOperatorName("[]"),
                            ofClass(hasName("::gpos::CDynamicPtrArray")))),
-      hasArgument(0, ignoringParenCasts(unaryOperator(
-                         hasOperatorName("*"),
-                         hasUnaryOperand(ignoringParenCasts(expr))))));
+      hasArgument(0, ignoringParenCasts(Deref(expr))));
+}
+
+StatementMatcher Deref(const ExpressionMatcher& expr) {
+  return unaryOperator(hasOperatorName("*"),
+                       hasUnaryOperand(ignoringParenCasts(expr)));
+}
+
+StatementMatcher AddrOf(const ExpressionMatcher& expr) {
+  return unaryOperator(hasOperatorName("&"), hasUnaryOperand(expr));
+}
+
+TypeMatcher RefCountPointerPointerType() {
+  return pointsTo(RefCountPointerType());
 }
 
 }  // namespace orca_tidy

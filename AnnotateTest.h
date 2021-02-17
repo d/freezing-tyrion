@@ -29,12 +29,8 @@ class AnnotateTest : public OrcaTidyTest<AnnotateTest> {
     struct S : U {};
 
     void Assert(bool);
-    template <class T1, class T2>
-    void Sink(T1, T2);
-    template <class T1, class T2, class T3>
-    void Sink(T1, T2, T3);
-    template <class T1, class T2, class T3, class T4>
-    void Sink(T1, T2, T3, T4);
+    template <class T1, class... Ts>
+    void Sink(T1, Ts...);
   )C++";
 
   std::string runToolOverCode(std::string code);

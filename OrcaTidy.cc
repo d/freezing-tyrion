@@ -165,15 +165,14 @@ static auto NonTemplateCallOrConstruct(Matchers... matchers) {
 }
 
 static StatementMatcher PassedAsArgumentToNonPointerParam(
-    const DeclarationMatcher& var_matcher) {
-  auto ref_to_var = declRefExpr(to(var_matcher));
+    const ExpressionMatcher& expr_matcher) {
   return anyOf(
       CallOrConstruct(
-          ForEachArgumentWithParamType(ref_to_var, unless(PointerType()))),
-      parenListExpr(has(ref_to_var)), initListExpr(has(ref_to_var)),
+          ForEachArgumentWithParamType(expr_matcher, unless(PointerType()))),
+      parenListExpr(has(expr_matcher)), initListExpr(has(expr_matcher)),
       callExpr(
           callee(expr(anyOf(unresolvedLookupExpr(), unresolvedMemberExpr()))),
-          hasAnyArgument(IgnoringParenCastFuncs(ref_to_var))));
+          hasAnyArgument(IgnoringParenCastFuncs(expr_matcher))));
 }
 
 static StatementMatcher InitOrAssignNonPointerVarWith(
@@ -441,8 +440,11 @@ class Annotator : public NodesFromMatchBase<Annotator> {
   void InferOwnerVars() const;
   void InferReturnNew() const;
   void InferConstPointers() const;
+  void InferOutputParams() const;
+
   void PropagatePointerVars() const;
   void PropagateOwnerVars() const;
+  void PropagateOutputParams() const;
   void PropagateVirtualFunctionParamTypes() const;
   void PropagateParameterAmongRedecls() const;
   void AnnotateMultiDecls() const;
@@ -451,6 +453,9 @@ class Annotator : public NodesFromMatchBase<Annotator> {
   void AnnotateFirstVar(const clang::DeclStmt* decl_stmt,
                         llvm::StringRef annotation) const;
   void RemoveStarFromVar(const clang::VarDecl* var) const;
+  void AnnotateOutputParam(const clang::ParmVarDecl* param,
+                           const TypeMatcher& annotation_matcher,
+                           llvm::StringRef annotation) const;
 };
 
 void Annotator::Propagate() const {
@@ -498,6 +503,8 @@ void Annotator::Propagate() const {
   }
 
   PropagateOwnerVars();
+
+  PropagateOutputParams();
 
   // It's tempting to wrap an \c ignoringParenImpCasts inside \c
   // forEachArgumentWithParam here, but note that \c forEachArgumentWithParam
@@ -578,10 +585,11 @@ void Annotator::PropagateReturnOwner() const {
                hasReturnValue(ignoringParenImpCasts(declRefExpr(to(varDecl(
                    hasLocalStorage(), hasType(OwnerType()), decl().bind("var"),
                    hasDeclContext(
-                       functionDecl(unless(isInstantiated()),
-                                    hasBody(unless(hasDescendant(
-                                        PassedAsArgumentToNonPointerParam(
-                                            equalsBoundNode("var"))))))
+                       functionDecl(
+                           unless(isInstantiated()),
+                           hasBody(unless(
+                               hasDescendant(PassedAsArgumentToNonPointerParam(
+                                   declRefExpr(to(equalsBoundNode("var"))))))))
                            .bind("f")))))))),
            "f")) {
     AnnotateFunctionReturnOwner(f);
@@ -629,8 +637,8 @@ void Annotator::PropagateTailCall() const {
                    PointerType()))),
                stmt().bind("r")),
            "var", "r")) {
-    if (Match(returnStmt(unless(hasDescendant(
-                  PassedAsArgumentToNonPointerParam(equalsNode(var))))),
+    if (Match(returnStmt(unless(hasDescendant(PassedAsArgumentToNonPointerParam(
+                  declRefExpr(to(equalsNode(var))))))),
               *r)) {
       AnnotateVarPointer(var);
     }
@@ -706,6 +714,8 @@ void Annotator::AnnotateBaseCases() const {
 
   InferGetters();
 
+  InferOutputParams();
+
   AnnotateMultiDecls();
 }
 
@@ -719,8 +729,8 @@ void Annotator::InferReturnNew() const {
     AnnotateFunctionReturnOwner(f);
   }
 }
-void Annotator::InferOwnerVars()
-    const {  // N.B. we don't need to use the fully qualified name
+void Annotator::InferOwnerVars() const {
+  // N.B. we don't need to use the fully qualified name
   // gpos::CRefCount::SafeRelease because
   // 1. unqualified name matching is much faster
   // 2. this leaves room for a CRTP implementation in the future
@@ -945,7 +955,7 @@ void Annotator::PropagatePointerVars() const {
   auto CounterexampleForVar = [](auto var) {
     auto ref_to_var = declRefExpr(to(var));
     return stmt(
-        anyOf(PassedAsArgumentToNonPointerParam(var),
+        anyOf(PassedAsArgumentToNonPointerParam(ref_to_var),
               returnStmt(hasReturnValue(IgnoringParenCastFuncs(ref_to_var))),
               InitOrAssignNonPointerVarWith(ref_to_var),
               AssignTo(ref_to_var,
@@ -970,9 +980,10 @@ void Annotator::PropagatePointerVars() const {
                                IgnoringParenCastFuncs(
                                    declRefExpr(to(equalsBoundNode("var")))),
                                PassedAsArgumentToNonPointerParam(
-                                   equalsBoundNode("var")),
+                                   declRefExpr(to(equalsBoundNode("var")))),
                                hasDescendant(PassedAsArgumentToNonPointerParam(
-                                   equalsBoundNode("var"))))))))))))),
+                                   declRefExpr(
+                                       to(equalsBoundNode("var"))))))))))))))),
            "var")) {
     AnnotateVarPointer(var);
   }
@@ -1092,6 +1103,91 @@ void Annotator::AnnotateFirstVar(const clang::DeclStmt* decl_stmt,
   auto leading_type_source_range =
       first_var->getTypeSourceInfo()->getTypeLoc().getSourceRange();
   AnnotateSourceRange(leading_type_source_range, annotation);
+}
+
+void Annotator::InferOutputParams() const {
+  auto deref = Deref(declRefExpr(to(equalsBoundNode("out_param"))));
+  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+           parmVarDecl(
+               unless(isInstantiated()), hasType(RefCountPointerPointerType()),
+               decl().bind("out_param"),
+               hasDeclContext(functionDecl(hasBody(
+                   stmt(hasDescendant(stmt(ReleaseCallExpr(deref)))))))),
+           "out_param")) {
+    AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
+  }
+}
+
+void Annotator::AnnotateOutputParam(const clang::ParmVarDecl* param,
+                                    const TypeMatcher& annotation_matcher,
+                                    llvm::StringRef annotation) const {
+  auto scope_index = param->getFunctionScopeIndex();
+  for (const auto* f :
+       llvm::cast<clang::FunctionDecl>(param->getDeclContext())->redecls()) {
+    const auto* p = f->getParamDecl(scope_index);
+    auto pointer_loc = p->getTypeSourceInfo()
+                           ->getTypeLoc()
+                           .getAsAdjusted<clang::PointerTypeLoc>();
+    // Not spelled as a pointer?
+    if (!pointer_loc) continue;
+    auto pointee_loc = pointer_loc.getPointeeLoc();
+    if (Match(annotation_matcher, pointee_loc.getType())) continue;
+    AnnotateSourceRange(pointee_loc.getSourceRange(), annotation);
+  }
+}
+
+void Annotator::PropagateOutputParams() const {
+  // Why isn't this in the base cases?
+  // Not just because of the CallReturningOwner() -- we could've easily
+  // duplicated that logic, but because of the part of avoiding
+  // PassedAsArgumentToNonPointerParam(): we won't have meaningful annotation at
+  // base rule time.
+  //
+  // FIXME: what if we also run this at "base" time? What will we find out?
+  auto deref = Deref(declRefExpr(to(equalsBoundNode("out_param"))));
+  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+           parmVarDecl(
+               unless(isInstantiated()), hasType(RefCountPointerPointerType()),
+               decl().bind("out_param"),
+               hasDeclContext(functionDecl(hasBody(stmt(
+                   hasDescendant(stmt(AssignTo(
+                       deref, IgnoringParenCastFuncs(
+                                  anyOf(cxxNewExpr(), CallReturningOwner()))))),
+                   unless(hasDescendant(
+                       expr(unless(ReleaseCallExpr(deref)),
+                            PassedAsArgumentToNonPointerParam(deref))))))))),
+           "out_param")) {
+    AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
+  }
+
+  for (auto [param, pointee_type] :
+       NodesFromMatch<clang::ParmVarDecl, clang::Type>(
+           callExpr(ForEachArgumentWithParamType(
+               declRefExpr(to(parmVarDecl(unless(isInstantiated()),
+                                          hasType(RefCountPointerPointerType()))
+                                  .bind("out_param"))),
+               pointsTo(
+                   qualType(AnnotatedType(), type().bind("pointee_type"))))),
+           "out_param", "pointee_type")) {
+    if (IsOwner(pointee_type)) {
+      AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
+    } else if (IsPointer(pointee_type)) {
+      AnnotateOutputParam(param, PointerType(), kPointerAnnotation);
+    }
+  }
+
+  for (auto [var, pointee_type] : NodesFromMatch<clang::VarDecl, clang::Type>(
+           callExpr(ForEachArgumentWithParamType(
+               AddrOf(declRefExpr(to(varDecl().bind("var")))),
+               pointsTo(
+                   qualType(AnnotatedType(), type().bind("pointee_type"))))),
+           "var", "pointee_type")) {
+    if (IsOwner(pointee_type)) {
+      AnnotateVarOwner(var);
+    } else if (IsPointer(pointee_type)) {
+      AnnotateVarPointer(var);
+    }
+  }
 }
 
 class AnnotateASTConsumer : public clang::ASTConsumer {

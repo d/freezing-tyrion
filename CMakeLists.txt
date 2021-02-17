@@ -42,7 +42,8 @@ add_executable(
   ConstPointersTest.cc
   CastTest.cc
   BoolFuncTest.cc
-  MultiDeclTest.cc)
+  MultiDeclTest.cc
+  OutputParamTest.cc)
 target_link_libraries(orca-tidy-test orca_tidy gmock_main)
 
 include(GoogleTest)
