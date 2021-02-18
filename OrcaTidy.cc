@@ -970,20 +970,18 @@ void Annotator::PropagatePointerVars() const {
                unless(IsImmediatelyBeforeAddRef()), unless(isInstantiated()),
                unless(hasType(autoType())), decl().bind("var"),
                hasDeclContext(functionDecl(hasBody(stmt()))),
-               anyOf(
-                   Unused(),
-                   hasDeclContext(functionDecl(unless(anyOf(
-                       hasBody(hasDescendant(
-                           CounterexampleForVar(equalsBoundNode("var")))),
-                       cxxConstructorDecl(
-                           hasAnyConstructorInitializer(withInitializer(anyOf(
-                               IgnoringParenCastFuncs(
-                                   declRefExpr(to(equalsBoundNode("var")))),
-                               PassedAsArgumentToNonPointerParam(
-                                   declRefExpr(to(equalsBoundNode("var")))),
-                               hasDescendant(PassedAsArgumentToNonPointerParam(
-                                   declRefExpr(
-                                       to(equalsBoundNode("var"))))))))))))))),
+               hasDeclContext(functionDecl(unless(anyOf(
+                   hasBody(hasDescendant(
+                       CounterexampleForVar(equalsBoundNode("var")))),
+                   cxxConstructorDecl(
+                       hasAnyConstructorInitializer(withInitializer(anyOf(
+                           IgnoringParenCastFuncs(
+                               declRefExpr(to(equalsBoundNode("var")))),
+                           PassedAsArgumentToNonPointerParam(
+                               declRefExpr(to(equalsBoundNode("var")))),
+                           hasDescendant(
+                               PassedAsArgumentToNonPointerParam(declRefExpr(
+                                   to(equalsBoundNode("var")))))))))))))),
            "var")) {
     AnnotateVarPointer(var);
   }

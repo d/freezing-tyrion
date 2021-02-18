@@ -33,7 +33,7 @@ TEST_F(BaseTest, paramPointUnnamedConstQualified) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
-TEST_F(PropagateTest, varPointUnused) {
+TEST_F(BaseTest, varPointUnused) {
   std::string code = R"C++(
     void f(T* t) {}
     void g(T* t __attribute__((unused))) { Assert(t != nullptr); }
