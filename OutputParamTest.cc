@@ -22,6 +22,50 @@ TEST_F(OutParamBase, ownReleaseSafeRelease) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(OutParamBase, ownAddRefAssign) {
+  std::string code = R"C++(
+    void foo(T** ppt, T* t) {
+      t->AddRef();
+      *ppt = t;
+    }
+  )C++",
+              expected_changed_code = R"C++(
+    void foo(gpos::owner<T*>* ppt, T* t) {
+      t->AddRef();
+      *ppt = t;
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
+TEST_F(OutParamBase, ownFuncAddRefAssign) {
+  std::string code = R"C++(
+    struct R {
+      T* GetT();
+    };
+    void foo(T** ppt, R* r) {
+      r->GetT()->AddRef();
+      *ppt = r->GetT();
+    }
+  )C++",
+              expected_changed_code = R"C++(
+    struct R {
+      T* GetT();
+    };
+    void foo(gpos::owner<T*>* ppt, R* r) {
+      r->GetT()->AddRef();
+      *ppt = r->GetT();
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 TEST_F(OutParamProp, ownNew) {
   std::string code = R"C++(
     void MakeT(T** ppt) { *ppt = new T; }
@@ -78,6 +122,71 @@ TEST_F(OutParamProp, ownNewNegativeCases) {
       *ppt = new T;
       *u = MakeU(*ppt);
     }
+  )C++";
+
+  ASSERT_EQ(format(kPreamble + code), annotateAndFormat(code));
+}
+
+TEST_F(OutParamProp, pointAssignPoint) {
+  std::string code = R"C++(
+    void f(T** pp, gpos::pointer<T*> t) { *pp = t; }
+    void g(const T** pp, gpos::pointer<T*> t) { *pp = t; }
+  )C++",
+              expected_changed_code = R"C++(
+    void f(gpos::pointer<T*>* pp, gpos::pointer<T*> t) {
+      *pp = t;
+    }
+    void g(gpos::pointer<const T*>* pp, gpos::pointer<T*> t) { *pp = t; }
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
+TEST_F(OutParamProp, pointAssignPointerNegativeCases) {
+  std::string code = R"C++(
+    void foo(T** ppt, gpos::pointer<T*> t) {
+      t->AddRef();
+      *ppt = t;
+    }
+  )C++";
+
+  ASSERT_EQ(format(kPreamble + code), annotateAndFormat(code));
+}
+
+TEST_F(OutParamProp, pointAssignPointFunc) {
+  std::string code = R"C++(
+    struct R {
+      gpos::pointer<T*> GetT();
+    };
+    void f(T** pp, R* r) { *pp = r->GetT(); }
+  )C++",
+              expected_changed_code = R"C++(
+    struct R {
+      gpos::pointer<T*> GetT();
+    };
+    void f(gpos::pointer<T*>* pp, R* r) { *pp = r->GetT(); }
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
+TEST_F(OutParamProp, pointAssignPointFuncNegativeCases) {
+  std::string code = R"C++(
+    struct R {
+      gpos::pointer<T*> GetT();
+      T* MakeT();
+    };
+
+    void foo(T** ppt, R* r) {
+      r->GetT()->AddRef();
+      *ppt = r->GetT();
+    }
+
+    void bar(T** ppt, R* r) { *ppt = r->MakeT(); }
   )C++";
 
   ASSERT_EQ(format(kPreamble + code), annotateAndFormat(code));

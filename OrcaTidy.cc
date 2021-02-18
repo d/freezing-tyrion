@@ -88,6 +88,12 @@ AST_MATCHER_P(clang::RecordDecl, HasField, DeclarationMatcher, field_matcher) {
                                     Builder) != Node.field_end();
 }
 
+__attribute__((const)) static auto CallGetter() {
+  return cxxMemberCallExpr(hasType(PointerType()),
+                           on(declRefExpr(to(varDecl()))),
+                           callee(cxxMethodDecl(parameterCountIs(0))));
+}
+
 using ReturnMatcher = decltype(hasReturnValue(expr()));
 static ReturnMatcher ReturnAfterAddRef(const ExpressionMatcher& retval,
                                        const ExpressionMatcher& addref_ref) {
@@ -1113,12 +1119,26 @@ void Annotator::AnnotateFirstVar(const clang::DeclStmt* decl_stmt,
 
 void Annotator::InferOutputParams() const {
   auto deref = Deref(declRefExpr(to(equalsBoundNode("out_param"))));
+  auto getter_added_ref = cxxMemberCallExpr(
+      on(declRefExpr(to(varDecl().bind("obj")))),
+      callee(cxxMethodDecl(parameterCountIs(0)).bind("method")),
+      forFunction(hasBody(hasDescendant(AddRefOn(
+          cxxMemberCallExpr(on(declRefExpr(to(equalsBoundNode("obj")))),
+                            callee(decl(equalsBoundNode("method")))))))));
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
            parmVarDecl(
                unless(isInstantiated()), hasType(RefCountPointerPointerType()),
                decl().bind("out_param"),
-               hasDeclContext(functionDecl(hasBody(
-                   stmt(hasDescendant(stmt(ReleaseCallExpr(deref)))))))),
+               hasDeclContext(functionDecl(hasBody(stmt(hasDescendant(stmt(
+                   anyOf(ReleaseCallExpr(deref),
+                         stmt(AssignTo(IgnoringParenCastFuncs(deref),
+                                       IgnoringParenCastFuncs(declRefExpr(
+                                           to(varDecl().bind("var"))))),
+                              StmtIsImmediatelyAfter(AddRefOn(
+                                  declRefExpr(to(equalsBoundNode("var")))))),
+                         AssignTo(
+                             IgnoringParenCastFuncs(deref),
+                             IgnoringParenCastFuncs(getter_added_ref)))))))))),
            "out_param")) {
     AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
   }
@@ -1138,7 +1158,15 @@ void Annotator::AnnotateOutputParam(const clang::ParmVarDecl* param,
     if (!pointer_loc) continue;
     auto pointee_loc = pointer_loc.getPointeeLoc();
     if (Match(annotation_matcher, pointee_loc.getType())) continue;
-    AnnotateSourceRange(pointee_loc.getSourceRange(), annotation);
+    auto range = pointee_loc.getSourceRange();
+    // If we're spelled as star-star, and the pointee of the pointee is const
+    if (auto pointee_as_pointer_loc =
+            pointee_loc.getAsAdjusted<clang::PointerTypeLoc>();
+        pointee_as_pointer_loc && pointee_as_pointer_loc.getPointeeLoc()
+                                      .getType()
+                                      .isLocalConstQualified())
+      FindConstTokenBefore(p->getBeginLoc(), range);
+    AnnotateSourceRange(range, annotation);
   }
 }
 
@@ -1156,16 +1184,40 @@ void Annotator::PropagateOutputParams() const {
                unless(isInstantiated()), hasType(RefCountPointerPointerType()),
                decl().bind("out_param"),
                hasDeclContext(functionDecl(hasBody(stmt(
-                   hasDescendant(stmt(AssignTo(
-                       deref,
+                   hasDescendant(AssignTo(
+                       ignoringParenCasts(deref),
                        IgnoringParenCastFuncs(anyOf(
                            cxxNewExpr(), CallReturningOwner(),
-                           declRefExpr(to(varDecl(hasType(OwnerType()))))))))),
+                           declRefExpr(to(varDecl(hasType(OwnerType())))))))),
                    unless(hasDescendant(
                        expr(unless(ReleaseCallExpr(deref)),
                             PassedAsArgumentToNonPointerParam(deref))))))))),
            "out_param")) {
     AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
+  }
+
+  auto assign_pointer_var = stmt(
+      AssignTo(deref, IgnoringParenCastFuncs(declRefExpr(
+                          to(varDecl(hasType(PointerType())).bind("var"))))),
+      unless(StmtIsImmediatelyAfter(
+          AddRefOn(declRefExpr(to(equalsBoundNode("var")))))));
+  auto assign_getter = AssignTo(
+      deref,
+      cxxMemberCallExpr(
+          CallGetter(), hasType(PointerType()),
+          on(declRefExpr(to(varDecl().bind("obj")))),
+          callee(cxxMethodDecl(parameterCountIs(0)).bind("method")),
+          forFunction(hasBody(unless(hasDescendant(AddRefOn(
+              cxxMemberCallExpr(on(declRefExpr(to(equalsBoundNode("obj")))),
+                                callee(decl(equalsBoundNode("method")))))))))));
+  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+           parmVarDecl(unless(isInstantiated()),
+                       hasType(RefCountPointerPointerType()),
+                       decl().bind("out_param"),
+                       hasDeclContext(functionDecl(hasBody(stmt(hasDescendant(
+                           stmt(anyOf(assign_pointer_var, assign_getter)))))))),
+           "out_param")) {
+    AnnotateOutputParam(param, PointerType(), kPointerAnnotation);
   }
 
   for (auto [param, pointee_type] :
