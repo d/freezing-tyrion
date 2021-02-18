@@ -52,6 +52,25 @@ TEST_F(OutParamProp, ownFunc) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(OutParamProp, ownVarOwn) {
+  std::string code = R"C++(
+    void MakeT(T** ppt) {
+      gpos::owner<T*> o = new T;
+      *ppt = o;
+    }
+  )C++",
+              expected_changed_code = R"C++(
+    void MakeT(gpos::owner<T*>* ppt) {
+      gpos::owner<T*> o = new T;
+      *ppt = o;
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 TEST_F(OutParamProp, ownNewNegativeCases) {
   std::string code = R"C++(
     gpos::owner<U*> MakeU(gpos::owner<T*> po);

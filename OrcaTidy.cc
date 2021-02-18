@@ -1157,8 +1157,10 @@ void Annotator::PropagateOutputParams() const {
                decl().bind("out_param"),
                hasDeclContext(functionDecl(hasBody(stmt(
                    hasDescendant(stmt(AssignTo(
-                       deref, IgnoringParenCastFuncs(
-                                  anyOf(cxxNewExpr(), CallReturningOwner()))))),
+                       deref,
+                       IgnoringParenCastFuncs(anyOf(
+                           cxxNewExpr(), CallReturningOwner(),
+                           declRefExpr(to(varDecl(hasType(OwnerType()))))))))),
                    unless(hasDescendant(
                        expr(unless(ReleaseCallExpr(deref)),
                             PassedAsArgumentToNonPointerParam(deref))))))))),
