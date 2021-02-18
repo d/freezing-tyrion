@@ -115,6 +115,10 @@ TEST_F(PropagateTest, varPointNegativeCases) {
   std::string func_without_def = R"C++(
     void f(T* t);
   )C++",
+              passed_addr_to_non_pointer_output_param_of_func = R"C++(
+    void F(T**);
+    void f(T* t) { F(&t); }
+  )C++",
               passed_to_non_pointer_param_of_func = R"C++(
     void F(gpos::owner<T*>);
     void G(T*);
@@ -199,6 +203,7 @@ TEST_F(PropagateTest, varPointNegativeCases) {
 
   for (const auto& code : {
            func_without_def,
+           passed_addr_to_non_pointer_output_param_of_func,
            passed_to_non_pointer_param_of_func,
            passed_to_non_pointer_param_of_ctor,
            passed_to_overload_expr,

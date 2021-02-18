@@ -164,6 +164,13 @@ static auto NonTemplateCallOrConstruct(Matchers... matchers) {
       matchers...);
 }
 
+static StatementMatcher PassedAsArgumentToNonPointerOutputParam(
+    const ExpressionMatcher& expr_matcher) {
+  return CallOrConstruct(ForEachArgumentWithParamType(
+      expr_matcher,
+      pointsTo(qualType(RefCountPointerType(), unless(PointerType())))));
+}
+
 static StatementMatcher PassedAsArgumentToNonPointerParam(
     const ExpressionMatcher& expr_matcher) {
   return anyOf(
@@ -956,6 +963,7 @@ void Annotator::PropagatePointerVars() const {
     auto ref_to_var = declRefExpr(to(var));
     return stmt(
         anyOf(PassedAsArgumentToNonPointerParam(ref_to_var),
+              PassedAsArgumentToNonPointerOutputParam(AddrOf(ref_to_var)),
               returnStmt(hasReturnValue(IgnoringParenCastFuncs(ref_to_var))),
               InitOrAssignNonPointerVarWith(ref_to_var),
               AssignTo(ref_to_var,
