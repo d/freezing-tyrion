@@ -87,13 +87,6 @@ inline auto ForEachArgumentWithParamType(ExpressionMatcher arg_matcher,
       IgnoringParenCastFuncs(arg_matcher), param_matcher);
 }
 
-template <class Range>
-auto MakeVector(Range&& range) {
-  using value_type = typename decltype(range.begin())::value_type;
-  llvm::SmallVector<value_type> nodes(range.begin(), range.end());
-  return nodes;
-}
-
 template <class... Nodes, class... IDs>
 auto GetNode(const clang::ast_matchers::BoundNodes& bound_nodes, IDs... ids) {
   if constexpr (sizeof...(ids) == 1)
@@ -156,10 +149,15 @@ struct NodesFromMatchBase {
   /// \endcode
   template <class... Nodes, class Matcher, class... Ids>
   auto NodesFromMatch(Matcher matcher, Ids... ids) const {
-    auto matches = clang::ast_matchers::match(
-        matcher, static_cast<const Derived*>(this)->AstContext());
+    auto MakeVector = [](auto range) {
+      using value_type = typename decltype(range.begin())::value_type;
+      llvm::SmallVector<value_type> nodes(range.begin(), range.end());
+      return nodes;
+    };
     auto nodes = MakeVector(llvm::map_range(
-        matches, [ids...](const clang::ast_matchers::BoundNodes& bound_nodes) {
+        clang::ast_matchers::match(
+            matcher, static_cast<const Derived*>(this)->AstContext()),
+        [ids...](const clang::ast_matchers::BoundNodes& bound_nodes) {
           return GetNode<Nodes...>(bound_nodes, ids...);
         }));
     return nodes;
