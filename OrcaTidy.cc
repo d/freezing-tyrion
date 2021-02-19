@@ -88,6 +88,47 @@ AST_MATCHER_P(clang::RecordDecl, HasField, DeclarationMatcher, field_matcher) {
                                     Builder) != Node.field_end();
 }
 
+using GetterSet =
+    llvm::DenseSet<std::tuple<const clang::Decl*, const clang::Decl*>>;
+
+// Like cxxMemberCallExpr(on(declRefExpr(to(varDecl()))),
+//                           callee(cxxMethodDecl(parameterCountIs(0))))
+//
+// but it also extracts the var and the method decls
+__attribute__((const))
+std::tuple<const clang::VarDecl*, const clang::CXXMethodDecl*>
+ExtractVarAndMethodFromGetterCall(const clang::CXXMemberCallExpr* call) {
+  const auto* method =
+      llvm::dyn_cast_or_null<clang::CXXMethodDecl>(call->getCalleeDecl());
+  if (!method || method->getNumParams() != 0) return {nullptr, nullptr};
+
+  auto* dre = llvm::dyn_cast<clang::DeclRefExpr>(
+      call->getImplicitObjectArgument()->IgnoreParenImpCasts());
+  if (!dre) return {nullptr, nullptr};
+  auto* var = llvm::dyn_cast<clang::VarDecl>(dre->getDecl());
+  if (!var) return {nullptr, nullptr};
+
+  return {var, method};
+}
+
+AST_MATCHER_P(clang::CXXMemberCallExpr, IsGetterCallInSet, GetterSet,
+              getter_set) {
+  auto [var, method] = ExtractVarAndMethodFromGetterCall(&Node);
+  // doesn't look like a getter?
+  if (!var) return false;
+  return getter_set.contains({var, method});
+}
+
+/// We cannot simply invert IsGetterCallInSet with an \code unless \endcode
+/// or we return true for an expression that doesn't even look like a getter
+AST_MATCHER_P(clang::CXXMemberCallExpr, IsGetterCallNotInSet, GetterSet,
+              getter_set) {
+  auto [var, method] = ExtractVarAndMethodFromGetterCall(&Node);
+  // doesn't look like a getter?
+  if (!var) return false;
+  return !getter_set.contains({var, method});
+}
+
 __attribute__((const)) static auto CallGetter() {
   return cxxMemberCallExpr(hasType(PointerType()),
                            on(declRefExpr(to(varDecl()))),
@@ -234,6 +275,30 @@ class Annotator : public NodesFromMatchBase<Annotator> {
     return IsInSet(DeclSetFromMatch(
         ReleaseCallExpr(FieldReferenceFor(fieldDecl().bind("owner_field"))),
         "owner_field"));
+  }
+
+  GetterSet GettersAddedRef() const {
+    auto MakeGetterSetFromMatches = [](auto matches) -> GetterSet {
+      return {matches.begin(), matches.end()};
+    };
+    return MakeGetterSetFromMatches(llvm::map_range(
+        match(AddRefOn(cxxMemberCallExpr(
+                  on(declRefExpr(to(varDecl().bind("obj")))),
+                  callee(cxxMethodDecl(parameterCountIs(0)).bind("method")))),
+              ast_context_),
+        [](const BoundNodes& bound_nodes) {
+          return std::tuple{
+              bound_nodes.getNodeAs<clang::VarDecl>("obj"),
+              bound_nodes.getNodeAs<clang::CXXMethodDecl>("method")};
+        }));
+  }
+
+  auto CallGetterAddedRef() const {
+    return IsGetterCallInSet(GettersAddedRef());
+  }
+
+  auto CallGetterNeverAddedRef() const {
+    return IsGetterCallNotInSet(GettersAddedRef());
   }
 
   void AnnotateFunctionParameterOwner(const clang::FunctionDecl* function,
@@ -1119,12 +1184,7 @@ void Annotator::AnnotateFirstVar(const clang::DeclStmt* decl_stmt,
 
 void Annotator::InferOutputParams() const {
   auto deref = Deref(declRefExpr(to(equalsBoundNode("out_param"))));
-  auto getter_added_ref = cxxMemberCallExpr(
-      on(declRefExpr(to(varDecl().bind("obj")))),
-      callee(cxxMethodDecl(parameterCountIs(0)).bind("method")),
-      forFunction(hasBody(hasDescendant(AddRefOn(
-          cxxMemberCallExpr(on(declRefExpr(to(equalsBoundNode("obj")))),
-                            callee(decl(equalsBoundNode("method")))))))));
+  auto getter_added_ref = cxxMemberCallExpr(CallGetterAddedRef());
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
            parmVarDecl(
                unless(isInstantiated()), hasType(RefCountPointerPointerType()),
@@ -1202,14 +1262,7 @@ void Annotator::PropagateOutputParams() const {
       unless(StmtIsImmediatelyAfter(
           AddRefOn(declRefExpr(to(equalsBoundNode("var")))))));
   auto assign_getter = AssignTo(
-      deref,
-      cxxMemberCallExpr(
-          CallGetter(), hasType(PointerType()),
-          on(declRefExpr(to(varDecl().bind("obj")))),
-          callee(cxxMethodDecl(parameterCountIs(0)).bind("method")),
-          forFunction(hasBody(unless(hasDescendant(AddRefOn(
-              cxxMemberCallExpr(on(declRefExpr(to(equalsBoundNode("obj")))),
-                                callee(decl(equalsBoundNode("method")))))))))));
+      deref, cxxMemberCallExpr(CallGetter(), CallGetterNeverAddedRef()));
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
            parmVarDecl(unless(isInstantiated()),
                        hasType(RefCountPointerPointerType()),
