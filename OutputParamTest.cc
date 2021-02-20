@@ -129,12 +129,12 @@ TEST_F(OutParamProp, ownNewNegativeCases) {
 
 TEST_F(OutParamProp, pointAssignPoint) {
   std::string code = R"C++(
-    void f(T** pp, gpos::pointer<T*> t) { *pp = t; }
+    void f(T** pp, gpos::pointer<T*> t) { (*pp) = t; }
     void g(const T** pp, gpos::pointer<T*> t) { *pp = t; }
   )C++",
               expected_changed_code = R"C++(
     void f(gpos::pointer<T*>* pp, gpos::pointer<T*> t) {
-      *pp = t;
+      (*pp) = t;
     }
     void g(gpos::pointer<const T*>* pp, gpos::pointer<T*> t) { *pp = t; }
   )C++";
@@ -160,13 +160,13 @@ TEST_F(OutParamProp, pointAssignPointFunc) {
     struct R {
       gpos::pointer<T*> GetT();
     };
-    void f(T** pp, R* r) { *pp = r->GetT(); }
+    void f(T** pp, R* r) { (*pp) = r->GetT(); }
   )C++",
               expected_changed_code = R"C++(
     struct R {
       gpos::pointer<T*> GetT();
     };
-    void f(gpos::pointer<T*>* pp, R* r) { *pp = r->GetT(); }
+    void f(gpos::pointer<T*>* pp, R* r) { (*pp) = r->GetT(); }
   )C++";
 
   auto changed_code = annotateAndFormat(std::move(code));

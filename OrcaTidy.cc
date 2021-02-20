@@ -1256,13 +1256,15 @@ void Annotator::PropagateOutputParams() const {
     AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
   }
 
-  auto assign_pointer_var = stmt(
-      AssignTo(deref, IgnoringParenCastFuncs(declRefExpr(
-                          to(varDecl(hasType(PointerType())).bind("var"))))),
-      unless(StmtIsImmediatelyAfter(
-          AddRefOn(declRefExpr(to(equalsBoundNode("var")))))));
-  auto assign_getter = AssignTo(
-      deref, cxxMemberCallExpr(CallGetter(), CallGetterNeverAddedRef()));
+  auto assign_pointer_var =
+      stmt(AssignTo(IgnoringParenCastFuncs(deref),
+                    IgnoringParenCastFuncs(declRefExpr(
+                        to(varDecl(hasType(PointerType())).bind("var"))))),
+           unless(StmtIsImmediatelyAfter(
+               AddRefOn(declRefExpr(to(equalsBoundNode("var")))))));
+  auto assign_getter =
+      AssignTo(IgnoringParenCastFuncs(deref),
+               cxxMemberCallExpr(CallGetter(), CallGetterNeverAddedRef()));
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
            parmVarDecl(unless(isInstantiated()),
                        hasType(RefCountPointerPointerType()),
