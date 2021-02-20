@@ -174,6 +174,35 @@ TEST_F(OutParamProp, pointAssignPointFunc) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(OutParamProp, pointNeverOutputs) {
+  std::string code = R"C++(
+    struct R : T {
+      void AddSize(T*);
+    };
+    void f(R** pp, T* t) { (*pp)->AddSize(t); }
+  )C++",
+              expected_changed_code = R"C++(
+    struct R : T {
+      void AddSize(T*);
+    };
+    void f(gpos::pointer<R*>* pp, T* t) { (*pp)->AddSize(t); }
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
+TEST_F(OutParamProp, pointNeverOutputsNegativeCases) {
+  std::string code = R"C++(
+    void F(T** pp);
+    void f(T** pp) { F(pp); }
+    void g(T** pp, T* t) { (*pp) = t; }
+  )C++";
+
+  ASSERT_EQ(format(kPreamble + code), annotateAndFormat(code));
+}
+
 TEST_F(OutParamProp, pointAssignPointFuncNegativeCases) {
   std::string code = R"C++(
     struct R {

@@ -1275,6 +1275,21 @@ void Annotator::PropagateOutputParams() const {
     AnnotateOutputParam(param, PointerType(), kPointerAnnotation);
   }
 
+  // The following is really code smell: the star-star really should have been a
+  // single star, but oh well, we DO have those in ORCA:
+  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+           parmVarDecl(
+               unless(isInstantiated()), hasType(RefCountPointerPointerType()),
+               decl().bind("out_param"),
+               hasDeclContext(functionDecl(hasBody(unless(hasDescendant(
+                   stmt(anyOf(AssignTo(IgnoringParenCastFuncs(deref)),
+                              callExpr(ForEachArgumentWithParamType(
+                                  declRefExpr(to(equalsBoundNode("out_param"))),
+                                  RefCountPointerPointerType())))))))))),
+           "out_param")) {
+    AnnotateOutputParam(param, PointerType(), kPointerAnnotation);
+  }
+
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
            callExpr(ForEachArgumentWithParamType(
                declRefExpr(to(parmVarDecl(unless(isInstantiated()),
