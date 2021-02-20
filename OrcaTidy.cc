@@ -1275,20 +1275,14 @@ void Annotator::PropagateOutputParams() const {
     AnnotateOutputParam(param, PointerType(), kPointerAnnotation);
   }
 
-  for (auto [param, pointee_type] :
-       NodesFromMatch<clang::ParmVarDecl, clang::Type>(
+  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
            callExpr(ForEachArgumentWithParamType(
                declRefExpr(to(parmVarDecl(unless(isInstantiated()),
                                           hasType(RefCountPointerPointerType()))
                                   .bind("out_param"))),
-               pointsTo(
-                   qualType(AnnotatedType(), type().bind("pointee_type"))))),
-           "out_param", "pointee_type")) {
-    if (IsOwner(pointee_type)) {
-      AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
-    } else if (IsPointer(pointee_type)) {
-      AnnotateOutputParam(param, PointerType(), kPointerAnnotation);
-    }
+               pointsTo(qualType(OwnerType())))),
+           "out_param")) {
+    AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
   }
 
   for (auto [var, pointee_type] : NodesFromMatch<clang::VarDecl, clang::Type>(

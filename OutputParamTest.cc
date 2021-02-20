@@ -196,21 +196,24 @@ TEST_F(OutParamProp, Prop) {
   std::string code = R"C++(
     void MakeT(gpos::owner<T*>*);
     void foo(T** ppt) { MakeT(ppt); }
-
-    void GetT(gpos::pointer<T*>*);
-    void bar(T** ppt) { GetT(ppt); }
   )C++",
               expected_changed_code = R"C++(
     void MakeT(gpos::owner<T*>*);
     void foo(gpos::owner<T*>* ppt) { MakeT(ppt); }
-
-    void GetT(gpos::pointer<T*>*);
-    void bar(gpos::pointer<T*>* ppt) { GetT(ppt); }
   )C++";
 
   auto changed_code = annotateAndFormat(std::move(code));
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
+TEST_F(OutParamProp, PropNegativeCases) {
+  std::string code = R"C++(
+    void GetT(gpos::pointer<T*>*);
+    void bar(T** ppt) { GetT(ppt); }
+  )C++";
+
+  ASSERT_EQ(format(kPreamble + code), annotateAndFormat(code));
 }
 
 TEST_F(OutParamProp, varInit) {
