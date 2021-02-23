@@ -727,14 +727,14 @@ void Annotator::PropagateTailCall() const {
                         expr().bind("arg"))))),
                stmt().bind("r")),
            "var", "arg", "r")) {
-    if (Match(returnStmt(unless(hasDescendant(
+    if (Match(returnStmt(hasDescendant(
                   CallOrConstruct(hasAnyArgument(IgnoringParenCastFuncs(
                       expr(unless(equalsNode(arg)),
-                           declRefExpr(to(equalsNode(var)))))))))),
-              *r)) {
-      AnnotateVarOwner(var);
-      MoveSourceRange(arg->getSourceRange());
-    }
+                           declRefExpr(to(equalsNode(var))))))))),
+              *r))
+      continue;
+    AnnotateVarOwner(var);
+    MoveSourceRange(arg->getSourceRange());
   }
 
   for (auto [var, r] : NodesFromMatch<clang::VarDecl, clang::ReturnStmt>(
@@ -745,11 +745,11 @@ void Annotator::PropagateTailCall() const {
                               .bind("var")))))),
                stmt().bind("r")),
            "var", "r")) {
-    if (Match(returnStmt(unless(hasDescendant(PassedAsArgumentToNonPointerParam(
-                  declRefExpr(to(equalsNode(var))))))),
-              *r)) {
-      AnnotateVarPointer(var);
-    }
+    if (Match(returnStmt(hasDescendant(PassedAsArgumentToNonPointerParam(
+                  declRefExpr(to(equalsNode(var)))))),
+              *r))
+      continue;
+    AnnotateVarPointer(var);
   }
 
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
