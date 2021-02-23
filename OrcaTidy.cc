@@ -229,6 +229,16 @@ static StatementMatcher PassedAsArgumentToNonPointerParam(
           hasAnyArgument(IgnoringParenCastFuncs(expr_matcher))));
 }
 
+static auto ForEachArgumentWithOwnerParam(
+    const ExpressionMatcher& arg_matcher) {
+  return ForEachArgumentWithParamType(arg_matcher, OwnerType());
+}
+
+static auto ForEachArgumentWithPointerParam(
+    const ExpressionMatcher& arg_matcher) {
+  return ForEachArgumentWithParamType(arg_matcher, PointerType());
+}
+
 static StatementMatcher InitOrAssignNonPointerVarWith(
     const ExpressionMatcher& expr) {
   return anyOf(
@@ -708,14 +718,13 @@ void Annotator::PropagateTailCall() const {
   for (auto [var, arg, r] :
        NodesFromMatch<clang::VarDecl, clang::Expr, clang::ReturnStmt>(
            returnStmt(
-               forEachDescendant(CallOrConstruct(ForEachArgumentWithParamType(
+               forEachDescendant(CallOrConstruct(ForEachArgumentWithOwnerParam(
                    expr(declRefExpr(to(varDecl(
                             hasLocalStorage(), varDecl().bind("var"),
                             hasDeclContext(functionDecl(unless(
                                 hasAnyBody(hasDescendant(AddRefOn(declRefExpr(
                                     to(equalsBoundNode("var")))))))))))),
-                        expr().bind("arg")),
-                   OwnerType()))),
+                        expr().bind("arg"))))),
                stmt().bind("r")),
            "var", "arg", "r")) {
     if (Match(returnStmt(unless(hasDescendant(
@@ -730,11 +739,10 @@ void Annotator::PropagateTailCall() const {
 
   for (auto [var, r] : NodesFromMatch<clang::VarDecl, clang::ReturnStmt>(
            returnStmt(
-               forEachDescendant(CallOrConstruct(ForEachArgumentWithParamType(
-                   declRefExpr(
+               forEachDescendant(
+                   CallOrConstruct(ForEachArgumentWithPointerParam(declRefExpr(
                        to(varDecl(unless(isInstantiated()), hasLocalStorage())
-                              .bind("var"))),
-                   PointerType()))),
+                              .bind("var")))))),
                stmt().bind("r")),
            "var", "r")) {
     if (Match(returnStmt(unless(hasDescendant(PassedAsArgumentToNonPointerParam(
