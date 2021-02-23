@@ -52,6 +52,15 @@ StatementMatcher AssignTo(const ExpressionMatcher& lhs);
 StatementMatcher AssignTo(const ExpressionMatcher& lhs,
                           const ExpressionMatcher& rhs);
 
+// the first-match equivalent of findAll
+template <class Matcher>
+auto SelfOrHasDescendant(const Matcher& matcher) {
+  // NOLINTNEXTLINE(google-build-using-namespace)
+  using namespace clang::ast_matchers;
+
+  return anyOf(matcher, hasDescendant(matcher));
+}
+
 AST_MATCHER(clang::CXXMethodDecl, IsStatic) { return Node.isStatic(); }
 
 using DeclSet = llvm::DenseSet<const clang::Decl*>;

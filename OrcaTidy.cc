@@ -718,16 +718,16 @@ void Annotator::PropagateTailCall() const {
   for (auto [var, arg, r] :
        NodesFromMatch<clang::VarDecl, clang::Expr, clang::ReturnStmt>(
            returnStmt(
-               forEachDescendant(CallOrConstruct(ForEachArgumentWithOwnerParam(
-                   expr(declRefExpr(to(varDecl(
-                            hasLocalStorage(), varDecl().bind("var"),
-                            hasDeclContext(functionDecl(unless(
-                                hasAnyBody(hasDescendant(AddRefOn(declRefExpr(
-                                    to(equalsBoundNode("var")))))))))))),
-                        expr().bind("arg"))))),
+               findAll(CallOrConstruct(ForEachArgumentWithOwnerParam(expr(
+                   declRefExpr(to(varDecl(
+                       hasLocalStorage(), varDecl().bind("var"),
+                       hasDeclContext(functionDecl(
+                           unless(hasAnyBody(hasDescendant(AddRefOn(
+                               declRefExpr(to(equalsBoundNode("var")))))))))))),
+                   expr().bind("arg"))))),
                stmt().bind("r")),
            "var", "arg", "r")) {
-    if (Match(returnStmt(hasDescendant(
+    if (Match(returnStmt(SelfOrHasDescendant(
                   CallOrConstruct(hasAnyArgument(IgnoringParenCastFuncs(
                       expr(unless(equalsNode(arg)),
                            declRefExpr(to(equalsNode(var))))))))),
@@ -738,14 +738,13 @@ void Annotator::PropagateTailCall() const {
   }
 
   for (auto [var, r] : NodesFromMatch<clang::VarDecl, clang::ReturnStmt>(
-           returnStmt(
-               forEachDescendant(
-                   CallOrConstruct(ForEachArgumentWithPointerParam(declRefExpr(
-                       to(varDecl(unless(isInstantiated()), hasLocalStorage())
-                              .bind("var")))))),
-               stmt().bind("r")),
+           returnStmt(findAll(CallOrConstruct(ForEachArgumentWithPointerParam(
+                          declRefExpr(to(varDecl(unless(isInstantiated()),
+                                                 hasLocalStorage())
+                                             .bind("var")))))),
+                      stmt().bind("r")),
            "var", "r")) {
-    if (Match(returnStmt(hasDescendant(PassedAsArgumentToNonPointerParam(
+    if (Match(returnStmt(SelfOrHasDescendant(PassedAsArgumentToNonPointerParam(
                   declRefExpr(to(equalsNode(var)))))),
               *r))
       continue;
@@ -753,8 +752,8 @@ void Annotator::PropagateTailCall() const {
   }
 
   for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
-           returnStmt(forEachDescendant(
-               NonTemplateCallOrConstruct(ForEachArgumentWithParam(
+           returnStmt(
+               findAll(NonTemplateCallOrConstruct(ForEachArgumentWithParam(
                    declRefExpr(to(varDecl(
                        hasLocalStorage(), hasType(PointerType()),
                        varDecl().bind("var"),
@@ -770,7 +769,7 @@ void Annotator::PropagateTailCall() const {
        NodesFromMatch<clang::ParmVarDecl, clang::VarDecl, clang::Expr,
                       clang::ReturnStmt>(
            returnStmt(
-               forEachDescendant(CallOrConstruct(
+               findAll(CallOrConstruct(
                    ForEachArgumentWithParam(
                        declRefExpr(
                            to(varDecl(hasLocalStorage(), hasType(OwnerType()))
@@ -781,7 +780,7 @@ void Annotator::PropagateTailCall() const {
                    hasDeclaration(functionDecl(unless(hasName("std::move")))))),
                stmt().bind("r")),
            "param", "var", "arg", "r")) {
-    if (Match(returnStmt(hasDescendant(
+    if (Match(returnStmt(SelfOrHasDescendant(
                   declRefExpr(unless(equalsNode(arg)), to(equalsNode(var))))),
               *r))
       continue;
