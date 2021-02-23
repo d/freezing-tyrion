@@ -650,6 +650,24 @@ void Annotator::PropagateOwnerVars() const {
            "owner_var")) {
     AnnotateVarOwner(var);
   }
+
+  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+           parmVarDecl(
+               unless(isInstantiated()), parmVarDecl().bind("param"),
+               hasDeclContext(cxxConstructorDecl(
+                   hasAnyConstructorInitializer(cxxCtorInitializer(
+                       forField(hasType(OwnerType())),
+                       withInitializer(IgnoringParenCastFuncs(
+                           declRefExpr(to(equalsBoundNode("param"))))))),
+                   // while AddRef on the field is also theoretically possible,
+                   // I scanned through the ORCA code and found the few
+                   // instances of AddRef on the field was for copying it again
+                   // to another owner
+                   hasBody(unless(hasDescendant(AddRefOn(
+                       declRefExpr(to(equalsBoundNode("param")))))))))),
+           "param")) {
+    AnnotateVarOwner(param);
+  }
 }
 
 void Annotator::PropagateReturnOwner() const {

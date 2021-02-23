@@ -183,7 +183,7 @@ TEST_F(PropagateTest, varPointNegativeCases) {
               passed_to_ctor_init = R"C++(
     T* F(T*);
     class R {
-      gpos::owner<T*> t_;
+      gpos::pointer<T*> t_;
       gpos::owner<T*> t2_;
       gpos::owner<T*> t3_;
       R(T* t, T* t2, T* t3) : t_(t), t2_(F(t2)), t3_(F(F(t3))) {}

@@ -451,4 +451,42 @@ TEST_F(PropagateTest, paramOwnFunc) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(PropagateTest, ctorParamOwnInitField) {
+  std::string code = R"C++(
+    class R {
+      gpos::owner<T*> t_;
+
+     public:
+      R(T* t) : t_(t) {}
+      ~R();
+    };
+  )C++",
+              expected_changed_code = R"C++(
+    class R {
+      gpos::owner<T*> t_;
+
+     public:
+      R(gpos::owner<T*> t) : t_(t) {}
+      ~R();
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
+TEST_F(PropagateTest, ctorParamOwnInitFieldNegativeCases) {
+  std::string code = R"C++(
+    class R {
+      gpos::owner<T*> t_;
+
+     public:
+      R(T* t) : t_(t) { t->AddRef(); }
+      ~R();
+    };
+  )C++";
+
+  ASSERT_EQ(format(kPreamble + code), annotateAndFormat(code));
+}
 }  // namespace orca_tidy
