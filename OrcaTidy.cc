@@ -408,12 +408,16 @@ class Annotator : public NodesFromMatchBase<Annotator> {
                       const TypeMatcher& annotation_matcher,
                       llvm::StringRef annotation) const {
     for (const auto* v : var->redecls()) {
+      if (Match(annotation_matcher, v->getType())) continue;
+      if (IsLeaked(var)) continue;
+      // You can't put auto between angle brackets:
+      if (Match(qualType(anyOf(autoType(), pointsTo(autoType()))),
+                var->getType()))
+        continue;
       if (!Match(SingleDecl(), *var)) {
         annotation_to_var_decls_[annotation].insert(var);
         continue;
       }
-      if (Match(annotation_matcher, v->getType())) continue;
-      if (IsLeaked(var)) continue;
 
       auto source_range = v->getTypeSourceInfo()->getTypeLoc().getSourceRange();
       if (v->getType()->getPointeeType().isLocalConstQualified() &&
@@ -1042,25 +1046,24 @@ void Annotator::PropagatePointerVars() const {
               ReleaseCallExpr(ref_to_var)));
   };
   for (const auto* var : NodesFromMatch<clang::VarDecl>(
-           varDecl(
-               hasLocalStorage(), hasType(RefCountPointerType()),
-               unless(hasInitializer(ignoringParenImpCasts(
-                   CallCcacheAccessorMethodsReturningOwner()))),
-               unless(IsImmediatelyBeforeAddRef()), unless(isInstantiated()),
-               unless(hasType(autoType())), decl().bind("var"),
-               hasDeclContext(functionDecl(hasBody(stmt()))),
-               hasDeclContext(functionDecl(unless(anyOf(
-                   hasBody(hasDescendant(
-                       CounterexampleForVar(equalsBoundNode("var")))),
-                   cxxConstructorDecl(
-                       hasAnyConstructorInitializer(withInitializer(anyOf(
-                           IgnoringParenCastFuncs(
-                               declRefExpr(to(equalsBoundNode("var")))),
-                           PassedAsArgumentToNonPointerParam(
-                               declRefExpr(to(equalsBoundNode("var")))),
-                           hasDescendant(
-                               PassedAsArgumentToNonPointerParam(declRefExpr(
-                                   to(equalsBoundNode("var")))))))))))))),
+           varDecl(hasLocalStorage(), hasType(RefCountPointerType()),
+                   unless(hasInitializer(ignoringParenImpCasts(
+                       CallCcacheAccessorMethodsReturningOwner()))),
+                   unless(IsImmediatelyBeforeAddRef()),
+                   unless(isInstantiated()), decl().bind("var"),
+                   hasDeclContext(functionDecl(hasBody(stmt()))),
+                   hasDeclContext(functionDecl(unless(anyOf(
+                       hasBody(hasDescendant(
+                           CounterexampleForVar(equalsBoundNode("var")))),
+                       cxxConstructorDecl(
+                           hasAnyConstructorInitializer(withInitializer(anyOf(
+                               IgnoringParenCastFuncs(
+                                   declRefExpr(to(equalsBoundNode("var")))),
+                               PassedAsArgumentToNonPointerParam(
+                                   declRefExpr(to(equalsBoundNode("var")))),
+                               hasDescendant(PassedAsArgumentToNonPointerParam(
+                                   declRefExpr(
+                                       to(equalsBoundNode("var")))))))))))))),
            "var")) {
     AnnotateVarPointer(var);
   }
