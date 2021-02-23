@@ -43,7 +43,8 @@ add_executable(
   CastTest.cc
   BoolFuncTest.cc
   MultiDeclTest.cc
-  OutputParamTest.cc)
+  OutputParamTest.cc
+  OwnerVarTest.cc)
 target_link_libraries(orca-tidy-test orca_tidy gmock_main)
 
 include(GoogleTest)
