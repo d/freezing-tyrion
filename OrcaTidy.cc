@@ -229,9 +229,26 @@ static StatementMatcher PassedAsArgumentToNonPointerParam(
           hasAnyArgument(IgnoringParenCastFuncs(expr_matcher))));
 }
 
+__attribute__((const)) static CXXMethodMatcher OfRefArray() {
+  return ofClass(classTemplateSpecializationDecl(
+      hasName("::gpos::CDynamicPtrArray"),
+      hasTemplateArgument(
+          1, refersToDeclaration(functionDecl(hasName("CleanupRelease"))))));
+}
+
+static auto ForEachArgumentToRefArrayMethodWithOwnerParam(
+    const ExpressionMatcher& arg_matcher) {
+  return anyOf(
+      cxxMemberCallExpr(callee(cxxMethodDecl(hasName("Replace"), OfRefArray())),
+                        hasArgument(1, IgnoringParenCastFuncs(arg_matcher))),
+      cxxMemberCallExpr(callee(cxxMethodDecl(hasName("Append"), OfRefArray())),
+                        hasArgument(0, IgnoringParenCastFuncs(arg_matcher))));
+}
+
 static auto ForEachArgumentWithOwnerParam(
     const ExpressionMatcher& arg_matcher) {
-  return ForEachArgumentWithParamType(arg_matcher, OwnerType());
+  return anyOf(ForEachArgumentWithParamType(arg_matcher, OwnerType()),
+               ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher));
 }
 
 static auto ForEachArgumentWithPointerParam(

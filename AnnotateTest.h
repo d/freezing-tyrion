@@ -21,6 +21,8 @@ class AnnotateTest : public OrcaTidyTest<AnnotateTest> {
     class CDynamicPtrArray : public CRefCount<CDynamicPtrArray<T, CleanupFn>> {
      public:
       T *operator[](ULONG) const;
+      void Replace(ULONG pos, T *new_elem);
+      void Append(T *elem);
     };
     }  // namespace gpos
 
