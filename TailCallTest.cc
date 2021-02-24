@@ -12,17 +12,8 @@ TEST_F(TailCall, varMoveOwn) {
     bool F(gpos::owner<T*>);
     bool G(gpos::owner<R*>);
     gpos::pointer<T*> H(bool);
-    bool foo(int, R*);
 
-    bool foo(int i, R* r) {
-      T* t = nullptr;
-      switch (i) {
-        default:
-          return F(t);
-        case 42:
-          return G(r);
-      }
-    }
+    bool f(R* r) { return G(r); }
 
     gpos::pointer<T*> bar(R* r) { return H(F(r)); }
     bool bazz(T* t) { return G(new R(t)); }
@@ -36,17 +27,8 @@ TEST_F(TailCall, varMoveOwn) {
     bool F(gpos::owner<T*>);
     bool G(gpos::owner<R*>);
     gpos::pointer<T*> H(bool);
-    bool foo(int, gpos::owner<R*>);
 
-    bool foo(int i, gpos::owner<R*> r) {
-      gpos::owner<T*> t = nullptr;
-      switch (i) {
-        default:
-          return F(std::move(t));
-        case 42:
-          return G(std::move(r));
-      }
-    }
+    bool f(gpos::owner<R*> r) { return G(std::move(r)); }
 
     gpos::pointer<T*> bar(gpos::owner<R*> r) { return H(F(std::move(r))); }
     bool bazz(gpos::owner<T*> t) { return G(new R(std::move(t))); }
