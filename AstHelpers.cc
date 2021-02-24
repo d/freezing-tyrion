@@ -157,4 +157,12 @@ TypeMatcher RefCountPointerPointerType() {
   return pointsTo(RefCountPointerType());
 }
 
+FunctionMatcher ForEachReturnOrLastStmt(const StatementMatcher& inner_matcher) {
+  return hasBody(eachOf(
+      forEachDescendant(returnStmt(inner_matcher)),
+      compoundStmt(forFunction(functionDecl(returns(voidType()),
+                                            unless(cxxConstructorDecl()))),
+                   LastSubstatementIs(expr(inner_matcher)))));
+}
+
 }  // namespace orca_tidy

@@ -14,6 +14,7 @@ TEST_F(TailCall, varMoveOwn) {
     gpos::pointer<T*> H(bool);
 
     bool f(R* r) { return G(r); }
+    void g(R* r) { G(r); }
 
     gpos::pointer<T*> bar(R* r) { return H(F(r)); }
     bool bazz(T* t) { return G(new R(t)); }
@@ -29,6 +30,7 @@ TEST_F(TailCall, varMoveOwn) {
     gpos::pointer<T*> H(bool);
 
     bool f(gpos::owner<R*> r) { return G(std::move(r)); }
+    void g(gpos::owner<R*> r) { G(std::move(r)); }
 
     gpos::pointer<T*> bar(gpos::owner<R*> r) { return H(F(std::move(r))); }
     bool bazz(gpos::owner<T*> t) { return G(new R(std::move(t))); }
@@ -81,6 +83,7 @@ TEST_F(TailCall, varPoint) {
       if (!s) return H(R(s)) || F(s);
       return Unannotated() && F(t2);
     }
+    void bar(T* t, S* s) { H(R(s)) || F(t); }
   )C++",
               expected_changed_code = R"C++(
     struct R {
@@ -95,6 +98,7 @@ TEST_F(TailCall, varPoint) {
       if (!s) return H(R(s)) || F(s);
       return Unannotated() && F(t2);
     }
+    void bar(gpos::pointer<T*> t, gpos::pointer<S*> s) { H(R(s)) || F(t); }
   )C++";
 
   auto changed_code = annotateAndFormat(code);
@@ -139,8 +143,10 @@ TEST_F(TailCall, paramPoint) {
       R(T*);
     };
     bool F(T*, R);
+    void G(T*);
 
     bool foo(gpos::pointer<T*> t) { return F(t, R(t)); }
+    void bar(gpos::pointer<T*> t) { G(t); }
     }  // namespace positive
   )C++",
               expected_changed_code = R"C++(
@@ -149,8 +155,10 @@ TEST_F(TailCall, paramPoint) {
       R(gpos::pointer<T*>);
     };
     bool F(gpos::pointer<T*>, R);
+    void G(gpos::pointer<T*>);
 
     bool foo(gpos::pointer<T*> t) { return F(t, R(t)); }
+    void bar(gpos::pointer<T*> t) { G(t); }
     }  // namespace positive
   )C++";
 
@@ -195,18 +203,22 @@ TEST_F(TailCall, paramOwn) {
       R(T*);
     };
     bool F(T*, R);
+    void G(T*);
 
     bool foo(gpos::owner<T*> t, gpos::owner<T*> param) { return F(t, R(param)); }
+    void bar(gpos::owner<T*> t) { G(t); }
   )C++",
               expected_changed_code = R"C++(
     struct R {
       R(gpos::owner<T*>);
     };
     bool F(gpos::owner<T*>, R);
+    void G(gpos::owner<T*>);
 
     bool foo(gpos::owner<T*> t, gpos::owner<T*> param) {
       return F(std::move(t), R(std::move(param)));
     }
+    void bar(gpos::owner<T*> t) { G(std::move(t)); }
   )C++";
 
   auto changed_code = annotateAndFormat(code);
@@ -231,6 +243,13 @@ TEST_F(TailCall, paramOwnNegative) {
     bool fuzz(gpos::owner<T*> t) { return Q{std::move(t)}.Ok(); }
     // t is referenced more than once, bail
     bool bar(gpos::owner<T*> t) { return F(t) || G(t); }
+
+    class R {
+      gpos::owner<T*> t_;
+
+     public:
+      R(gpos::owner<T*> t) : t_(t) { F(t); }
+    };
   )C++";
 
   auto changed_code = annotateAndFormat(code);

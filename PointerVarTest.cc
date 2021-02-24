@@ -123,7 +123,10 @@ TEST_F(PropagateTest, varPointNegativeCases) {
     void F(gpos::owner<T*>);
     void G(T*);
 
-    void f(T* t) { F(t); }
+    void f(T* t) {
+      F(t);
+      ;
+    }
     void g(T* t) { G(t); }
   )C++",
               passed_to_non_pointer_param_of_ctor = R"C++(

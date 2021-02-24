@@ -14,6 +14,7 @@ static const constexpr llvm::StringRef kPointerAnnotation = "gpos::pointer";
 static const constexpr llvm::StringRef kCastAnnotation = "gpos::cast";
 
 using ExpressionMatcher = decltype(clang::ast_matchers::nullPointerConstant());
+using FunctionMatcher = decltype(clang::ast_matchers::isDefaulted());
 using VarMatcher = decltype(clang::ast_matchers::hasLocalStorage());
 using ParamMatcher = decltype(clang::ast_matchers::hasDefaultArgument());
 using clang::ast_matchers::DeclarationMatcher;
@@ -51,6 +52,15 @@ StatementMatcher AssignTo(const ExpressionMatcher& lhs);
 
 StatementMatcher AssignTo(const ExpressionMatcher& lhs,
                           const ExpressionMatcher& rhs);
+
+AST_MATCHER_P(clang::CompoundStmt, LastSubstatementIs, StatementMatcher,
+              inner_matcher) {
+  const auto* last_stmt = Node.body_back();
+  if (!last_stmt) return false;
+  return inner_matcher.matches(*last_stmt, Finder, Builder);
+}
+
+FunctionMatcher ForEachReturnOrLastStmt(const StatementMatcher& inner_matcher);
 
 // the first-match equivalent of findAll
 template <class Matcher>
