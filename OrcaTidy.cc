@@ -299,7 +299,7 @@ class Annotator : public NodesFromMatchBase<Annotator> {
   void AnnotateBaseCases() const;
 
   auto FieldReleased() const {
-    return IsInSet(DeclSetFromMatch(
+    return IsInSet(DeclSetFromMatchAST(
         ReleaseCallExpr(FieldReferenceFor(fieldDecl().bind("owner_field"))),
         "owner_field"));
   }
@@ -351,7 +351,7 @@ class Annotator : public NodesFromMatchBase<Annotator> {
   }
 
   void PropagateVirtualFunctionReturnTypes() const {
-    for (auto [m, rt] : NodesFromMatch<clang::CXXMethodDecl, clang::Type>(
+    for (auto [m, rt] : NodesFromMatchAST<clang::CXXMethodDecl, clang::Type>(
              cxxMethodDecl(
                  isOverride(),
                  anyOf(
@@ -587,7 +587,7 @@ void Annotator::Propagate() const {
   // perform excessive AddRef after assignment. A manual inspection of all
   // occurrences of the following pattern in ORCA turns up no such usage.
 
-  for (const auto* method : NodesFromMatch<clang::CXXMethodDecl>(
+  for (const auto* method : NodesFromMatchAST<clang::CXXMethodDecl>(
            returnStmt(
                hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
                    fieldDecl(hasType(OwnerType())).bind("field")))),
@@ -599,7 +599,7 @@ void Annotator::Propagate() const {
     AnnotateFunctionReturnPointer(method);
   }
 
-  for (const auto* method : NodesFromMatch<clang::CXXMethodDecl>(
+  for (const auto* method : NodesFromMatchAST<clang::CXXMethodDecl>(
            returnStmt(
                hasReturnValue(ignoringParenImpCasts(FieldReferenceFor(
                    fieldDecl(hasType(PointerType())).bind("field")))),
@@ -618,7 +618,7 @@ void Annotator::Propagate() const {
   // It's tempting to wrap an \c ignoringParenImpCasts inside \c
   // forEachArgumentWithParam here, but note that \c forEachArgumentWithParam
   // already does that for the first argument
-  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+  for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
            NonTemplateCallOrConstruct(ForEachArgumentWithParam(
                anyOf(cxxNewExpr(), CallReturningOwner()),
                parmVarDecl(hasType(RefCountPointerType())).bind("param"))),
@@ -634,7 +634,7 @@ void Annotator::Propagate() const {
 }
 
 void Annotator::PropagateParameterAmongRedecls() const {
-  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+  for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
            functionDecl(HasRedecls(), hasAnyParameter(hasType(AnnotatedType())))
                .bind("f"),
            "f")) {
@@ -650,7 +650,7 @@ void Annotator::PropagateParameterAmongRedecls() const {
 }
 
 void Annotator::PropagateVirtualFunctionParamTypes() const {
-  for (const auto* derived_method : NodesFromMatch<clang::CXXMethodDecl>(
+  for (const auto* derived_method : NodesFromMatchAST<clang::CXXMethodDecl>(
            cxxMethodDecl(isOverride(), HasOverridden(hasAnyParameter(
                                            hasType(AnnotatedType()))))
                .bind("derived"),
@@ -670,7 +670,7 @@ void Annotator::PropagateVirtualFunctionParamTypes() const {
 }
 
 void Annotator::PropagateOwnerVars() const {
-  for (const auto* var : NodesFromMatch<clang::VarDecl>(
+  for (const auto* var : NodesFromMatchAST<clang::VarDecl>(
            varDecl(RefCountVarInitializedOrAssigned(
                        IgnoringParenCastFuncs(CallReturningOwner())))
                .bind("owner_var"),
@@ -678,7 +678,7 @@ void Annotator::PropagateOwnerVars() const {
     AnnotateVarOwner(var);
   }
 
-  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+  for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
            parmVarDecl(
                unless(isInstantiated()), parmVarDecl().bind("param"),
                hasDeclContext(cxxConstructorDecl(
@@ -698,7 +698,7 @@ void Annotator::PropagateOwnerVars() const {
 }
 
 void Annotator::PropagateReturnOwner() const {
-  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+  for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
            functionDecl(returns(RefCountPointerType()),
                         hasAnyBody(hasDescendant(returnStmt(hasReturnValue(
                             ignoringParenImpCasts(CallReturningOwner()))))))
@@ -707,7 +707,7 @@ void Annotator::PropagateReturnOwner() const {
     AnnotateFunctionReturnOwner(f);
   }
 
-  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+  for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
            returnStmt(
                hasReturnValue(ignoringParenImpCasts(declRefExpr(to(varDecl(
                    hasLocalStorage(), hasType(OwnerType()), decl().bind("var"),
@@ -733,7 +733,7 @@ void Annotator::PropagateTailCall() const {
   // will strip parentheses and casts for the first argument, so resist the
   // temptation to wrap the "arg matcher" in a \c ignoringParenImpCasts
   for (auto [var, arg, r] :
-       NodesFromMatch<clang::VarDecl, clang::Expr, clang::Stmt>(
+       NodesFromMatchAST<clang::VarDecl, clang::Expr, clang::Stmt>(
            functionDecl(ForEachReturnOrLastStmt(
                stmt(findAll(CallOrConstruct(ForEachArgumentWithOwnerParam(expr(
                         declRefExpr(to(varDecl(
@@ -754,7 +754,7 @@ void Annotator::PropagateTailCall() const {
     MoveSourceRange(arg->getSourceRange());
   }
 
-  for (auto [var, r] : NodesFromMatch<clang::VarDecl, clang::Stmt>(
+  for (auto [var, r] : NodesFromMatchAST<clang::VarDecl, clang::Stmt>(
            functionDecl(ForEachReturnOrLastStmt(
                stmt(findAll(CallOrConstruct(
                         ForEachArgumentWithPointerParam(declRefExpr(to(
@@ -769,7 +769,7 @@ void Annotator::PropagateTailCall() const {
     AnnotateVarPointer(var);
   }
 
-  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+  for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
            functionDecl(ForEachReturnOrLastStmt(
                stmt(findAll(NonTemplateCallOrConstruct(ForEachArgumentWithParam(
                    declRefExpr(to(varDecl(
@@ -784,8 +784,8 @@ void Annotator::PropagateTailCall() const {
   }
 
   for (auto [param, var, arg, r] :
-       NodesFromMatch<clang::ParmVarDecl, clang::VarDecl, clang::Expr,
-                      clang::Stmt>(
+       NodesFromMatchAST<clang::ParmVarDecl, clang::VarDecl, clang::Expr,
+                         clang::Stmt>(
            functionDecl(ForEachReturnOrLastStmt(
                stmt(findAll(CallOrConstruct(
                         ForEachArgumentWithParam(
@@ -846,7 +846,7 @@ void Annotator::AnnotateBaseCases() const {
 }
 
 void Annotator::InferReturnNew() const {
-  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+  for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
            functionDecl(returns(RefCountPointerType()),
                         hasAnyBody(hasDescendant(returnStmt(hasReturnValue(
                             ignoringParenImpCasts(cxxNewExpr()))))))
@@ -862,7 +862,7 @@ void Annotator::InferOwnerVars() const {
   // 2. this leaves room for a CRTP implementation in the future
   // 3. But hopefully with the introduction of smart pointers, SafeRelease
   // will disappear...
-  for (const auto* owner_var : NodesFromMatch<clang::VarDecl>(
+  for (const auto* owner_var : NodesFromMatchAST<clang::VarDecl>(
            ReleaseCallExpr(
                declRefExpr(to(varDecl().bind("owner_var")),
                            unless(forFunction(hasName("SafeRelease"))))),
@@ -870,7 +870,7 @@ void Annotator::InferOwnerVars() const {
     AnnotateVarOwner(owner_var);
   }
 
-  for (const auto* owner_var : NodesFromMatch<clang::VarDecl>(
+  for (const auto* owner_var : NodesFromMatchAST<clang::VarDecl>(
            varDecl(varDecl().bind("owner_var"),
                    RefCountVarInitializedOrAssigned(
                        IgnoringParenCastFuncs(cxxNewExpr()))),
@@ -880,7 +880,7 @@ void Annotator::InferOwnerVars() const {
 }
 
 void Annotator::InferGetters() const {
-  for (const auto* f : NodesFromMatch<clang::CXXMethodDecl>(
+  for (const auto* f : NodesFromMatchAST<clang::CXXMethodDecl>(
            cxxMethodDecl(
                hasAnyBody(anyOf(
                    stmt(hasDescendant(returnStmt(hasReturnValue(
@@ -900,7 +900,7 @@ void Annotator::InferGetters() const {
 
 void Annotator::InferFields() const {
   auto field_is_released = FieldReleased();
-  for (const auto* field : NodesFromMatch<clang::FieldDecl>(
+  for (const auto* field : NodesFromMatchAST<clang::FieldDecl>(
            fieldDecl(field_is_released).bind("owner_field"), "owner_field")) {
     AnnotateFieldOwner(field);
   }
@@ -919,7 +919,7 @@ void Annotator::InferFields() const {
   auto has_destructor_in_translation_unit =
       hasMethod(cxxDestructorDecl(anyOf(hasAnyBody(stmt()), isDefaulted())));
   auto has_no_destructor = unless(hasMethod(cxxDestructorDecl()));
-  for (const auto* field_decl : NodesFromMatch<clang::FieldDecl>(
+  for (const auto* field_decl : NodesFromMatchAST<clang::FieldDecl>(
            fieldDecl(unless(hasDeclContext(
                          recordDecl(hasParent(classTemplateDecl())))),
                      hasType(RefCountPointerType()),
@@ -934,7 +934,7 @@ void Annotator::InferFields() const {
 }
 
 void Annotator::InferPointerVars() const {
-  for (const auto* var : NodesFromMatch<clang::VarDecl>(
+  for (const auto* var : NodesFromMatchAST<clang::VarDecl>(
            varDecl(hasType(RefCountPointerType()), Unused(),
                    unless(isInstantiated()),
                    hasDeclContext(functionDecl(hasBody(stmt()))))
@@ -945,7 +945,7 @@ void Annotator::InferPointerVars() const {
 }
 
 void Annotator::InferInitAddRef() const {
-  for (const auto* var : NodesFromMatch<clang::VarDecl>(
+  for (const auto* var : NodesFromMatchAST<clang::VarDecl>(
            varDecl(hasLocalStorage(), IsImmediatelyBeforeAddRef()).bind("var"),
            "var")) {
     AnnotateVarOwner(var);
@@ -953,7 +953,7 @@ void Annotator::InferInitAddRef() const {
 }
 
 void Annotator::InferAddRefReturn() const {
-  for (auto [v, f] : NodesFromMatch<clang::VarDecl, clang::FunctionDecl>(
+  for (auto [v, f] : NodesFromMatchAST<clang::VarDecl, clang::FunctionDecl>(
            returnStmt(
                ReturnAfterAddRef(declRefExpr(to(varDecl().bind("var"))),
                                  declRefExpr(to(equalsBoundNode("var")))),
@@ -968,7 +968,7 @@ void Annotator::InferAddRefReturn() const {
       AnnotateVarPointer(v);
   }
 
-  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+  for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
            returnStmt(
                ReturnAfterAddRef(FieldReferenceFor(fieldDecl().bind("field")),
                                  FieldReferenceFor(equalsBoundNode("field"))),
@@ -1020,7 +1020,7 @@ void Annotator::AnnotateParameter(const clang::ParmVarDecl* p,
 
 void Annotator::PropagateFunctionPointers() const {
   for (auto [td, fproto] :
-       NodesFromMatch<clang::TypedefNameDecl, clang::FunctionProtoType>(
+       NodesFromMatchAST<clang::TypedefNameDecl, clang::FunctionProtoType>(
            stmt(anyOf(VarInitWithTypedefFunctionPointers(
                           typedefNameDecl().bind("typedef_decl"),
                           functionProtoType().bind("fproto")),
@@ -1089,7 +1089,7 @@ void Annotator::PropagatePointerVars() const {
                        IgnoringParenCastFuncs(unless(hasType(PointerType())))),
               ReleaseCallExpr(ref_to_var)));
   };
-  for (const auto* var : NodesFromMatch<clang::VarDecl>(
+  for (const auto* var : NodesFromMatchAST<clang::VarDecl>(
            varDecl(hasLocalStorage(), hasType(RefCountPointerType()),
                    unless(hasInitializer(ignoringParenImpCasts(
                        CallCcacheAccessorMethodsReturningOwner()))),
@@ -1126,7 +1126,7 @@ Annotator::Annotator(const ActionOptions& action_options,
       lang_opts_(lang_opts) {}
 
 void Annotator::InferConstPointers() const {
-  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+  for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
            functionDecl(unless(isInstantiated()),
                         returns(qualType(RefCountPointerType(),
                                          pointsTo(isConstQualified()))))
@@ -1135,7 +1135,7 @@ void Annotator::InferConstPointers() const {
     AnnotateFunctionReturnPointer(f);
   }
 
-  for (const auto* v : NodesFromMatch<clang::VarDecl>(
+  for (const auto* v : NodesFromMatchAST<clang::VarDecl>(
            varDecl(unless(isInstantiated()),
                    hasType(qualType(RefCountPointerType(),
                                     pointsTo(isConstQualified()))))
@@ -1149,7 +1149,7 @@ void Annotator::InferCastFunctions() const {
   auto dyncast_of_param =
       ignoringParenImpCasts(cxxDynamicCastExpr(hasSourceExpression(
           ignoringParenImpCasts(declRefExpr(to(parmVarDecl()))))));
-  for (const auto* f : NodesFromMatch<clang::FunctionDecl>(
+  for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
            functionDecl(parameterCountIs(1),
                         returns(qualType(unless(pointsTo(isConstQualified())),
                                          RefCountPointerType())),
@@ -1164,7 +1164,7 @@ void Annotator::InferCastFunctions() const {
 }
 
 void Annotator::InferPointerParamsForBoolFunctions() const {
-  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+  for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
            parmVarDecl(hasType(RefCountPointerType()), unless(isInstantiated()),
                        hasDeclContext(
                            cxxMethodDecl(returns(booleanType()), IsStatic())))
@@ -1175,7 +1175,7 @@ void Annotator::InferPointerParamsForBoolFunctions() const {
 }
 
 void Annotator::AnnotateMultiDecls() const {
-  for (const auto* decl_stmt : NodesFromMatch<clang::DeclStmt>(
+  for (const auto* decl_stmt : NodesFromMatchAST<clang::DeclStmt>(
            declStmt(unless(declCountIs(1)),
                     containsDeclaration(
                         0, varDecl(hasType(qualType(RefCountPointerType(),
@@ -1232,7 +1232,7 @@ void Annotator::AnnotateFirstVar(const clang::DeclStmt* decl_stmt,
 void Annotator::InferOutputParams() const {
   auto deref = Deref(declRefExpr(to(equalsBoundNode("out_param"))));
   auto getter_added_ref = cxxMemberCallExpr(CallGetterAddedRef());
-  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+  for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
            parmVarDecl(
                unless(isInstantiated()), hasType(RefCountPointerPointerType()),
                decl().bind("out_param"),
@@ -1286,7 +1286,7 @@ void Annotator::PropagateOutputParams() const {
   //
   // FIXME: what if we also run this at "base" time? What will we find out?
   auto deref = Deref(declRefExpr(to(equalsBoundNode("out_param"))));
-  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+  for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
            parmVarDecl(
                unless(isInstantiated()), hasType(RefCountPointerPointerType()),
                decl().bind("out_param"),
@@ -1312,7 +1312,7 @@ void Annotator::PropagateOutputParams() const {
   auto assign_getter =
       AssignTo(IgnoringParenCastFuncs(deref),
                cxxMemberCallExpr(CallGetter(), CallGetterNeverAddedRef()));
-  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+  for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
            parmVarDecl(unless(isInstantiated()),
                        hasType(RefCountPointerPointerType()),
                        decl().bind("out_param"),
@@ -1324,7 +1324,7 @@ void Annotator::PropagateOutputParams() const {
 
   // The following is really code smell: the star-star really should have been a
   // single star, but oh well, we DO have those in ORCA:
-  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+  for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
            parmVarDecl(
                unless(isInstantiated()), hasType(RefCountPointerPointerType()),
                decl().bind("out_param"),
@@ -1337,7 +1337,7 @@ void Annotator::PropagateOutputParams() const {
     AnnotateOutputParam(param, PointerType(), kPointerAnnotation);
   }
 
-  for (const auto* param : NodesFromMatch<clang::ParmVarDecl>(
+  for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
            callExpr(ForEachArgumentWithParamType(
                declRefExpr(to(parmVarDecl(unless(isInstantiated()),
                                           hasType(RefCountPointerPointerType()))
@@ -1347,7 +1347,8 @@ void Annotator::PropagateOutputParams() const {
     AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
   }
 
-  for (auto [var, pointee_type] : NodesFromMatch<clang::VarDecl, clang::Type>(
+  for (auto [var, pointee_type] :
+       NodesFromMatchAST<clang::VarDecl, clang::Type>(
            callExpr(ForEachArgumentWithParamType(
                AddrOf(declRefExpr(to(varDecl().bind("var")))),
                pointsTo(

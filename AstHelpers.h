@@ -134,7 +134,7 @@ struct NodesFromMatchBase {
   /// \endcode We get to say
   ///
   /// \code
-  /// for (const auto* v = NodesFromMatch<VarDecl>(varDecl().bind("v"))) {
+  /// for (const auto* v = NodesFromMatchAST<VarDecl>(varDecl().bind("v"))) {
   /// ...
   /// }
   /// \endcode
@@ -143,7 +143,7 @@ struct NodesFromMatchBase {
   /// can be iterated through structured binding:
   ///
   /// \code
-  /// for (auto [var, arg]: NodesFromMatch<VarDecl, Expr>(callExpr(
+  /// for (auto [var, arg]: NodesFromMatchAST<VarDecl, Expr>(callExpr(
   ///          hasAnyArgument(declRefExpr(to(varDecl().bind("var"))).bind("arg")))
   ///          )) {
   ///   ...
@@ -174,7 +174,7 @@ struct NodesFromMatchBase {
   /// functionDecl(returns(type.bind("t")))
   /// \endcode
   template <class... Nodes, class Matcher, class... Ids>
-  auto NodesFromMatch(Matcher matcher, Ids... ids) const {
+  auto NodesFromMatchAST(Matcher matcher, Ids... ids) const {
     auto matches = clang::ast_matchers::match(
         matcher, static_cast<const Derived*>(this)->AstContext());
     auto nodes = MakeVector(llvm::map_range(
@@ -185,8 +185,8 @@ struct NodesFromMatchBase {
   }
 
   template <class Matcher>
-  DeclSet DeclSetFromMatch(Matcher matcher, llvm::StringRef id) const {
-    auto nodes_from_match = NodesFromMatch<clang::Decl>(matcher, id);
+  DeclSet DeclSetFromMatchAST(Matcher matcher, llvm::StringRef id) const {
+    auto nodes_from_match = NodesFromMatchAST<clang::Decl>(matcher, id);
     DeclSet node_set{nodes_from_match.begin(), nodes_from_match.end()};
     return node_set;
   }
@@ -203,10 +203,10 @@ struct NodesFromMatchBase {
     //
     // As a consequence of this workaround, we cannot preserve any bindings from
     // expr_matcher, so caller aware.
-    return IsInSet(
-        DeclSetFromMatch(AssignTo(declRefExpr(to(varDecl().bind("owner_var"))),
-                                  IgnoringParenCastFuncs(expr_matcher)),
-                         "owner_var"));
+    return IsInSet(DeclSetFromMatchAST(
+        AssignTo(declRefExpr(to(varDecl().bind("owner_var"))),
+                 IgnoringParenCastFuncs(expr_matcher)),
+        "owner_var"));
   }
 
   VarMatcher InitializedOrAssigned(
