@@ -445,6 +445,7 @@ class Annotator : public NodesFromMatchBase<Annotator> {
         annotation_to_var_decls_[annotation].insert(var);
         continue;
       }
+      if (IsAnnotated(v->getType())) std::terminate();
 
       auto source_range = v->getTypeSourceInfo()->getTypeLoc().getSourceRange();
       if (v->getType()->getPointeeType().isLocalConstQualified() &&
@@ -738,9 +739,7 @@ void Annotator::PropagateReturnOwner() const {
 // var).
 void Annotator::PropagateTailCall() const {
   for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
-           functionDecl(unless(cxxConstructorDecl()), hasBody(stmt()))
-               .bind("f"),
-           "f")) {
+           functionDecl(hasBody(stmt())).bind("f"), "f")) {
     auto last_stmts = LastStatementsOfFunc(f, &ast_context_);
     auto add_refd = IsInSet(DeclSetFromMatchNode(
         stmt(forEachDescendant(
@@ -765,10 +764,18 @@ void Annotator::PropagateTailCall() const {
         MoveSourceRange(arg->getSourceRange());
       }
 
+      auto is_used_to_init_owner_field = IsInSet(DeclSetFromMatchNode(
+          cxxConstructorDecl(forEachConstructorInitializer(cxxCtorInitializer(
+              withInitializer(IgnoringParenCastFuncs(
+                  declRefExpr(to(parmVarDecl().bind("param"))))),
+              forField(hasType(OwnerType()))))),
+          *f, "param"));
+
       for (const auto* var : NodesFromMatchNode<clang::VarDecl>(
                stmt(findAll(
                    CallOrConstruct(ForEachArgumentWithPointerParam(declRefExpr(
-                       to(varDecl(unless(isInstantiated()), hasLocalStorage())
+                       to(varDecl(unless(isInstantiated()), hasLocalStorage(),
+                                  unless(is_used_to_init_owner_field))
                               .bind("var"))))))),
                *r, "var")) {
         if (Match(stmt(SelfOrHasDescendant(PassedAsArgumentToNonPointerParam(
@@ -793,7 +800,8 @@ void Annotator::PropagateTailCall() const {
                stmt(findAll(CallOrConstruct(
                    ForEachArgumentWithParam(
                        declRefExpr(
-                           to(varDecl(hasLocalStorage(), hasType(OwnerType()))
+                           to(varDecl(hasLocalStorage(), hasType(OwnerType()),
+                                      unless(is_used_to_init_owner_field))
                                   .bind("var")))
                            .bind("arg"),
                        optionally(parmVarDecl(unless(isInstantiated()))

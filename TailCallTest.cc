@@ -129,6 +129,13 @@ TEST_F(TailCall, varPointNegative) {
     bool jazz(T* t, R* r) {
       return r->TMF<U>(t);
     }
+
+    class Q {
+      gpos::owner<T*> t_;
+
+     public:
+      Q(gpos::owner<T*> t) : t_(t) { F(t); }
+    };
   )C++";
 
   auto changed_code = annotateAndFormat(code);
