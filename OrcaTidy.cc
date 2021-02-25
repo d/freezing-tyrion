@@ -726,86 +726,87 @@ void Annotator::PropagateReturnOwner() const {
 // We can infer a lot from the function call expressions contained in the full
 // expression being returned:
 //
-// 1. If a never-AddRef'd var is the argument to an owner param, the var is an
-// owner, and the argument is moved.
+// 1. If a never-AddRef'd local var is the argument to an owner param, the var
+// is an owner, and the argument is moved (unless this is not the only
+// reference to the var).
+// 2. If a local var is passed to a pointer parameter, it's a pointer (unless
+// it's also passed an owner parameter).
+// 3. If a never AddRef-or-assigned local pointer var is passed to a parameter,
+// the parameter is a pointer.
+// 4. If a local owner var is passed to a parameter, the parameter is an owner,
+// and the argument is moved (unless this is not the only referenced to the
+// var).
 void Annotator::PropagateTailCall() const {
-  // Similar to \c forEachArgumentWithParam, \c forEachArgumentWithParamType
-  // will strip parentheses and casts for the first argument, so resist the
-  // temptation to wrap the "arg matcher" in a \c ignoringParenImpCasts
-  for (auto [var, arg, r] :
-       NodesFromMatchAST<clang::VarDecl, clang::Expr, clang::Stmt>(
-           functionDecl(ForEachReturnOrLastStmt(
-               stmt(findAll(CallOrConstruct(ForEachArgumentWithOwnerParam(expr(
-                        declRefExpr(to(varDecl(
-                            hasLocalStorage(), varDecl().bind("var"),
-                            hasDeclContext(functionDecl(unless(
-                                hasAnyBody(hasDescendant(AddRefOn(declRefExpr(
-                                    to(equalsBoundNode("var")))))))))))),
-                        expr().bind("arg"))))))
-                   .bind("r"))),
-           "var", "arg", "r")) {
-    if (Match(stmt(SelfOrHasDescendant(
-                  CallOrConstruct(hasAnyArgument(IgnoringParenCastFuncs(
-                      expr(unless(equalsNode(arg)),
-                           declRefExpr(to(equalsNode(var))))))))),
-              *r))
-      continue;
-    AnnotateVarOwner(var);
-    MoveSourceRange(arg->getSourceRange());
-  }
+  for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
+           functionDecl(unless(cxxConstructorDecl()), hasBody(stmt()))
+               .bind("f"),
+           "f")) {
+    auto last_stmts = LastStatementsOfFunc(f, &ast_context_);
+    auto add_refd = IsInSet(DeclSetFromMatchNode(
+        stmt(forEachDescendant(
+            AddRefOn(declRefExpr(to(varDecl().bind("var")))))),
+        *f->getBody(), "var"));
+    auto assigned = IsInSet(DeclSetFromMatchNode(
+        stmt(forEachDescendant(
+            AssignTo(declRefExpr(to(varDecl().bind("var")))))),
+        *f->getBody(), "var"));
+    auto add_ref_or_assigned = anyOf(add_refd, assigned);
 
-  for (auto [var, r] : NodesFromMatchAST<clang::VarDecl, clang::Stmt>(
-           functionDecl(ForEachReturnOrLastStmt(
-               stmt(findAll(CallOrConstruct(
-                        ForEachArgumentWithPointerParam(declRefExpr(to(
-                            varDecl(unless(isInstantiated()), hasLocalStorage())
-                                .bind("var")))))))
-                   .bind("r"))),
-           "var", "r")) {
-    if (Match(stmt(SelfOrHasDescendant(PassedAsArgumentToNonPointerParam(
-                  declRefExpr(to(equalsNode(var)))))),
-              *r))
-      continue;
-    AnnotateVarPointer(var);
-  }
+    for (const auto* r : last_stmts) {
+      for (auto [var, arg] : NodesFromMatchNode<clang::VarDecl, clang::Expr>(
+               stmt(findAll(CallOrConstruct(ForEachArgumentWithOwnerParam(
+                   expr(declRefExpr(
+                            to(varDecl(hasLocalStorage(), varDecl().bind("var"),
+                                       unless(add_refd)))),
+                        expr().bind("arg")))))),
+               *r, "var", "arg")) {
+        if (!IsUniqRefToDeclInStmt(arg, var, r)) continue;
+        AnnotateVarOwner(var);
+        MoveSourceRange(arg->getSourceRange());
+      }
 
-  for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
-           functionDecl(ForEachReturnOrLastStmt(
+      for (const auto* var : NodesFromMatchNode<clang::VarDecl>(
+               stmt(findAll(
+                   CallOrConstruct(ForEachArgumentWithPointerParam(declRefExpr(
+                       to(varDecl(unless(isInstantiated()), hasLocalStorage())
+                              .bind("var"))))))),
+               *r, "var")) {
+        if (Match(stmt(SelfOrHasDescendant(PassedAsArgumentToNonPointerParam(
+                      declRefExpr(to(equalsNode(var)))))),
+                  *r))
+          continue;
+        AnnotateVarPointer(var);
+      }
+
+      for (const auto* param : NodesFromMatchNode<clang::ParmVarDecl>(
                stmt(findAll(NonTemplateCallOrConstruct(ForEachArgumentWithParam(
-                   declRefExpr(to(varDecl(
-                       hasLocalStorage(), hasType(PointerType()),
-                       varDecl().bind("var"),
-                       hasDeclContext(functionDecl(hasAnyBody(
-                           stmt(unless(hasDescendant(AddRefOrAssign(declRefExpr(
-                               to(equalsBoundNode("var"))))))))))))),
-                   parmVarDecl(unless(isInstantiated())).bind("param"))))))),
-           "param")) {
-    AnnotateVarPointer(param);
-  }
+                   declRefExpr(
+                       to(varDecl(hasLocalStorage(), hasType(PointerType()),
+                                  unless(add_ref_or_assigned)))),
+                   parmVarDecl(unless(isInstantiated())).bind("param"))))),
+               *r, "param")) {
+        AnnotateVarPointer(param);
+      }
 
-  for (auto [param, var, arg, r] :
-       NodesFromMatchAST<clang::ParmVarDecl, clang::VarDecl, clang::Expr,
-                         clang::Stmt>(
-           functionDecl(ForEachReturnOrLastStmt(
+      for (auto [param, var, arg] :
+           NodesFromMatchNode<clang::ParmVarDecl, clang::VarDecl, clang::Expr>(
                stmt(findAll(CallOrConstruct(
-                        ForEachArgumentWithParam(
-                            declRefExpr(to(varDecl(hasLocalStorage(),
-                                                   hasType(OwnerType()))
-                                               .bind("var")))
-                                .bind("arg"),
-                            optionally(parmVarDecl(unless(isInstantiated()))
-                                           .bind("param"))),
-                        hasDeclaration(
-                            functionDecl(unless(hasName("std::move")))))))
-                   .bind("r"))),
-           "param", "var", "arg", "r")) {
-    if (Match(stmt(SelfOrHasDescendant(
-                  declRefExpr(unless(equalsNode(arg)), to(equalsNode(var))))),
-              *r))
-      continue;
+                   ForEachArgumentWithParam(
+                       declRefExpr(
+                           to(varDecl(hasLocalStorage(), hasType(OwnerType()))
+                                  .bind("var")))
+                           .bind("arg"),
+                       optionally(parmVarDecl(unless(isInstantiated()))
+                                      .bind("param"))),
+                   hasDeclaration(
+                       functionDecl(unless(hasName("std::move"))))))),
+               *r, "param", "var", "arg")) {
+        if (!IsUniqRefToDeclInStmt(arg, var, r)) continue;
 
-    if (param) AnnotateVarOwner(param);
-    MoveSourceRange(arg->getSourceRange());
+        if (param) AnnotateVarOwner(param);
+        MoveSourceRange(arg->getSourceRange());
+      }
+    }
   }
 }
 

@@ -93,11 +93,6 @@ StatementMatcher AssignTo(const ExpressionMatcher& lhs,
   return binaryOperator(hasOperatorName("="), hasLHS(lhs), hasRHS(rhs));
 }
 
-StatementMatcher IsLastStmtOfFunc(const clang::FunctionDecl* f,
-                                  clang::ASTContext* context);
-
-using StmtSet = llvm::DenseSet<const clang::Stmt*>;
-
 namespace {
 AST_MATCHER_P(clang::QualType, IgnoringElaboratedImpl, TypeMatcher,
               type_matcher) {
@@ -110,19 +105,6 @@ inline clang::Expr* IgnoreCastFuncsSingleStep(clang::Expr* e) {
     return call->getArg(0);
   }
   return e;
-}
-
-AST_MATCHER_P(clang::Stmt, IsInSet, StmtSet, stmts) {
-  return stmts.contains(&Node);
-}
-
-AST_MATCHER_P(clang::FunctionDecl, ForEachLastStmtImpl, StatementMatcher,
-              inner_matcher) {
-  if (!Node.getBody()) return false;
-
-  FunctionMatcher func_matcher = hasBody(forEachDescendant(
-      stmt(IsLastStmtOfFunc(&Node, &Node.getASTContext()), inner_matcher)));
-  return func_matcher.matches(Node, Finder, Builder);
 }
 
 }  // namespace
@@ -176,8 +158,11 @@ TypeMatcher RefCountPointerPointerType() {
   return pointsTo(RefCountPointerType());
 }
 
-StatementMatcher IsLastStmtOfFunc(const clang::FunctionDecl* f,
-                                  clang::ASTContext* context) {
+StmtSet LastStatementsOfFunc(const clang::FunctionDecl* f,
+                             clang::ASTContext* context) {
+  if (!f->getBody()) [[unlikely]]
+    return {};
+
   clang::CFG::BuildOptions build_options;
   auto cfg = clang::CFG::buildCFG(f, f->getBody(), context, build_options);
   const auto* exit_block = &cfg->getExit();
@@ -203,12 +188,14 @@ StatementMatcher IsLastStmtOfFunc(const clang::FunctionDecl* f,
       [](const clang::CFGBlock* cfg_block) {
         return cfg_block->back().castAs<clang::CFGStmt>().getStmt();
       });
-  return IsInSet(StmtSet{last_statements.begin(), last_statements.end()});
+  return {last_statements.begin(), last_statements.end()};
 }
-
-FunctionMatcher ForEachReturnOrLastStmt(const StatementMatcher& inner_matcher) {
-  return allOf(unless(cxxConstructorDecl()),
-               ForEachLastStmtImpl(inner_matcher));
+bool IsUniqRefToDeclInStmt(const clang::Expr* e, const clang::Decl* d,
+                           const clang::Stmt* s) {
+  return match(stmt(SelfOrHasDescendant(
+                   declRefExpr(unless(equalsNode(e)), to(equalsNode(d))))),
+               *s, d->getASTContext())
+      .empty();
 }
 
 }  // namespace orca_tidy

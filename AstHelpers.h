@@ -53,15 +53,6 @@ StatementMatcher AssignTo(const ExpressionMatcher& lhs);
 StatementMatcher AssignTo(const ExpressionMatcher& lhs,
                           const ExpressionMatcher& rhs);
 
-AST_MATCHER_P(clang::CompoundStmt, LastSubstatementIs, StatementMatcher,
-              inner_matcher) {
-  const auto* last_stmt = Node.body_back();
-  if (!last_stmt) return false;
-  return inner_matcher.matches(*last_stmt, Finder, Builder);
-}
-
-FunctionMatcher ForEachReturnOrLastStmt(const StatementMatcher& inner_matcher);
-
 // the first-match equivalent of findAll
 template <class Matcher>
 auto SelfOrHasDescendant(const Matcher& matcher) {
@@ -77,6 +68,11 @@ using DeclSet = llvm::DenseSet<const clang::Decl*>;
 AST_MATCHER_P(clang::Decl, IsInSet, DeclSet, nodes) {
   return nodes.contains(&Node);
 }
+
+using StmtSet = llvm::DenseSet<const clang::Stmt*>;
+
+StmtSet LastStatementsOfFunc(const clang::FunctionDecl* f,
+                             clang::ASTContext* context);
 
 clang::QualType StripElaborated(clang::QualType qual_type);
 TypeMatcher IgnoringElaborated(TypeMatcher type_matcher);
@@ -105,6 +101,9 @@ inline auto ForEachArgumentWithParamType(ExpressionMatcher arg_matcher,
   return clang::ast_matchers::forEachArgumentWithParamType(
       IgnoringParenCastFuncs(arg_matcher), param_matcher);
 }
+
+bool IsUniqRefToDeclInStmt(const clang::Expr* e, const clang::Decl* d,
+                           const clang::Stmt* s);
 
 template <class Range>
 auto MakeVector(Range&& range) {
@@ -184,11 +183,29 @@ struct NodesFromMatchBase {
     return nodes;
   }
 
+  template <class... Nodes, class Matcher, class Node, class... Ids>
+  auto NodesFromMatchNode(Matcher matcher, const Node& node, Ids... ids) const {
+    auto matches = clang::ast_matchers::match(
+        matcher, node, static_cast<const Derived*>(this)->AstContext());
+    auto nodes = MakeVector(llvm::map_range(
+        matches, [ids...](const clang::ast_matchers::BoundNodes& bound_nodes) {
+          return GetNode<Nodes...>(bound_nodes, ids...);
+        }));
+    return nodes;
+  }
+
   template <class Matcher>
   DeclSet DeclSetFromMatchAST(Matcher matcher, llvm::StringRef id) const {
     auto nodes_from_match = NodesFromMatchAST<clang::Decl>(matcher, id);
     DeclSet node_set{nodes_from_match.begin(), nodes_from_match.end()};
     return node_set;
+  }
+
+  template <class Matcher, class Node>
+  DeclSet DeclSetFromMatchNode(Matcher matcher, const Node& node,
+                               llvm::StringRef id) const {
+    auto nodes_from_match = NodesFromMatchNode<clang::Decl>(matcher, node, id);
+    return {nodes_from_match.begin(), nodes_from_match.end()};
   }
 
   VarMatcher Assigned(const ExpressionMatcher& expr_matcher) const {
