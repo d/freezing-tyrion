@@ -1,5 +1,6 @@
 #include "AstHelpers.h"
 #include "clang/AST/IgnoreExpr.h"
+#include "clang/Analysis/CFG.h"
 #include "clang/Lex/Lexer.h"
 
 // NOLINTNEXTLINE(google-build-using-namespace)
@@ -92,6 +93,11 @@ StatementMatcher AssignTo(const ExpressionMatcher& lhs,
   return binaryOperator(hasOperatorName("="), hasLHS(lhs), hasRHS(rhs));
 }
 
+StatementMatcher IsLastStmtOfFunc(const clang::FunctionDecl* f,
+                                  clang::ASTContext* context);
+
+using StmtSet = llvm::DenseSet<const clang::Stmt*>;
+
 namespace {
 AST_MATCHER_P(clang::QualType, IgnoringElaboratedImpl, TypeMatcher,
               type_matcher) {
@@ -104,6 +110,19 @@ inline clang::Expr* IgnoreCastFuncsSingleStep(clang::Expr* e) {
     return call->getArg(0);
   }
   return e;
+}
+
+AST_MATCHER_P(clang::Stmt, IsInSet, StmtSet, stmts) {
+  return stmts.contains(&Node);
+}
+
+AST_MATCHER_P(clang::FunctionDecl, ForEachLastStmtImpl, StatementMatcher,
+              inner_matcher) {
+  if (!Node.getBody()) return false;
+
+  FunctionMatcher func_matcher = hasBody(forEachDescendant(
+      stmt(IsLastStmtOfFunc(&Node, &Node.getASTContext()), inner_matcher)));
+  return func_matcher.matches(Node, Finder, Builder);
 }
 
 }  // namespace
@@ -157,12 +176,39 @@ TypeMatcher RefCountPointerPointerType() {
   return pointsTo(RefCountPointerType());
 }
 
+StatementMatcher IsLastStmtOfFunc(const clang::FunctionDecl* f,
+                                  clang::ASTContext* context) {
+  clang::CFG::BuildOptions build_options;
+  auto cfg = clang::CFG::buildCFG(f, f->getBody(), context, build_options);
+  const auto* exit_block = &cfg->getExit();
+  auto last_statements = llvm::map_range(
+      llvm::make_filter_range(
+          cfg->const_nodes(),
+          [exit_block](const clang::CFGBlock* cfg_block) {
+            auto reachable_succs = MakeVector(llvm::make_filter_range(
+                cfg_block->succs(),
+                [](const clang::CFGBlock::AdjacentBlock ab) {
+                  return ab.isReachable();
+                }));
+            // a branch?
+            if (reachable_succs.size() != 1) return false;
+            // not the "last" block?
+            if (reachable_succs.front() != exit_block) return false;
+            // last element isn't a statement?
+            if (cfg_block->empty() ||
+                !cfg_block->back().getAs<clang::CFGStmt>())
+              return false;
+            return true;
+          }),
+      [](const clang::CFGBlock* cfg_block) {
+        return cfg_block->back().castAs<clang::CFGStmt>().getStmt();
+      });
+  return IsInSet(StmtSet{last_statements.begin(), last_statements.end()});
+}
+
 FunctionMatcher ForEachReturnOrLastStmt(const StatementMatcher& inner_matcher) {
-  return hasBody(eachOf(
-      forEachDescendant(returnStmt(inner_matcher)),
-      compoundStmt(forFunction(functionDecl(returns(voidType()),
-                                            unless(cxxConstructorDecl()))),
-                   LastSubstatementIs(expr(inner_matcher)))));
+  return allOf(unless(cxxConstructorDecl()),
+               ForEachLastStmtImpl(inner_matcher));
 }
 
 }  // namespace orca_tidy

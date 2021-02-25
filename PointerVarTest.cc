@@ -125,7 +125,7 @@ TEST_F(PropagateTest, varPointNegativeCases) {
 
     void f(T* t) {
       F(t);
-      ;
+      if (false) return;
     }
     void g(T* t) { G(t); }
   )C++",
@@ -137,7 +137,10 @@ TEST_F(PropagateTest, varPointNegativeCases) {
       Q(T*);
     };
 
-    void f(T* t) { R r{t}; }
+    void f(T* t) {
+      R r{t};
+      if (false) return;
+    }
     void g(T* t) { Q r(t); }
   )C++",
               passed_to_overload_expr = R"C++(
