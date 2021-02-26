@@ -241,6 +241,18 @@ __attribute__((const)) static DeclarationMatcher MethodOfHashMap() {
       ofClass(classTemplateSpecializationDecl(hasName("::gpos::CHashMap"))));
 }
 
+// very very special case, sigh SMH
+static auto ForEachArgumentToUlongToExprArrayMapWithOwnerParam(
+    const ExpressionMatcher& arg_matcher) {
+  return cxxMemberCallExpr(
+      thisPointerType(IgnoringAnnotation(
+          pointsTo(typedefNameDecl(hasName("UlongToExprArrayMap"))))),
+      callee(MethodOfHashMap()),
+      ForEachArgumentWithParamType(
+          arg_matcher, qualType(RefCountPointerType(),
+                                unless(pointsTo(isConstQualified())))));
+}
+
 static auto ForEachArgumentToHashMapMethodWithOwnerParam(
     const ExpressionMatcher& arg_matcher) {
   auto refers_to_cleanup_release =
@@ -295,6 +307,7 @@ static auto ForEachArgumentToHashMapMethodWithPointerParam(
 static auto ForEachArgumentWithOwnerParam(
     const ExpressionMatcher& arg_matcher) {
   return anyOf(ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher),
+               ForEachArgumentToUlongToExprArrayMapWithOwnerParam(arg_matcher),
                ForEachArgumentToHashMapMethodWithOwnerParam(arg_matcher),
                ForEachArgumentWithParamType(arg_matcher, OwnerType()));
 }
@@ -303,6 +316,7 @@ static auto ForEachArgumentWithNonPointerParam(
     const ExpressionMatcher& arg_matcher) {
   return anyOf(
       ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher),
+      ForEachArgumentToUlongToExprArrayMapWithOwnerParam(arg_matcher),
       ForEachArgumentToHashMapMethodWithOwnerParam(arg_matcher),
       allOf(unless(hasDeclaration(MethodOfRefArray())),
             unless(hasDeclaration(MethodOfHashMap())),

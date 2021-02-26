@@ -107,6 +107,11 @@ inline clang::Expr* IgnoreCastFuncsSingleStep(clang::Expr* e) {
   return e;
 }
 
+AST_MATCHER_P(clang::QualType, IgnoringAnnotationImpl, TypeMatcher,
+              type_matcher) {
+  return type_matcher.matches(StripAnnotation(Node), Finder, Builder);
+}
+
 }  // namespace
 
 clang::QualType StripElaborated(clang::QualType qual_type) {
@@ -116,7 +121,7 @@ clang::QualType StripElaborated(clang::QualType qual_type) {
   return qual_type;
 }
 
-TypeMatcher IgnoringElaborated(TypeMatcher type_matcher) {
+TypeMatcher IgnoringElaborated(const TypeMatcher& type_matcher) {
   return IgnoringElaboratedImpl(type_matcher);
 }
 
@@ -196,6 +201,23 @@ bool IsUniqRefToDeclInStmt(const clang::Expr* e, const clang::Decl* d,
                    declRefExpr(unless(equalsNode(e)), to(equalsNode(d))))),
                *s, d->getASTContext())
       .empty();
+}
+
+clang::QualType StripAnnotation(clang::QualType qual_type) {
+  const auto* template_specialization =
+      qual_type->getAs<clang::TemplateSpecializationType>();
+  if (!template_specialization or !template_specialization->isTypeAlias())
+    return qual_type;
+  auto* type_alias_template = llvm::cast<clang::TypeAliasTemplateDecl>(
+      template_specialization->getTemplateName().getAsTemplateDecl());
+  if (match(AnnotatedType(), qual_type, type_alias_template->getASTContext())
+          .empty())
+    return qual_type;
+  return template_specialization->getArg(0).getAsType();
+}
+
+TypeMatcher IgnoringAnnotation(const TypeMatcher& inner_matcher) {
+  return IgnoringAnnotationImpl(inner_matcher);
 }
 
 }  // namespace orca_tidy

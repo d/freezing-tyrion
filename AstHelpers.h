@@ -75,7 +75,9 @@ StmtSet LastStatementsOfFunc(const clang::FunctionDecl* f,
                              clang::ASTContext* context);
 
 clang::QualType StripElaborated(clang::QualType qual_type);
-TypeMatcher IgnoringElaborated(TypeMatcher type_matcher);
+TypeMatcher IgnoringElaborated(const TypeMatcher& type_matcher);
+clang::QualType StripAnnotation(clang::QualType qual_type);
+TypeMatcher IgnoringAnnotation(const TypeMatcher& inner_matcher);
 
 bool IsCastFunc(const clang::Decl* decl);
 const clang::Expr* IgnoreCastFuncs(const clang::Expr* expr);
