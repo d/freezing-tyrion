@@ -218,20 +218,27 @@ static StatementMatcher PassedAsArgumentToNonPointerOutputParam(
       pointsTo(qualType(RefCountPointerType(), unless(PointerType())))));
 }
 
-__attribute__((const)) static CXXMethodMatcher OfRefArray() {
-  return ofClass(classTemplateSpecializationDecl(
+__attribute__((const)) static DeclarationMatcher MethodOfRefArray() {
+  return cxxMethodDecl(ofClass(classTemplateSpecializationDecl(
       hasName("::gpos::CDynamicPtrArray"),
       hasTemplateArgument(
-          1, refersToDeclaration(functionDecl(hasName("CleanupRelease"))))));
+          1, refersToDeclaration(functionDecl(hasName("CleanupRelease")))))));
 }
 
 static auto ForEachArgumentToRefArrayMethodWithOwnerParam(
     const ExpressionMatcher& arg_matcher) {
   return anyOf(
-      cxxMemberCallExpr(callee(cxxMethodDecl(hasName("Replace"), OfRefArray())),
-                        hasArgument(1, IgnoringParenCastFuncs(arg_matcher))),
-      cxxMemberCallExpr(callee(cxxMethodDecl(hasName("Append"), OfRefArray())),
-                        hasArgument(0, IgnoringParenCastFuncs(arg_matcher))));
+      cxxMemberCallExpr(
+          callee(cxxMethodDecl(hasName("Replace"), MethodOfRefArray())),
+          hasArgument(1, IgnoringParenCastFuncs(arg_matcher))),
+      cxxMemberCallExpr(
+          callee(cxxMethodDecl(hasName("Append"), MethodOfRefArray())),
+          hasArgument(0, IgnoringParenCastFuncs(arg_matcher))));
+}
+
+__attribute__((const)) static DeclarationMatcher MethodOfHashMap() {
+  return cxxMethodDecl(
+      ofClass(classTemplateSpecializationDecl(hasName("::gpos::CHashMap"))));
 }
 
 static auto ForEachArgumentToHashMapMethodWithOwnerParam(
@@ -241,10 +248,11 @@ static auto ForEachArgumentToHashMapMethodWithOwnerParam(
 
   auto CallHashMapMethod = [](llvm::StringRef name,
                               auto... class_template_specialization_matchers) {
-    return callee(cxxMethodDecl(
-        hasName(name), ofClass(classTemplateSpecializationDecl(
-            hasName("::gpos::CHashMap"),
-            class_template_specialization_matchers...))));
+    return callee(
+        cxxMethodDecl(hasName(name), MethodOfHashMap(),
+                      ofClass(classTemplateSpecializationDecl(
+
+                          class_template_specialization_matchers...))));
   };
 
   auto CallInsertOnHashMap =
@@ -275,6 +283,15 @@ static auto ForEachArgumentToHashMapMethodWithOwnerParam(
                         hasArgument(1, IgnoringParenCastFuncs(arg_matcher))));
 }
 
+static auto ForEachArgumentToHashMapMethodWithPointerParam(
+    const ExpressionMatcher& arg_matcher) {
+  return cxxMemberCallExpr(
+      callee(MethodOfHashMap()),
+      ForEachArgumentWithParamType(
+          arg_matcher,
+          qualType(RefCountPointerType(), pointsTo(isConstQualified()))));
+}
+
 static auto ForEachArgumentWithOwnerParam(
     const ExpressionMatcher& arg_matcher) {
   return anyOf(ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher),
@@ -284,12 +301,19 @@ static auto ForEachArgumentWithOwnerParam(
 
 static auto ForEachArgumentWithNonPointerParam(
     const ExpressionMatcher& arg_matcher) {
-  return ForEachArgumentWithParamType(arg_matcher, unless(PointerType()));
+  return anyOf(
+      ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher),
+      ForEachArgumentToHashMapMethodWithOwnerParam(arg_matcher),
+      allOf(unless(hasDeclaration(MethodOfRefArray())),
+            unless(hasDeclaration(MethodOfHashMap())),
+            ForEachArgumentWithParamType(arg_matcher, unless(PointerType()))));
 }
 
 static auto ForEachArgumentWithPointerParam(
     const ExpressionMatcher& arg_matcher) {
-  return ForEachArgumentWithParamType(arg_matcher, PointerType());
+  return anyOf(ForEachArgumentToHashMapMethodWithPointerParam(arg_matcher),
+               allOf(unless(hasDeclaration(MethodOfHashMap())),
+                     ForEachArgumentWithParamType(arg_matcher, PointerType())));
 }
 
 static StatementMatcher PassedAsArgumentToNonPointerParam(
