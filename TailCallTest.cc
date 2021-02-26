@@ -130,11 +130,18 @@ TEST_F(TailCall, varPointNegative) {
       return r->TMF<U>(t);
     }
 
-    class Q {
+    struct O {
+      O() = default;
+      O(gpos::owner<S*>);
+      O(T*);
+    };
+    class Q : O {
       gpos::owner<T*> t_;
 
      public:
       Q(gpos::owner<T*> t) : t_(t) { F(t); }
+      Q(gpos::owner<T*> t, int) : O(t) { F(t); }
+      Q(gpos::owner<S*> s) : O(s) { F(s); }
     };
   )C++";
 
@@ -251,11 +258,18 @@ TEST_F(TailCall, paramOwnNegative) {
     // t is referenced more than once, bail
     bool bar(gpos::owner<T*> t) { return F(t) || G(t); }
 
-    class R {
+    struct O {
+      O() = default;
+      O(gpos::owner<S*>);
+      O(T*);
+    };
+    class R : O {
       gpos::owner<T*> t_;
 
      public:
       R(gpos::owner<T*> t) : t_(t) { F(t); }
+      R(gpos::owner<T*> t, int) : O(t) { F(t); }
+      R(gpos::owner<S*> s) : O(s) { F(s); }
     };
   )C++";
 

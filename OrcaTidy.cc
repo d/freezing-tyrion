@@ -218,11 +218,15 @@ static StatementMatcher PassedAsArgumentToNonPointerOutputParam(
       pointsTo(qualType(RefCountPointerType(), unless(PointerType())))));
 }
 
+static auto ForEachArgumentWithNonPointerParam(
+    const ExpressionMatcher& arg_matcher) {
+  return ForEachArgumentWithParamType(arg_matcher, unless(PointerType()));
+}
+
 static StatementMatcher PassedAsArgumentToNonPointerParam(
     const ExpressionMatcher& expr_matcher) {
   return anyOf(
-      CallOrConstruct(
-          ForEachArgumentWithParamType(expr_matcher, unless(PointerType()))),
+      CallOrConstruct(ForEachArgumentWithNonPointerParam(expr_matcher)),
       parenListExpr(has(expr_matcher)), initListExpr(has(expr_matcher)),
       callExpr(
           callee(expr(anyOf(unresolvedLookupExpr(), unresolvedMemberExpr()))),
@@ -566,6 +570,13 @@ class Annotator : public NodesFromMatchBase<Annotator> {
   void AnnotateOutputParam(const clang::ParmVarDecl* param,
                            const TypeMatcher& annotation_matcher,
                            llvm::StringRef annotation) const;
+  VarMatcher PassedToCtorInitializerForOwnerFieldOf(
+      const clang::FunctionDecl* f) const;
+  VarMatcher PassedToOwnerCtorBaseInitializerOf(
+      const clang::FunctionDecl* f) const;
+  VarMatcher PassedToNonPointerCtorBaseInitializerOf(
+      const clang::FunctionDecl* f) const;
+  VarMatcher AddRefdIn(const clang::FunctionDecl* f) const;
 };
 
 void Annotator::Propagate() const {
@@ -679,23 +690,53 @@ void Annotator::PropagateOwnerVars() const {
     AnnotateVarOwner(var);
   }
 
-  for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
-           parmVarDecl(
-               unless(isInstantiated()), parmVarDecl().bind("param"),
-               hasDeclContext(cxxConstructorDecl(
-                   hasAnyConstructorInitializer(cxxCtorInitializer(
-                       forField(hasType(OwnerType())),
-                       withInitializer(IgnoringParenCastFuncs(
-                           declRefExpr(to(equalsBoundNode("param"))))))),
-                   // while AddRef on the field is also theoretically possible,
-                   // I scanned through the ORCA code and found the few
-                   // instances of AddRef on the field was for copying it again
-                   // to another owner
-                   hasBody(unless(hasDescendant(AddRefOn(
-                       declRefExpr(to(equalsBoundNode("param")))))))))),
-           "param")) {
-    AnnotateVarOwner(param);
+  for (const auto* f : NodesFromMatchAST<clang::CXXConstructorDecl>(
+           cxxConstructorDecl(hasBody(stmt())).bind("ctor"), "ctor")) {
+    for (const auto* param : NodesFromMatchNode<clang::ParmVarDecl>(
+             decl(forEachDescendant(
+                 parmVarDecl(anyOf(PassedToCtorInitializerForOwnerFieldOf(f),
+                                   PassedToOwnerCtorBaseInitializerOf(f)),
+                             // while AddRef on the field is also
+                             // theoretically possible, I scanned through
+                             // the ORCA code and found the few instances of
+                             // AddRef on the field was for copying it again
+                             // to another owner
+                             unless(AddRefdIn(f)))
+                     .bind("param"))),
+             *f, "param")) {
+      AnnotateVarOwner(param);
+    }
   }
+}
+
+VarMatcher Annotator::PassedToCtorInitializerForOwnerFieldOf(
+    const clang::FunctionDecl* f) const {
+  return IsInSet(DeclSetFromMatchNode(
+      cxxConstructorDecl(forEachConstructorInitializer(
+          cxxCtorInitializer(withInitializer(IgnoringParenCastFuncs(
+                                 declRefExpr(to(parmVarDecl().bind("param"))))),
+                             forField(hasType(OwnerType()))))),
+      *f, "param"));
+}
+
+VarMatcher Annotator::PassedToOwnerCtorBaseInitializerOf(
+    const clang::FunctionDecl* f) const {
+  return IsInSet(DeclSetFromMatchNode(
+      cxxConstructorDecl(forEachConstructorInitializer(cxxCtorInitializer(
+          isBaseInitializer(),
+          withInitializer(cxxConstructExpr(ForEachArgumentWithOwnerParam(
+              declRefExpr(to(parmVarDecl().bind("param"))))))))),
+      *f, "param"));
+}
+
+VarMatcher Annotator::PassedToNonPointerCtorBaseInitializerOf(
+    const clang::FunctionDecl* f) const {
+  return IsInSet(DeclSetFromMatchNode(
+      cxxConstructorDecl(forEachConstructorInitializer(cxxCtorInitializer(
+          isBaseInitializer(),
+          withInitializer(cxxConstructExpr(ForEachArgumentWithNonPointerParam(
+              declRefExpr(to(parmVarDecl().bind("param"))))))))),
+      *f, "param"));
 }
 
 void Annotator::PropagateReturnOwner() const {
@@ -741,10 +782,7 @@ void Annotator::PropagateTailCall() const {
   for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
            functionDecl(hasBody(stmt())).bind("f"), "f")) {
     auto last_stmts = LastStatementsOfFunc(f, &ast_context_);
-    auto add_refd = IsInSet(DeclSetFromMatchNode(
-        stmt(forEachDescendant(
-            AddRefOn(declRefExpr(to(varDecl().bind("var")))))),
-        *f->getBody(), "var"));
+    auto add_refd = AddRefdIn(f);
     auto assigned = IsInSet(DeclSetFromMatchNode(
         stmt(forEachDescendant(
             AssignTo(declRefExpr(to(varDecl().bind("var")))))),
@@ -764,19 +802,16 @@ void Annotator::PropagateTailCall() const {
         MoveSourceRange(arg->getSourceRange());
       }
 
-      auto is_used_to_init_owner_field = IsInSet(DeclSetFromMatchNode(
-          cxxConstructorDecl(forEachConstructorInitializer(cxxCtorInitializer(
-              withInitializer(IgnoringParenCastFuncs(
-                  declRefExpr(to(parmVarDecl().bind("param"))))),
-              forField(hasType(OwnerType()))))),
-          *f, "param"));
+      auto is_used_in_non_pointer_ctor_initializers =
+          anyOf(PassedToCtorInitializerForOwnerFieldOf(f),
+                PassedToNonPointerCtorBaseInitializerOf(f));
 
       for (const auto* var : NodesFromMatchNode<clang::VarDecl>(
-               stmt(findAll(
-                   CallOrConstruct(ForEachArgumentWithPointerParam(declRefExpr(
-                       to(varDecl(unless(isInstantiated()), hasLocalStorage(),
-                                  unless(is_used_to_init_owner_field))
-                              .bind("var"))))))),
+               stmt(findAll(CallOrConstruct(
+                   ForEachArgumentWithPointerParam(declRefExpr(to(
+                       varDecl(unless(isInstantiated()), hasLocalStorage(),
+                               unless(is_used_in_non_pointer_ctor_initializers))
+                           .bind("var"))))))),
                *r, "var")) {
         if (Match(stmt(SelfOrHasDescendant(PassedAsArgumentToNonPointerParam(
                       declRefExpr(to(equalsNode(var)))))),
@@ -800,8 +835,10 @@ void Annotator::PropagateTailCall() const {
                stmt(findAll(CallOrConstruct(
                    ForEachArgumentWithParam(
                        declRefExpr(
-                           to(varDecl(hasLocalStorage(), hasType(OwnerType()),
-                                      unless(is_used_to_init_owner_field))
+                           to(varDecl(
+                                  hasLocalStorage(), hasType(OwnerType()),
+                                  unless(
+                                      is_used_in_non_pointer_ctor_initializers))
                                   .bind("var")))
                            .bind("arg"),
                        optionally(parmVarDecl(unless(isInstantiated()))
@@ -816,6 +853,13 @@ void Annotator::PropagateTailCall() const {
       }
     }
   }
+}
+
+VarMatcher Annotator::AddRefdIn(const clang::FunctionDecl* f) const {
+  return IsInSet(DeclSetFromMatchNode(
+      functionDecl(hasBody(
+          forEachDescendant(AddRefOn(declRefExpr(to(varDecl().bind("var"))))))),
+      *f, "var"));
 }
 
 void Annotator::MoveSourceRange(clang::SourceRange source_range) const {
