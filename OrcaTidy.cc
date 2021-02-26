@@ -218,21 +218,6 @@ static StatementMatcher PassedAsArgumentToNonPointerOutputParam(
       pointsTo(qualType(RefCountPointerType(), unless(PointerType())))));
 }
 
-static auto ForEachArgumentWithNonPointerParam(
-    const ExpressionMatcher& arg_matcher) {
-  return ForEachArgumentWithParamType(arg_matcher, unless(PointerType()));
-}
-
-static StatementMatcher PassedAsArgumentToNonPointerParam(
-    const ExpressionMatcher& expr_matcher) {
-  return anyOf(
-      CallOrConstruct(ForEachArgumentWithNonPointerParam(expr_matcher)),
-      parenListExpr(has(expr_matcher)), initListExpr(has(expr_matcher)),
-      callExpr(
-          callee(expr(anyOf(unresolvedLookupExpr(), unresolvedMemberExpr()))),
-          hasAnyArgument(IgnoringParenCastFuncs(expr_matcher))));
-}
-
 __attribute__((const)) static CXXMethodMatcher OfRefArray() {
   return ofClass(classTemplateSpecializationDecl(
       hasName("::gpos::CDynamicPtrArray"),
@@ -249,15 +234,72 @@ static auto ForEachArgumentToRefArrayMethodWithOwnerParam(
                         hasArgument(0, IgnoringParenCastFuncs(arg_matcher))));
 }
 
+static auto ForEachArgumentToHashMapMethodWithOwnerParam(
+    const ExpressionMatcher& arg_matcher) {
+  auto refers_to_cleanup_release =
+      refersToDeclaration(functionDecl(hasName("CleanupRelease")));
+
+  auto CallHashMapMethod = [](llvm::StringRef name,
+                              auto... class_template_specialization_matchers) {
+    return callee(cxxMethodDecl(
+        hasName(name), ofClass(classTemplateSpecializationDecl(
+            hasName("::gpos::CHashMap"),
+            class_template_specialization_matchers...))));
+  };
+
+  auto CallInsertOnHashMap =
+      [CallHashMapMethod](auto... class_template_specialization_matchers) {
+        return CallHashMapMethod("Insert",
+                                 class_template_specialization_matchers...);
+      };
+
+  auto k_is_ref = hasTemplateArgument(4, refers_to_cleanup_release);
+  auto k_is_not_ref = hasTemplateArgument(4, unless(refers_to_cleanup_release));
+  auto t_is_ref = hasTemplateArgument(5, refers_to_cleanup_release);
+  auto t_is_not_ref = hasTemplateArgument(5, unless(refers_to_cleanup_release));
+
+  auto CallInsertOnHashMapRefKRefT = CallInsertOnHashMap(k_is_ref, t_is_ref);
+  auto CallInsertOnHashMapRefK = CallInsertOnHashMap(k_is_ref, t_is_not_ref);
+  auto CallInsertOnHashMapRefT = CallInsertOnHashMap(k_is_not_ref, t_is_ref);
+
+  auto CallReplaceOnHashMapRefT = CallHashMapMethod("Replace", t_is_ref);
+
+  return anyOf(
+      cxxMemberCallExpr(CallInsertOnHashMapRefKRefT,
+                        ForEachArgumentWithParamType(arg_matcher, qualType())),
+      cxxMemberCallExpr(CallInsertOnHashMapRefK,
+                        hasArgument(0, IgnoringParenCastFuncs(arg_matcher))),
+      cxxMemberCallExpr(CallInsertOnHashMapRefT,
+                        hasArgument(1, IgnoringParenCastFuncs(arg_matcher))),
+      cxxMemberCallExpr(CallReplaceOnHashMapRefT,
+                        hasArgument(1, IgnoringParenCastFuncs(arg_matcher))));
+}
+
 static auto ForEachArgumentWithOwnerParam(
     const ExpressionMatcher& arg_matcher) {
-  return anyOf(ForEachArgumentWithParamType(arg_matcher, OwnerType()),
-               ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher));
+  return anyOf(ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher),
+               ForEachArgumentToHashMapMethodWithOwnerParam(arg_matcher),
+               ForEachArgumentWithParamType(arg_matcher, OwnerType()));
+}
+
+static auto ForEachArgumentWithNonPointerParam(
+    const ExpressionMatcher& arg_matcher) {
+  return ForEachArgumentWithParamType(arg_matcher, unless(PointerType()));
 }
 
 static auto ForEachArgumentWithPointerParam(
     const ExpressionMatcher& arg_matcher) {
   return ForEachArgumentWithParamType(arg_matcher, PointerType());
+}
+
+static StatementMatcher PassedAsArgumentToNonPointerParam(
+    const ExpressionMatcher& expr_matcher) {
+  return anyOf(
+      CallOrConstruct(ForEachArgumentWithNonPointerParam(expr_matcher)),
+      parenListExpr(has(expr_matcher)), initListExpr(has(expr_matcher)),
+      callExpr(
+          callee(expr(anyOf(unresolvedLookupExpr(), unresolvedMemberExpr()))),
+          hasAnyArgument(IgnoringParenCastFuncs(expr_matcher))));
 }
 
 static StatementMatcher InitOrAssignNonPointerVarWith(

@@ -13,6 +13,7 @@ class AnnotateTest : public OrcaTidyTest<AnnotateTest> {
 #include "owner.h"
     namespace gpos {
     using ULONG = uint32_t;
+    using BOOL = bool;
 
     template <class T>
     void CleanupRelease(T *elem);
@@ -23,6 +24,16 @@ class AnnotateTest : public OrcaTidyTest<AnnotateTest> {
       T *operator[](ULONG) const;
       void Replace(ULONG pos, T *new_elem);
       void Append(T *elem);
+    };
+
+    template <class K, class T, ULONG (*HashFn)(const K *),
+              BOOL (*EqFn)(const K *, const K *), void (*DestroyKFn)(K *),
+              void (*DestroyTFn)(T *)>
+    class CHashMap : public CRefCount<
+                         CHashMap<K, T, HashFn, EqFn, DestroyKFn, DestroyTFn>> {
+     public:
+      BOOL Insert(K *key, T *value);
+      BOOL Replace(const K *key, T *ptNew);
     };
     }  // namespace gpos
 
