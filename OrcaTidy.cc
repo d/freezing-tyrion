@@ -1,5 +1,6 @@
 #include "OrcaTidy.h"
 #include "AstHelpers.h"
+#include "SwitchMatcher.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/DenseSet.h"
@@ -314,13 +315,15 @@ static auto ForEachArgumentWithOwnerParam(
 
 static auto ForEachArgumentWithNonPointerParam(
     const ExpressionMatcher& arg_matcher) {
-  return anyOf(
-      ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher),
-      ForEachArgumentToUlongToExprArrayMapWithOwnerParam(arg_matcher),
-      ForEachArgumentToHashMapMethodWithOwnerParam(arg_matcher),
-      allOf(unless(hasDeclaration(MethodOfRefArray())),
-            unless(hasDeclaration(MethodOfHashMap())),
-            ForEachArgumentWithParamType(arg_matcher, unless(PointerType()))));
+  return Switch()
+      .Case(hasDeclaration(MethodOfRefArray()),
+            ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher))
+      .Case(
+          hasDeclaration(MethodOfHashMap()),
+          anyOf(ForEachArgumentToUlongToExprArrayMapWithOwnerParam(arg_matcher),
+                ForEachArgumentToHashMapMethodWithOwnerParam(arg_matcher)))
+      .Default(
+          ForEachArgumentWithParamType(arg_matcher, unless(PointerType())));
 }
 
 static auto ForEachArgumentWithPointerParam(
