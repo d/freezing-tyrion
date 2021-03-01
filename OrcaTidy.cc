@@ -378,8 +378,7 @@ class Annotator : public NodesFromMatchBase<Annotator> {
   clang::ASTContext& ast_context_;
   const clang::SourceManager& source_manager_;
   const clang::LangOptions& lang_opts_;
-  mutable llvm::StringMap<llvm::DenseSet<const clang::VarDecl*>>
-      annotation_to_var_decls_;
+  mutable llvm::DenseSet<const clang::VarDecl*> owner_vars_, pointer_vars_;
 
   void Propagate() const;
 
@@ -528,8 +527,13 @@ class Annotator : public NodesFromMatchBase<Annotator> {
       if (Match(qualType(anyOf(autoType(), pointsTo(autoType()))),
                 var->getType()))
         continue;
+      if (annotation == kOwnerAnnotation) {
+        owner_vars_.insert(var);
+      } else if (annotation == kPointerAnnotation) {
+        pointer_vars_.insert(var);
+      }
+
       if (!Match(SingleDecl(), *var)) {
-        annotation_to_var_decls_[annotation].insert(var);
         continue;
       }
       if (IsAnnotated(v->getType())) std::terminate();
@@ -1322,13 +1326,8 @@ void Annotator::AnnotateMultiDecls() const {
         llvm::map_range(decl_stmt->decls(), [](const clang::Decl* decl) {
           return llvm::dyn_cast<clang::VarDecl>(decl);
         });
-    auto IsInCategory = [=](llvm::StringRef annotation) {
-      return [=](const clang::VarDecl* var) {
-        return var && annotation_to_var_decls_[annotation].contains(var);
-      };
-    };
-    auto IsPointer = IsInCategory(kPointerAnnotation);
-    auto IsOwner = IsInCategory(kOwnerAnnotation);
+    auto IsPointer = [=](auto var) { return pointer_vars_.contains(var); };
+    auto IsOwner = [=](auto var) { return owner_vars_.contains(var); };
 
     if (llvm::all_of(decls_as_vars, IsPointer))
       AnnotateMultiVar(decl_stmt, kPointerAnnotation);
