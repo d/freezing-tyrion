@@ -231,6 +231,11 @@ __attribute__((const)) static DeclarationMatcher MethodOfHashMap() {
       ofClass(classTemplateSpecializationDecl(hasName("::gpos::CHashMap"))));
 }
 
+static StatementMatcher CallHashMapFindOn(const ExpressionMatcher& expr) {
+  return cxxMemberCallExpr(
+      callee(cxxMethodDecl(hasName("Find"), MethodOfHashMap())), on(expr));
+}
+
 // very very special case, sigh SMH
 static auto ForEachArgumentToUlongToExprArrayMapWithOwnerParam(
     const ExpressionMatcher& arg_matcher) {
@@ -1019,16 +1024,20 @@ void Annotator::InferOwnerVars() const {
 void Annotator::InferGetters() const {
   for (const auto* f : NodesFromMatchAST<clang::CXXMethodDecl>(
            cxxMethodDecl(
-               hasAnyBody(anyOf(
+               returns(RefCountPointerType()),
+               hasBody(anyOf(
                    stmt(hasDescendant(returnStmt(hasReturnValue(
                             ignoringParenImpCasts(FieldReferenceFor(
                                 fieldDecl(hasType(RefCountPointerType()))
                                     .bind("field")))))),
                         unless(hasDescendant(AddRefOrAssign(
                             FieldReferenceFor(equalsBoundNode("field")))))),
-                   stmt(hasDescendant(returnStmt(hasReturnValue(
-                       ignoringParenImpCasts(CallCDynPtrArrSubscriptOn(
-                           FieldReferenceFor(fieldDecl()))))))))))
+                   stmt(hasDescendant(
+                       returnStmt(hasReturnValue(ignoringParenImpCasts(
+                           anyOf(CallCDynPtrArrSubscriptOn(
+                                     FieldReferenceFor(fieldDecl())),
+                                 CallHashMapFindOn(
+                                     FieldReferenceFor(fieldDecl())))))))))))
                .bind("f"),
            "f")) {
     AnnotateFunctionReturnPointer(f);
