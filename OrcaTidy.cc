@@ -243,46 +243,46 @@ static auto ForEachArgumentToUlongToExprArrayMapWithOwnerParam(
                                 unless(pointsTo(isConstQualified())))));
 }
 
-static auto ForEachArgumentToHashMapMethodWithOwnerParam(
+static StatementMatcher ForEachArgumentToHashMapMethodWithOwnerParam(
     const ExpressionMatcher& arg_matcher) {
   auto refers_to_cleanup_release =
       refersToDeclaration(functionDecl(hasName("CleanupRelease")));
 
-  auto CallHashMapMethod = [](llvm::StringRef name,
-                              auto... class_template_specialization_matchers) {
-    return callee(
-        cxxMethodDecl(hasName(name), MethodOfHashMap(),
-                      ofClass(classTemplateSpecializationDecl(
-
-                          class_template_specialization_matchers...))));
+  auto OnHashMap = [](auto... class_template_specialization_matchers) {
+    return allOf(MethodOfHashMap(),
+                 ofClass(classTemplateSpecializationDecl(
+                     class_template_specialization_matchers...)));
   };
 
-  auto CallInsertOnHashMap =
-      [CallHashMapMethod](auto... class_template_specialization_matchers) {
-        return CallHashMapMethod("Insert",
-                                 class_template_specialization_matchers...);
-      };
+  auto Call = [](llvm::StringRef name, const CXXMethodMatcher& method) {
+    return callee(cxxMethodDecl(hasName(name), method));
+  };
+
+  auto CallInsert = [Call](const CXXMethodMatcher& method) {
+    return Call("Insert", method);
+  };
 
   auto k_is_ref = hasTemplateArgument(4, refers_to_cleanup_release);
   auto k_is_not_ref = hasTemplateArgument(4, unless(refers_to_cleanup_release));
   auto t_is_ref = hasTemplateArgument(5, refers_to_cleanup_release);
   auto t_is_not_ref = hasTemplateArgument(5, unless(refers_to_cleanup_release));
 
-  auto CallInsertOnHashMapRefKRefT = CallInsertOnHashMap(k_is_ref, t_is_ref);
-  auto CallInsertOnHashMapRefK = CallInsertOnHashMap(k_is_ref, t_is_not_ref);
-  auto CallInsertOnHashMapRefT = CallInsertOnHashMap(k_is_not_ref, t_is_ref);
+  auto CallInsertOnHashMapRefKRefT = CallInsert(OnHashMap(k_is_ref, t_is_ref));
+  auto CallInsertOnHashMapRefK = CallInsert(OnHashMap(k_is_ref, t_is_not_ref));
+  auto CallInsertOnHashMapRefT = CallInsert(OnHashMap(k_is_not_ref, t_is_ref));
 
-  auto CallReplaceOnHashMapRefT = CallHashMapMethod("Replace", t_is_ref);
+  auto CallReplaceOnHashMapRefT = Call("Replace", OnHashMap(t_is_ref));
 
-  return anyOf(
-      cxxMemberCallExpr(CallInsertOnHashMapRefKRefT,
-                        ForEachArgumentWithParamType(arg_matcher, qualType())),
-      cxxMemberCallExpr(CallInsertOnHashMapRefK,
-                        hasArgument(0, IgnoringParenCastFuncs(arg_matcher))),
-      cxxMemberCallExpr(CallInsertOnHashMapRefT,
-                        hasArgument(1, IgnoringParenCastFuncs(arg_matcher))),
-      cxxMemberCallExpr(CallReplaceOnHashMapRefT,
-                        hasArgument(1, IgnoringParenCastFuncs(arg_matcher))));
+  return cxxMemberCallExpr(
+      Switch()
+          .Case(CallInsertOnHashMapRefKRefT,
+                ForEachArgumentWithParamType(arg_matcher, qualType()))
+          .Case(CallInsertOnHashMapRefK,
+                hasArgument(0, IgnoringParenCastFuncs(arg_matcher)))
+          .Case(CallInsertOnHashMapRefT,
+                hasArgument(1, IgnoringParenCastFuncs(arg_matcher)))
+          .Case(CallReplaceOnHashMapRefT,
+                hasArgument(1, IgnoringParenCastFuncs(arg_matcher))));
 }
 
 static auto ForEachArgumentToHashMapMethodWithPointerParam(
