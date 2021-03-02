@@ -260,7 +260,7 @@ TEST_F(OutParamProp, varInit) {
     void MakeT(gpos::owner<T*>* ppt);
     void foo(gpos::owner<T*> pt) {
       MakeT(&pt);
-      Sink(pt);
+      Sink(std::move(pt));
     }
 
     void GetT(gpos::pointer<T*>*);

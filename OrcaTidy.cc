@@ -12,11 +12,6 @@ namespace tooling = clang::tooling;
 
 using FileToReplacements = std::map<std::string, tooling::Replacements>;
 
-__attribute__((const)) static StatementMatcher CallReturningOwner() {
-  return callExpr(
-      anyOf(hasType(OwnerType()), CallCcacheAccessorMethodsReturningOwner()));
-}
-
 static auto FieldReferenceFor(DeclarationMatcher const& field_matcher) {
   return memberExpr(member(field_matcher),
                     hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
@@ -128,12 +123,6 @@ AST_MATCHER_P(clang::CXXMemberCallExpr, IsGetterCallNotInSet, GetterSet,
   // doesn't look like a getter?
   if (!var) return false;
   return !getter_set.contains({var, method});
-}
-
-__attribute__((const)) static auto CallGetter() {
-  return cxxMemberCallExpr(hasType(PointerType()),
-                           on(declRefExpr(to(varDecl()))),
-                           callee(cxxMethodDecl(parameterCountIs(0))));
 }
 
 using ReturnMatcher = decltype(hasReturnValue(expr()));
@@ -305,53 +294,6 @@ static auto ForEachArgumentToHashMapMethodWithPointerParam(
           qualType(RefCountPointerType(), pointsTo(isConstQualified()))));
 }
 
-static auto ForEachArgumentWithOwnerParam(
-    const ExpressionMatcher& arg_matcher) {
-  return anyOf(ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher),
-               ForEachArgumentToUlongToExprArrayMapWithOwnerParam(arg_matcher),
-               ForEachArgumentToHashMapMethodWithOwnerParam(arg_matcher),
-               ForEachArgumentWithParamType(arg_matcher, OwnerType()));
-}
-
-static auto ForEachArgumentWithNonPointerParam(
-    const ExpressionMatcher& arg_matcher) {
-  return Switch()
-      .Case(hasDeclaration(MethodOfRefArray()),
-            ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher))
-      .Case(
-          hasDeclaration(MethodOfHashMap()),
-          anyOf(ForEachArgumentToUlongToExprArrayMapWithOwnerParam(arg_matcher),
-                ForEachArgumentToHashMapMethodWithOwnerParam(arg_matcher)))
-      .Default(
-          ForEachArgumentWithParamType(arg_matcher, unless(PointerType())));
-}
-
-static auto ForEachArgumentWithPointerParam(
-    const ExpressionMatcher& arg_matcher) {
-  return anyOf(ForEachArgumentToHashMapMethodWithPointerParam(arg_matcher),
-               allOf(unless(hasDeclaration(MethodOfHashMap())),
-                     ForEachArgumentWithParamType(arg_matcher, PointerType())));
-}
-
-static StatementMatcher PassedAsArgumentToNonPointerParam(
-    const ExpressionMatcher& expr_matcher) {
-  return anyOf(
-      CallOrConstruct(ForEachArgumentWithNonPointerParam(expr_matcher)),
-      parenListExpr(has(expr_matcher)), initListExpr(has(expr_matcher)),
-      callExpr(
-          callee(expr(anyOf(unresolvedLookupExpr(), unresolvedMemberExpr()))),
-          hasAnyArgument(IgnoringParenCastFuncs(expr_matcher))));
-}
-
-static StatementMatcher InitOrAssignNonPointerVarWith(
-    const ExpressionMatcher& expr) {
-  return anyOf(
-      declStmt(has(varDecl(unless(hasType(PointerType())),
-                           hasInitializer(IgnoringParenCastFuncs(expr))))),
-      AssignTo(unless(declRefExpr(to(varDecl(hasType(PointerType()))))),
-               IgnoringParenCastFuncs(expr)));
-}
-
 AST_MATCHER(clang::VarDecl, IsImmediatelyBeforeAddRef) {
   return varDecl(hasParent(declStmt(StmtIsImmediatelyBefore(
                      AddRefOn(declRefExpr(to(equalsNode(&Node))))))))
@@ -369,7 +311,9 @@ class Annotator : public NodesFromMatchBase<Annotator> {
   void Annotate() {
     if (action_options_.Base) AnnotateBaseCases();
 
-    if (action_options_.Propagate) Propagate();
+    if (action_options_.Propagate)
+      while (Propagate())
+        ;
   }
 
  private:
@@ -378,9 +322,10 @@ class Annotator : public NodesFromMatchBase<Annotator> {
   clang::ASTContext& ast_context_;
   const clang::SourceManager& source_manager_;
   const clang::LangOptions& lang_opts_;
-  mutable llvm::DenseSet<const clang::VarDecl*> owner_vars_, pointer_vars_;
+  mutable bool changed_ = false;
+  mutable DeclSet owner_vars_, pointer_vars_;
 
-  void Propagate() const;
+  bool Propagate() const;
 
   void AnnotateBaseCases() const;
 
@@ -474,8 +419,11 @@ class Annotator : public NodesFromMatchBase<Annotator> {
     AnnotateFunctionReturnType(f, PointerType(), kPointerAnnotation);
   }
 
+  void RememberFunc(const clang::FunctionDecl* f,
+                    llvm::StringRef annotation) const;
   void AnnotateFunctionReturnType(const clang::FunctionDecl* f,
                                   llvm::StringRef annotation) const {
+    RememberFunc(f, annotation);
     auto rt = f->getReturnType();
     auto rt_range = f->getReturnTypeSourceRange();
     if (rt->getPointeeType().isLocalConstQualified()) {
@@ -527,11 +475,7 @@ class Annotator : public NodesFromMatchBase<Annotator> {
       if (Match(qualType(anyOf(autoType(), pointsTo(autoType()))),
                 var->getType()))
         continue;
-      if (annotation == kOwnerAnnotation) {
-        owner_vars_.insert(var);
-      } else if (annotation == kPointerAnnotation) {
-        pointer_vars_.insert(var);
-      }
+      RememberVar(var, annotation);
 
       if (!Match(SingleDecl(), *var)) {
         continue;
@@ -545,6 +489,53 @@ class Annotator : public NodesFromMatchBase<Annotator> {
       }
       AnnotateSourceRange(source_range, annotation);
     }
+  }
+
+  VarMatcher OwnerVar() const;
+  VarMatcher PointerVar() const;
+
+  void RememberVar(const clang::Decl* var, llvm::StringRef annotation) const;
+
+  StatementMatcher CallReturningOwner() const;
+
+  StatementMatcher PassedAsArgumentToNonPointerParam(
+      const ExpressionMatcher& expr_matcher) const;
+
+  auto ForEachArgumentWithOwnerParam(
+      const ExpressionMatcher& arg_matcher) const {
+    return anyOf(
+        ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher),
+        ForEachArgumentToUlongToExprArrayMapWithOwnerParam(arg_matcher),
+        ForEachArgumentToHashMapMethodWithOwnerParam(arg_matcher),
+        ForEachArgumentWithParamType(arg_matcher, OwnerType()),
+        ForEachArgumentWithParam(arg_matcher, OwnerVar()));
+  }
+
+  auto ForEachArgumentWithNonPointerParam(
+      const ExpressionMatcher& arg_matcher) const {
+    return Switch()
+        .Case(hasDeclaration(MethodOfRefArray()),
+              ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher))
+        .Case(hasDeclaration(MethodOfHashMap()),
+              anyOf(ForEachArgumentToUlongToExprArrayMapWithOwnerParam(
+                        arg_matcher),
+                    ForEachArgumentToHashMapMethodWithOwnerParam(arg_matcher)))
+        .Case(hasDeclaration(functionDecl()),
+              ForEachArgumentWithParam(arg_matcher, unless(PointerVar())))
+        // called through a pf, or pmf
+        .Default(
+            ForEachArgumentWithParamType(arg_matcher, unless(PointerType())));
+  }
+
+  auto ForEachArgumentWithPointerParam(
+      const ExpressionMatcher& arg_matcher) const {
+    return Switch()
+        .Case(hasDeclaration(MethodOfHashMap()),
+              ForEachArgumentToHashMapMethodWithPointerParam(arg_matcher))
+        .Case(hasDeclaration(functionDecl()),
+              ForEachArgumentWithParam(arg_matcher, PointerVar()))
+        // called through a pf, or pmf
+        .Default(ForEachArgumentWithParamType(arg_matcher, PointerType()));
   }
 
   void AnnotateSourceRange(clang::SourceRange source_range,
@@ -664,9 +655,14 @@ class Annotator : public NodesFromMatchBase<Annotator> {
   VarMatcher PassedToNonPointerCtorBaseInitializerOf(
       const clang::FunctionDecl* f) const;
   VarMatcher AddRefdIn(const clang::FunctionDecl* f) const;
+  StatementMatcher InitOrAssignNonPointerVarWith(
+      const ExpressionMatcher& expr) const;
+  CXXMemberCallMatcher CallGetter() const;
 };
 
-void Annotator::Propagate() const {
+bool Annotator::Propagate() const {
+  changed_ = false;
+
   PropagatePointerVars();
 
   PropagateReturnOwner();
@@ -730,6 +726,8 @@ void Annotator::Propagate() const {
   PropagateFunctionPointers();
 
   AnnotateMultiDecls();
+
+  return changed_;
 }
 
 void Annotator::PropagateParameterAmongRedecls() const {
@@ -839,7 +837,7 @@ void Annotator::PropagateReturnOwner() const {
   for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
            returnStmt(
                hasReturnValue(ignoringParenImpCasts(declRefExpr(to(varDecl(
-                   hasLocalStorage(), hasType(OwnerType()), decl().bind("var"),
+                   hasLocalStorage(), OwnerVar(), decl().bind("var"),
                    hasDeclContext(
                        functionDecl(
                            unless(isInstantiated()),
@@ -909,9 +907,8 @@ void Annotator::PropagateTailCall() const {
 
       for (const auto* param : NodesFromMatchNode<clang::ParmVarDecl>(
                stmt(findAll(NonTemplateCallOrConstruct(ForEachArgumentWithParam(
-                   declRefExpr(
-                       to(varDecl(hasLocalStorage(), hasType(PointerType()),
-                                  unless(add_ref_or_assigned)))),
+                   declRefExpr(to(varDecl(hasLocalStorage(), PointerVar(),
+                                          unless(add_ref_or_assigned)))),
                    parmVarDecl(unless(isInstantiated())).bind("param"))))),
                *r, "param")) {
         AnnotateVarPointer(param);
@@ -923,7 +920,7 @@ void Annotator::PropagateTailCall() const {
                    ForEachArgumentWithParam(
                        declRefExpr(
                            to(varDecl(
-                                  hasLocalStorage(), hasType(OwnerType()),
+                                  hasLocalStorage(), OwnerVar(),
                                   unless(
                                       is_used_in_non_pointer_ctor_initializers))
                                   .bind("var")))
@@ -1218,7 +1215,7 @@ void Annotator::AnnotateTypedefFunctionProtoTypeReturnType(
 }
 
 void Annotator::PropagatePointerVars() const {
-  auto CounterexampleForVar = [](auto var) {
+  auto CounterexampleForVar = [this](auto var) {
     auto ref_to_var = declRefExpr(to(var));
     return stmt(
         anyOf(PassedAsArgumentToNonPointerParam(ref_to_var),
@@ -1326,8 +1323,8 @@ void Annotator::AnnotateMultiDecls() const {
         llvm::map_range(decl_stmt->decls(), [](const clang::Decl* decl) {
           return llvm::dyn_cast<clang::VarDecl>(decl);
         });
-    auto IsPointer = [=](auto var) { return pointer_vars_.contains(var); };
-    auto IsOwner = [=](auto var) { return owner_vars_.contains(var); };
+    auto IsPointer = [this](auto var) { return pointer_vars_.contains(var); };
+    auto IsOwner = [this](auto var) { return owner_vars_.contains(var); };
 
     if (llvm::all_of(decls_as_vars, IsPointer))
       AnnotateMultiVar(decl_stmt, kPointerAnnotation);
@@ -1422,26 +1419,26 @@ void Annotator::PropagateOutputParams() const {
   // FIXME: what if we also run this at "base" time? What will we find out?
   auto deref = Deref(declRefExpr(to(equalsBoundNode("out_param"))));
   for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
-           parmVarDecl(
-               unless(isInstantiated()), hasType(RefCountPointerPointerType()),
-               decl().bind("out_param"),
-               hasDeclContext(functionDecl(hasBody(stmt(
-                   hasDescendant(AssignTo(
-                       ignoringParenCasts(deref),
-                       IgnoringParenCastFuncs(anyOf(
-                           cxxNewExpr(), CallReturningOwner(),
-                           declRefExpr(to(varDecl(hasType(OwnerType())))))))),
-                   unless(hasDescendant(
-                       expr(unless(ReleaseCallExpr(deref)),
-                            PassedAsArgumentToNonPointerParam(deref))))))))),
+           parmVarDecl(unless(isInstantiated()),
+                       hasType(RefCountPointerPointerType()),
+                       decl().bind("out_param"),
+                       hasDeclContext(functionDecl(hasBody(stmt(
+                           hasDescendant(AssignTo(
+                               ignoringParenCasts(deref),
+                               IgnoringParenCastFuncs(anyOf(
+                                   cxxNewExpr(), CallReturningOwner(),
+                                   declRefExpr(to(varDecl(OwnerVar()))))))),
+                           unless(hasDescendant(expr(
+                               unless(ReleaseCallExpr(deref)),
+                               PassedAsArgumentToNonPointerParam(deref))))))))),
            "out_param")) {
     AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
   }
 
   auto assign_pointer_var =
       stmt(AssignTo(IgnoringParenCastFuncs(deref),
-                    IgnoringParenCastFuncs(declRefExpr(
-                        to(varDecl(hasType(PointerType())).bind("var"))))),
+                    IgnoringParenCastFuncs(
+                        declRefExpr(to(varDecl(PointerVar()).bind("var"))))),
            unless(StmtIsImmediatelyAfter(
                AddRefOn(declRefExpr(to(equalsBoundNode("var")))))));
   auto assign_getter =
@@ -1495,6 +1492,65 @@ void Annotator::PropagateOutputParams() const {
       AnnotateVarPointer(var);
     }
   }
+}
+
+void Annotator::RememberVar(const clang::Decl* var,
+                            llvm::StringRef annotation) const {
+  auto inserted = [var, annotation, this]() {
+    if (annotation == kOwnerAnnotation) {
+      return owner_vars_.insert(var).second;
+    } else if (annotation == kPointerAnnotation) {
+      return pointer_vars_.insert(var).second;
+    }
+    return false;
+  }();
+  if (inserted) changed_ = true;
+}
+
+VarMatcher Annotator::OwnerVar() const {
+  return anyOf(hasType(OwnerType()), IsInSet(owner_vars_));
+}
+
+VarMatcher Annotator::PointerVar() const {
+  return anyOf(hasType(PointerType()), IsInSet(pointer_vars_));
+}
+
+void Annotator::RememberFunc(const clang::FunctionDecl* f,
+                             llvm::StringRef annotation) const {
+  // Hack: just record the func in the same sets as vars
+  RememberVar(f, annotation);
+}
+
+StatementMatcher Annotator::CallReturningOwner() const {
+  return callExpr(anyOf(hasType(OwnerType()),
+                        callee(functionDecl(IsInSet(owner_vars_))),
+                        CallCcacheAccessorMethodsReturningOwner()));
+}
+
+StatementMatcher Annotator::PassedAsArgumentToNonPointerParam(
+    const ExpressionMatcher& expr_matcher) const {
+  return anyOf(
+      CallOrConstruct(ForEachArgumentWithNonPointerParam(expr_matcher)),
+      parenListExpr(has(expr_matcher)), initListExpr(has(expr_matcher)),
+      callExpr(
+          callee(expr(anyOf(unresolvedLookupExpr(), unresolvedMemberExpr()))),
+          hasAnyArgument(IgnoringParenCastFuncs(expr_matcher))));
+}
+
+StatementMatcher Annotator::InitOrAssignNonPointerVarWith(
+    const ExpressionMatcher& expr) const {
+  return anyOf(
+      declStmt(has(varDecl(unless(PointerVar()),
+                           hasInitializer(IgnoringParenCastFuncs(expr))))),
+      AssignTo(unless(declRefExpr(to(varDecl(PointerVar())))),
+               IgnoringParenCastFuncs(expr)));
+}
+
+CXXMemberCallMatcher Annotator::CallGetter() const {
+  return allOf(anyOf(hasType(PointerType()),
+                     callee(functionDecl(IsInSet(pointer_vars_)))),
+               on(declRefExpr(to(varDecl()))),
+               callee(cxxMethodDecl(parameterCountIs(0))));
 }
 
 class AnnotateASTConsumer : public clang::ASTConsumer {

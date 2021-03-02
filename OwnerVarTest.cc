@@ -283,8 +283,8 @@ TEST_F(PropagateTest, varOwnInitAssignOwnFunc) {
       T *var_init_point_func = GetT();
       gpos::owner<S *> var_init_cast_own_func = static_cast<S *>(MakeT(i));
 
-      Sink(var_init_own_func, var_assign_own_func, var_init_point_func,
-           var_init_cast_own_func);
+      Sink(std::move(var_init_own_func), std::move(var_assign_own_func),
+           var_init_point_func, std::move(var_init_cast_own_func));
     }
   )C++";
 
@@ -327,7 +327,8 @@ TEST_F(PropagateTest, paramOwnInitAssignOwnFunc) {
                T *var_init_point_func = GetT(),
                gpos::owner<T *> var_init_own_func = MakeT()) {
         var_assign_own_func = MakeT(i);
-        Sink(var_assign_own_func, var_init_point_func, var_init_own_func);
+        Sink(std::move(var_assign_own_func), var_init_point_func,
+             std::move(var_init_own_func));
       }
 
       virtual void bar(gpos::owner<T *> var_assign_own_func,
@@ -342,7 +343,7 @@ TEST_F(PropagateTest, paramOwnInitAssignOwnFunc) {
     void Q::bar(gpos::owner<T *> var_assign_own_func,
                 gpos::owner<T *> var_init_own_func) {
       var_assign_own_func = MakeT(0);
-      Sink(var_assign_own_func, var_init_own_func);
+      Sink(std::move(var_assign_own_func), std::move(var_init_own_func));
     }
   )C++";
 

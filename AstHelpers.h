@@ -15,6 +15,8 @@ static const constexpr llvm::StringRef kCastAnnotation = "gpos::cast";
 
 using ExpressionMatcher = decltype(clang::ast_matchers::nullPointerConstant());
 using FunctionMatcher = decltype(clang::ast_matchers::isDefaulted());
+using CXXMemberCallMatcher =
+    decltype(clang::ast_matchers::on(std::declval<ExpressionMatcher>()));
 using VarMatcher = decltype(clang::ast_matchers::hasLocalStorage());
 using ParamMatcher = decltype(clang::ast_matchers::hasDefaultArgument());
 using clang::ast_matchers::DeclarationMatcher;
