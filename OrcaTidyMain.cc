@@ -1,3 +1,4 @@
+#include "Converter.h"
 #include "IncludeFixer.h"
 #include "OrcaTidy.h"
 
@@ -21,7 +22,9 @@ code with clang-apply-replacements.
 static cl::SubCommand base("base");
 static cl::SubCommand propagate("propagate");
 static cl::SubCommand fix_include("fix-include");
+static cl::SubCommand convert("convert");
 
+int ConvertMain(tooling::RefactoringTool& tool);
 int AnnotateMain(tooling::RefactoringTool& tool) {
   orca_tidy::ActionOptions action_options;
   if (base) {
@@ -64,8 +67,11 @@ int main(int argc, const char* argv[]) {
   int exit_code = [&tool]() {
     if (fix_include) {
       return FixIncludeMain(tool);
-    } else {
+    } else if (base || propagate) {
       return AnnotateMain(tool);
+    } else {
+      assert(convert);
+      return ConvertMain(tool);
     }
   }();
 
@@ -99,4 +105,9 @@ int main(int argc, const char* argv[]) {
   }
 
   return 0;
+}
+
+int ConvertMain(tooling::RefactoringTool& tool) {
+  orca_tidy::Converter converter{tool.getReplacements()};
+  return tool.run(tooling::newFrontendActionFactory(&converter).get());
 }
