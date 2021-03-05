@@ -23,6 +23,10 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
     using owner = T;
     template <class T>
     using pointer = T;
+    template <class T>
+    using leaked = T;
+    template <class T>
+    using cast = T;
 
     template <class T>
     class Ref {

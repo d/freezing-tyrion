@@ -50,6 +50,12 @@ void ConverterAstConsumer::ConvertPointers() const {
            "pointer_field")) {
     StripPointer(field->getTypeSourceInfo()->getTypeLoc());
   }
+
+  for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
+           functionDecl(returns(anyOf(PointerType(), CastType()))).bind("f"),
+           "f")) {
+    StripPointer(f->getFunctionTypeLoc().getReturnLoc());
+  }
 }
 
 void ConverterAstConsumer::ConvertOwners() const {
@@ -57,6 +63,11 @@ void ConverterAstConsumer::ConvertOwners() const {
            fieldDecl(hasType(OwnerType())).bind("owner_field"),
            "owner_field")) {
     OwnerToRef(field->getTypeSourceInfo()->getTypeLoc());
+  }
+
+  for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
+           functionDecl(returns(OwnerType())).bind("f"), "f")) {
+    OwnerToRef(f->getFunctionTypeLoc().getReturnLoc());
   }
 }
 
