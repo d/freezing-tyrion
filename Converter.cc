@@ -22,8 +22,8 @@ class ConverterAstConsumer : public clang::ASTConsumer,
 
   void HandleTranslationUnit(clang::ASTContext& context) override {
     ConvertCcacheTypedefs();
-    ConvertPointerFields();
-    ConvertOwnerFields();
+    ConvertPointers();
+    ConvertOwners();
   }
 
  private:
@@ -33,40 +33,38 @@ class ConverterAstConsumer : public clang::ASTConsumer,
 
   const clang::LangOptions& LangOpts() const { return context_->getLangOpts(); }
 
-  void StripPointer(const clang::FieldDecl* field) const;
-  void OwnerToRef(const clang::FieldDecl* field) const;
+  void StripPointer(clang::TypeLoc type_loc) const;
+  void OwnerToRef(clang::TypeLoc type_loc) const;
 
   void ConvertCcacheTypedefs() const;
-  void ConvertPointerFields() const;
-  void ConvertOwnerFields() const;
+  void ConvertPointers() const;
+  void ConvertOwners() const;
 
   std::map<std::string, tooling::Replacements>& file_to_replaces_;
   clang::ASTContext* context_;
 };
 
-void ConverterAstConsumer::ConvertPointerFields() const {
+void ConverterAstConsumer::ConvertPointers() const {
   for (const auto* field : NodesFromMatchAST<clang::FieldDecl>(
            fieldDecl(hasType(PointerType())).bind("pointer_field"),
            "pointer_field")) {
-    StripPointer(field);
+    StripPointer(field->getTypeSourceInfo()->getTypeLoc());
   }
 }
 
-void ConverterAstConsumer::ConvertOwnerFields() const {
+void ConverterAstConsumer::ConvertOwners() const {
   for (const auto* field : NodesFromMatchAST<clang::FieldDecl>(
            fieldDecl(hasType(OwnerType())).bind("owner_field"),
            "owner_field")) {
-    OwnerToRef(field);
+    OwnerToRef(field->getTypeSourceInfo()->getTypeLoc());
   }
 }
 
-void ConverterAstConsumer::StripPointer(const clang::FieldDecl* field) const {
-  auto outer_loc = field->getTypeSourceInfo()->getTypeLoc();
-  auto range =
-      clang::CharSourceRange::getTokenRange(outer_loc.getSourceRange());
+void ConverterAstConsumer::StripPointer(clang::TypeLoc type_loc) const {
+  auto range = clang::CharSourceRange::getTokenRange(type_loc.getSourceRange());
 
   auto template_specialization =
-      IgnoringElaboratedQualified(outer_loc)
+      IgnoringElaboratedQualified(type_loc)
           .getAs<clang::TemplateSpecializationTypeLoc>();
   auto inner_source_range =
       template_specialization.getArgLoc(0).getSourceRange();
@@ -84,13 +82,11 @@ void ConverterAstConsumer::StripPointer(const clang::FieldDecl* field) const {
   CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
 }
 
-void ConverterAstConsumer::OwnerToRef(const clang::FieldDecl* field) const {
-  auto outer_loc = field->getTypeSourceInfo()->getTypeLoc();
-  auto range =
-      clang::CharSourceRange::getTokenRange(outer_loc.getSourceRange());
+void ConverterAstConsumer::OwnerToRef(clang::TypeLoc type_loc) const {
+  auto range = clang::CharSourceRange::getTokenRange(type_loc.getSourceRange());
 
   auto template_specialization =
-      IgnoringElaboratedQualified(outer_loc)
+      IgnoringElaboratedQualified(type_loc)
           .getAs<clang::TemplateSpecializationTypeLoc>();
   auto inner_source_range = template_specialization.getArgLoc(0)
                                 .getTypeSourceInfo()
