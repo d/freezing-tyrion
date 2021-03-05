@@ -76,4 +76,21 @@ TEST_F(ConvertAnnotation, funcRet) {
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
+
+TEST_F(ConvertAnnotation, var) {
+  std::string code = R"C++(
+    gpos::owner<T*> MakeT();
+    void f(gpos::owner<T*> o, gpos::pointer<T*> p);
+    void g() { gpos::leaked<T*> l = MakeT(); }
+  )C++",
+              expected_changed_code = R"C++(
+    Ref<T> MakeT();
+    void f(Ref<T> o, T* p);
+    void g() { Ref<T> l = MakeT(); }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
 }  // namespace orca_tidy

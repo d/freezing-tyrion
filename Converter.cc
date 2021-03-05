@@ -56,6 +56,11 @@ void ConverterAstConsumer::ConvertPointers() const {
            "f")) {
     StripPointer(f->getFunctionTypeLoc().getReturnLoc());
   }
+
+  for (const auto* v : NodesFromMatchAST<clang::VarDecl>(
+           varDecl(hasType(PointerType())).bind("v"), "v")) {
+    StripPointer(v->getTypeSourceInfo()->getTypeLoc());
+  }
 }
 
 void ConverterAstConsumer::ConvertOwners() const {
@@ -68,6 +73,13 @@ void ConverterAstConsumer::ConvertOwners() const {
   for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
            functionDecl(returns(OwnerType())).bind("f"), "f")) {
     OwnerToRef(f->getFunctionTypeLoc().getReturnLoc());
+  }
+
+  for (const auto* v : NodesFromMatchAST<clang::VarDecl>(
+           varDecl(hasType(qualType(anyOf(OwnerType(), LeakedType()))))
+               .bind("v"),
+           "v")) {
+    OwnerToRef(v->getTypeSourceInfo()->getTypeLoc());
   }
 }
 
