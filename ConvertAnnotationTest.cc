@@ -93,4 +93,51 @@ TEST_F(ConvertAnnotation, var) {
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
+
+TEST_F(ConvertAnnotation, typedefFRet) {
+  std::string code = R"C++(
+    typedef gpos::owner<T*>(PFo)();
+    typedef gpos::pointer<T*>(PFp)();
+  )C++",
+              expected_changed_code = R"C++(
+    typedef Ref<T>(PFo)();
+    typedef T*(PFp)();
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
+TEST_F(ConvertAnnotation, typedefPfRet) {
+  std::string code = R"C++(
+    typedef gpos::owner<T*> (*PFo)();
+    typedef gpos::pointer<T*> (*PFp)();
+  )C++",
+              expected_changed_code = R"C++(
+    typedef Ref<T> (*PFo)();
+    typedef T* (*PFp)();
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
+TEST_F(ConvertAnnotation, typedefPmfRet) {
+  std::string code = R"C++(
+    struct R {};
+    typedef gpos::owner<T*> (R::*PFo)();
+    typedef gpos::pointer<T*> (R::*PFp)();
+  )C++",
+              expected_changed_code = R"C++(
+    struct R {};
+    typedef Ref<T> (R::*PFo)();
+    typedef T* (R::*PFp)();
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
 }  // namespace orca_tidy

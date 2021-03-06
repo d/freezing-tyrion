@@ -1205,14 +1205,8 @@ void Annotator::AnnotateTypedefFunctionProtoTypeReturnType(
                                 !t->isMemberFunctionPointerType())
     return;
   auto underlying_loc = typedef_decl->getTypeSourceInfo()->getTypeLoc();
-  auto function_proto_type_loc =
-      (underlying_type->isMemberFunctionPointerType()
-           ? underlying_loc.getAs<clang::MemberPointerTypeLoc>().getPointeeLoc()
-       : underlying_type->isFunctionPointerType()
-           ? underlying_loc.getAs<clang::PointerTypeLoc>().getPointeeLoc()
-           : underlying_loc)
-          .getAsAdjusted<clang::FunctionProtoTypeLoc>();
-  auto return_loc = function_proto_type_loc.getReturnLoc();
+  auto function_type_loc = ExtractFunctionTypeLoc(typedef_decl);
+  auto return_loc = function_type_loc.getReturnLoc();
   auto return_type = return_loc.getType();
 
   if (Match(annotation_matcher, return_type)) return;

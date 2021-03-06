@@ -220,4 +220,22 @@ TypeMatcher IgnoringAnnotation(const TypeMatcher& inner_matcher) {
   return IgnoringAnnotationImpl(inner_matcher);
 }
 
+clang::FunctionTypeLoc ExtractFunctionTypeLoc(
+    const clang::TypedefNameDecl* typedef_name_decl) {
+  auto underlying_type = typedef_name_decl->getUnderlyingType();
+  auto type_loc = typedef_name_decl->getTypeSourceInfo()->getTypeLoc();
+  if (underlying_type->isFunctionType()) {
+    return type_loc.getAsAdjusted<clang::FunctionTypeLoc>();
+  }
+  auto without_parens = underlying_type.IgnoreParens();
+  clang::TypeLoc pointee_loc;
+  if (without_parens->isFunctionPointerType())
+    pointee_loc = type_loc.getAs<clang::PointerTypeLoc>().getPointeeLoc();
+  else if (without_parens->isMemberFunctionPointerType())
+    pointee_loc = type_loc.getAs<clang::MemberPointerTypeLoc>().getPointeeLoc();
+  else
+    llvm_unreachable("typedef does not contain function type");
+  return pointee_loc.getAsAdjusted<clang::FunctionTypeLoc>();
+}
+
 }  // namespace orca_tidy

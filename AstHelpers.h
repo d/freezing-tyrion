@@ -109,6 +109,31 @@ inline auto ForEachArgumentWithParamType(ExpressionMatcher arg_matcher,
 bool IsUniqRefToDeclInStmt(const clang::Expr* e, const clang::Decl* d,
                            const clang::Stmt* s);
 
+AST_MATCHER_P(clang::FunctionType, Returns, TypeMatcher, type_matcher) {
+  return type_matcher.matches(Node.getReturnType(), Finder, Builder);
+}
+
+using FunctionTypeMatcher = decltype(Returns(std::declval<TypeMatcher>()));
+
+AST_MATCHER_P(clang::Type, IsAnyFunctionType, FunctionTypeMatcher,
+              function_type_matcher) {
+  const auto* f = Node.getAsAdjusted<clang::FunctionType>();
+  if (f) {
+  } else if (const auto* pf = Node.getAsAdjusted<clang::PointerType>();
+             pf && pf->isFunctionPointerType()) {
+    f = pf->getPointeeType()->getAsAdjusted<clang::FunctionType>();
+  } else if (const auto* pmf = Node.getAsAdjusted<clang::MemberPointerType>();
+             pmf && pmf->isMemberFunctionPointer()) {
+    f = pmf->getPointeeType()->getAsAdjusted<clang::FunctionType>();
+  } else {
+    return false;
+  }
+  return function_type_matcher.matches(*f, Finder, Builder);
+}
+
+clang::FunctionTypeLoc ExtractFunctionTypeLoc(
+    const clang::TypedefNameDecl* typedef_name_decl);
+
 template <class Range>
 auto MakeVector(Range&& range) {
   using value_type = typename decltype(range.begin())::value_type;
