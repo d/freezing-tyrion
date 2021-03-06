@@ -831,9 +831,11 @@ VarMatcher Annotator::PassedToNonPointerCtorBaseInitializerOf(
 
 void Annotator::PropagateReturnOwner() const {
   for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
-           functionDecl(returns(RefCountPointerType()),
-                        hasAnyBody(hasDescendant(returnStmt(hasReturnValue(
-                            ignoringParenImpCasts(CallReturningOwner()))))))
+           functionDecl(
+               unless(cxxMethodDecl(ofClass(hasName("gpos::CCacheAccessor")))),
+               returns(RefCountPointerType()),
+               hasAnyBody(hasDescendant(returnStmt(hasReturnValue(
+                   ignoringParenImpCasts(CallReturningOwner()))))))
                .bind("f"),
            "f")) {
     AnnotateFunctionReturnOwner(f);
