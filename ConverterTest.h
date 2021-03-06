@@ -7,7 +7,8 @@
 namespace orca_tidy {
 struct ConverterTest : OrcaTidyTest<ConverterTest> {
   static inline const std::string kPreamble = R"C++(
-#include <utility>  // for move
+#include <typeindex>  // for hash
+#include <utility>    // for move
 
     namespace gpos {
     template <class Derived>
@@ -43,7 +44,15 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
       T* operator->() const;
       T& operator*() const;
       T* get() const;
+
+      template <class U>
+      Ref<U> getAs() &;
+      template <class U>
+      Ref<U> getAs() &&;
     };
+
+    template <class T>
+    Ref<T> RefFromNew(T*);
 
     template <class T>
     class CAutoP {
@@ -58,6 +67,9 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
     template <class T, class K>
     class CCacheAccessor {};
     }  // namespace gpos
+
+    template <class T>
+    struct std::hash<gpos::Ref<T>>;
 
     struct T : gpos::CRefCount<T> {};
   )C++";

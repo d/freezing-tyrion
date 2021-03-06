@@ -48,7 +48,8 @@ add_executable(
   OwnerVarTest.cc
   ConverterTest.cc
   ConvertAnnotationTest.cc
-  ConvertCcacheTest.cc)
+  ConvertCcacheTest.cc
+  OwnerToPointerTest.cc)
 target_link_libraries(orca-tidy-test orca_tidy gmock_main)
 
 include(GoogleTest)

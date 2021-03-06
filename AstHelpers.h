@@ -149,6 +149,21 @@ auto GetNode(const clang::ast_matchers::BoundNodes& bound_nodes, IDs... ids) {
     return std::tuple{bound_nodes.template getNodeAs<Nodes>(ids)...};
 }
 
+AST_MATCHER_P(clang::DeclStmt, ForEachDeclaration, DeclarationMatcher,
+              inner_matcher) {
+  std::remove_pointer_t<decltype(Builder)> result;
+  bool matched = false;
+  for (const auto* d : Node.decls()) {
+    auto matches = *Builder;
+    if (inner_matcher.matches(*d, Finder, &matches)) {
+      result.addMatch(matches);
+      matched = true;
+    }
+  }
+  *Builder = std::move(result);
+  return matched;
+}
+
 template <class Derived>
 struct NodesFromMatchBase {
   /// Convenience interface to go through the results of an AST match by

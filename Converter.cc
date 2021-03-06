@@ -1,5 +1,6 @@
 #include "Converter.h"
 #include "AstHelpers.h"
+#include "SwitchMatcher.h"
 #include "clang/Lex/Lexer.h"
 
 // NOLINTNEXTLINE: google-build-using-namespace
@@ -24,6 +25,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
     ConvertCcacheTypedefs();
     ConvertPointers();
     ConvertOwners();
+    ConvertOwnerToPointerImpCastToGet();
   }
 
  private:
@@ -35,10 +37,12 @@ class ConverterAstConsumer : public clang::ASTConsumer,
 
   void StripPointer(clang::TypeLoc type_loc) const;
   void OwnerToRef(clang::TypeLoc type_loc) const;
+  void DotGet(const clang::Expr* e) const;
 
   void ConvertCcacheTypedefs() const;
   void ConvertPointers() const;
   void ConvertOwners() const;
+  void ConvertOwnerToPointerImpCastToGet() const;
 
   std::map<std::string, tooling::Replacements>& file_to_replaces_;
   clang::ASTContext* context_;
@@ -212,6 +216,45 @@ void ConverterAstConsumer::ConvertCcacheTypedefs() const {
                         arg_loc.getPointeeLoc().getSourceRange(),
                         kRefAnnotation, AstContext(), file_to_replaces_);
   }
+}
+
+void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
+  auto has_owner_type = hasType(qualType(anyOf(OwnerType(), LeakedType())));
+  auto return_owner_as_pointer = returnStmt(
+      hasReturnValue(ignoringParenImpCasts(expr(has_owner_type).bind("owner"))),
+      forFunction(returns(PointerType())));
+  auto init_pointer_vars = declStmt(ForEachDeclaration(varDecl(
+      hasType(PointerType()), hasInitializer(IgnoringParenCastFuncs(
+                                  expr(has_owner_type).bind("owner"))))));
+  auto assign_to_pointer_vars =
+      AssignTo(expr(hasType(PointerType())),
+               IgnoringParenCastFuncs(expr(has_owner_type).bind("owner")));
+  auto pass_owner_arg_to_poiner_param =
+      expr(IgnoringParenCastFuncs(invocation(ForEachArgumentWithParamType(
+          expr(has_owner_type).bind("owner"), PointerType()))));
+  for (const auto* owner : NodesFromMatchAST<clang::Expr>(
+           stmt(anyOf(return_owner_as_pointer, init_pointer_vars,
+                      assign_to_pointer_vars, pass_owner_arg_to_poiner_param)),
+           "owner")) {
+    DotGet(owner);
+  }
+
+  for (const auto* owner : NodesFromMatchAST<clang::Expr>(
+           cxxCtorInitializer(
+               forField(hasType(PointerType())),
+               withInitializer(expr(has_owner_type).bind("owner"))),
+           "owner")) {
+    DotGet(owner);
+  }
+}
+
+void ConverterAstConsumer::DotGet(const clang::Expr* e) const {
+  auto range = clang::CharSourceRange::getTokenRange(e->getSourceRange());
+  auto e_src_txt =
+      clang::Lexer::getSourceText(range, SourceManager(), LangOpts()).str();
+  tooling::Replacement r{SourceManager(), range, e_src_txt + ".get()",
+                         LangOpts()};
+  CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
 }
 
 }  // namespace

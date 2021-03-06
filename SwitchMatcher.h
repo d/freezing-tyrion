@@ -135,7 +135,7 @@ struct FalseMatcher {
 /// because if a node matches all of \c case1, \c case2, and \c then2 but
 /// doesn't match \c then1, \c Switch() would return false, whereas \c anyOf
 /// returns true.
-auto Switch() {
+inline auto Switch() {
   return internal::SwitchBuilder<internal::FalseMatcher>{{}, {}};
 }
 }  // namespace orca_tidy
