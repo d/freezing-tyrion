@@ -932,8 +932,11 @@ void Annotator::PropagateTailCall() const {
                                       is_used_in_non_pointer_ctor_initializers))
                                   .bind("var")))
                            .bind("arg"),
-                       optionally(parmVarDecl(unless(isInstantiated()))
-                                      .bind("param"))),
+                       optionally(
+                           parmVarDecl(unless(isInstantiated()),
+                                       unless(hasDeclContext(functionDecl(
+                                           hasName("SafeRelease")))))
+                               .bind("param"))),
                    hasDeclaration(
                        functionDecl(unless(hasName("std::move"))))))),
                *r, "param", "var", "arg")) {
