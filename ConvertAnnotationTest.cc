@@ -61,7 +61,7 @@ TEST_F(ConvertAnnotation, funcRet) {
     gpos::pointer<T*> f();
     gpos::pointer<const T*> g();
     gpos::owner<T*> h();
-    gpos::cast<S*> i(T*);
+    gpos::cast_func<S*> i(T*);
   )C++",
               expected_changed_code = R"C++(
     struct S : T {};

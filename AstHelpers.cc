@@ -238,4 +238,13 @@ clang::FunctionTypeLoc ExtractFunctionTypeLoc(
   return pointee_loc.getAsAdjusted<clang::FunctionTypeLoc>();
 }
 
+clang::TypeLoc GetPointeeLocOfFirstTemplateArg(clang::TypeLoc type_loc) {
+  return type_loc.getAsAdjusted<clang::TemplateSpecializationTypeLoc>()
+      .getArgLoc(0)
+      .getTypeSourceInfo()
+      ->getTypeLoc()
+      .getAs<clang::PointerTypeLoc>()
+      .getPointeeLoc();
+}
+
 }  // namespace orca_tidy

@@ -302,5 +302,7 @@ void AnnotateSourceRange(
     const clang::ASTContext& ast_context,
     std::map<std::string, clang::tooling::Replacements>& replacements);
 
+clang::TypeLoc GetPointeeLocOfFirstTemplateArg(clang::TypeLoc type_loc);
+
 }  // namespace orca_tidy
 #endif  // ORCATIDY__ASTHELPERS_H_

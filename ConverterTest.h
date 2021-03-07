@@ -27,7 +27,7 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
     template <class T>
     using leaked = T;
     template <class T>
-    using cast = T;
+    using cast_func = T;
 
     template <class T>
     class Ref {
@@ -53,6 +53,13 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
 
     template <class T>
     Ref<T> RefFromNew(T*);
+
+    template <class X, class Y>
+    X* dyn_cast(Y*);
+    template <class X, class Y>
+    Ref<X> dyn_cast(Ref<Y>&&);
+    template <class X, class Y>
+    Ref<X> dyn_cast(const Ref<Y>&);
 
     template <class T>
     class CAutoP {

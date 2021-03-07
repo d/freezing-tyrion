@@ -26,6 +26,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
     ConvertPointers();
     ConvertOwners();
     ConvertOwnerToPointerImpCastToGet();
+    ConvertCallCastFuncs();
   }
 
  private:
@@ -43,6 +44,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
   void ConvertPointers() const;
   void ConvertOwners() const;
   void ConvertOwnerToPointerImpCastToGet() const;
+  void ConvertCallCastFuncs() const;
 
   std::map<std::string, tooling::Replacements>& file_to_replaces_;
   clang::ASTContext* context_;
@@ -126,15 +128,9 @@ void ConverterAstConsumer::StripPointer(clang::TypeLoc type_loc) const {
 void ConverterAstConsumer::OwnerToRef(clang::TypeLoc type_loc) const {
   auto range = clang::CharSourceRange::getTokenRange(type_loc.getSourceRange());
 
-  auto template_specialization =
-      IgnoringElaboratedQualified(type_loc)
-          .getAs<clang::TemplateSpecializationTypeLoc>();
-  auto inner_source_range = template_specialization.getArgLoc(0)
-                                .getTypeSourceInfo()
-                                ->getTypeLoc()
-                                .getAs<clang::PointerTypeLoc>()
-                                .getPointeeLoc()
-                                .getSourceRange();
+  auto inner_source_range =
+      GetPointeeLocOfFirstTemplateArg(IgnoringElaboratedQualified(type_loc))
+          .getSourceRange();
   auto inner_token_range =
       clang::CharSourceRange::getTokenRange(inner_source_range);
   auto pointee_spelling = clang::Lexer::getSourceText(
@@ -255,6 +251,25 @@ void ConverterAstConsumer::DotGet(const clang::Expr* e) const {
   tooling::Replacement r{SourceManager(), range, e_src_txt + ".get()",
                          LangOpts()};
   CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
+}
+
+void ConverterAstConsumer::ConvertCallCastFuncs() const {
+  for (const auto* call : NodesFromMatchAST<clang::CallExpr>(
+           callExpr(hasType(CastType())).bind("call"), "call")) {
+    auto range = clang::CharSourceRange::getTokenRange(
+        call->getCallee()->getSourceRange());
+    const auto* f = call->getDirectCallee();
+    auto pointee_source_range =
+        GetPointeeLocOfFirstTemplateArg(f->getFunctionTypeLoc().getReturnLoc())
+            .getSourceRange();
+    auto pointee_spelling = clang::Lexer::getSourceText(
+        clang::CharSourceRange::getTokenRange(pointee_source_range),
+        SourceManager(), LangOpts());
+    auto replacement_text = ("gpos::dyn_cast<" + pointee_spelling + ">").str();
+    tooling::Replacement r{SourceManager(), range, replacement_text,
+                           LangOpts()};
+    CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
+  }
 }
 
 }  // namespace
