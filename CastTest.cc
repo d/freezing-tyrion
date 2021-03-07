@@ -17,7 +17,7 @@ TEST_F(BaseTest, retCastDyncast) {
     };
 
     struct Q : R {
-      static gpos::cast<Q*> Cast(R* r) { return dynamic_cast<Q*>(r); }
+      static gpos::cast_func<Q*> Cast(R* r) { return dynamic_cast<Q*>(r); }
     };
   )C++";
 
@@ -46,7 +46,7 @@ TEST_F(BaseTest, retCastInitDyncast) {
     };
 
     struct Q : R {
-      static gpos::cast<Q*> Cast(R* r) {
+      static gpos::cast_func<Q*> Cast(R* r) {
         Q* q = dynamic_cast<Q*>(r);
         Assert(q != nullptr);
         return q;

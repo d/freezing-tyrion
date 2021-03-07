@@ -16,10 +16,10 @@ TypeMatcher AnnotationType(NamedMatcher named_matcher) {
 TypeMatcher OwnerType() { return AnnotationType(hasName("::gpos::owner")); }
 TypeMatcher PointerType() { return AnnotationType(hasName("::gpos::pointer")); }
 TypeMatcher LeakedType() { return AnnotationType(hasName("::gpos::leaked")); }
-TypeMatcher CastType() { return AnnotationType(hasName("::gpos::cast")); }
+TypeMatcher CastType() { return AnnotationType(hasName("::gpos::cast_func")); }
 TypeMatcher AnnotatedType() {
   return AnnotationType(hasAnyName("::gpos::pointer", "::gpos::owner",
-                                   "::gpos::leaked", "::gpos::cast"));
+                                   "::gpos::leaked", "::gpos::cast_func"));
 }
 
 TypeMatcher RefCountPointerType() {

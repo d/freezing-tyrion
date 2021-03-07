@@ -11,7 +11,7 @@ namespace orca_tidy {
 
 static const constexpr llvm::StringRef kOwnerAnnotation = "gpos::owner";
 static const constexpr llvm::StringRef kPointerAnnotation = "gpos::pointer";
-static const constexpr llvm::StringRef kCastAnnotation = "gpos::cast";
+static const constexpr llvm::StringRef kCastAnnotation = "gpos::cast_func";
 
 using ExpressionMatcher = decltype(clang::ast_matchers::nullPointerConstant());
 using FunctionMatcher = decltype(clang::ast_matchers::isDefaulted());

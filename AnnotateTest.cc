@@ -39,7 +39,7 @@ std::string AnnotateTest::runToolOverCode(std::string code) {
     using leaked = T;
 
     template <class T>
-    using cast = T;
+    using cast_func = T;
     }  // namespace gpos
 #endif
   )C++";
