@@ -1,0 +1,181 @@
+#!/bin/bash
+
+set -e -u -o pipefail
+
+: "${CLANG_FORMAT:=clang-format}"
+
+readonly BUILD_DIR="$(dirname "$0")"/build.release
+readonly GPDB_PATH=$PWD
+
+apply_fixes() {
+	clang-apply-replacements-13 -format -style file -style-config src/backend/gporca tidy-fixes
+}
+
+remove_previous_fixes() {
+	find tidy-fixes -type f -name 'fix*.yaml' -delete
+}
+
+gpopt_files() {
+	git ls-files 'src/backend/gpopt/*.cpp'
+}
+
+gporca_files() {
+	git ls-files 'src/backend/gporca/*.cpp'
+}
+
+annotate() {
+	local build_dir max_args stage
+	build_dir=$1
+	max_args=$2
+	stage=$3
+
+	test -d "${build_dir}"
+
+	parallel --load 125% -q "${max_args}" --halt now,fail=2 "${BUILD_DIR}"/annotate "${stage}" -p "${build_dir}" -export-fixes 'tidy-fixes/fix-{#}.yaml' {}
+}
+
+fix_includes() {
+	local build_dir
+	build_dir=$1
+	shift
+
+	test -d "${build_dir}"
+	git diff --name-only -- "$@" |
+		xargs --no-run-if-empty --max-args 512 "${BUILD_DIR}"/annotate fix-include -p "${build_dir}"
+}
+
+fix_all_includes() {
+	fix_includes "${GPDB_PATH}" ':/src/'{backend,include}'/gpopt/*'.{cpp,h}
+	fix_includes "${GPORCA_BUILD_DIR}" ':/src/backend/gporca/*'.{cpp,h}
+}
+
+sponge() {
+	perl -e 'my $cf = do {local $/; <STDIN>}; open(my $fh, ">", shift); print($fh $cf);' "$1"
+}
+
+fix_relative_include_paths_in_compdb() {
+	jq --from-file ~/src/d/freezing-tyrion/fix-include-path.jq compile_commands.json | sponge compile_commands.json
+}
+
+git_add_all_src() {
+	git add -u -- '*.cpp' '*.h'
+	time git diff --cached --name-only -- '*.cpp' '*.h' | parallel -qn8 "${CLANG_FORMAT}" -i
+	git commit --allow-empty -m "$1" -- '*.cpp' '*.h'
+}
+
+diff_all_src() {
+	# git diff -- ':/*.cpp' ':/*.h' | md5sum
+	git diff "${HEAD_COMMIT}" -- ':/*.cpp' ':/*.h' | md5sum
+}
+
+sanity_check() {
+	if git grep -nF "-e"{owner,pointer}'<'{gpos::{owner,pointer,cast},leaked}; then
+		echo >&2 Conflicting annotation detected
+		return 1
+	fi
+	if grep -F xerces tidy-fixes/fix*.yaml; then
+		echo >&2 WTF Xerces
+		return 2
+	fi
+	if grep -Fw XMLCh tidy-fixes/fix*.yaml; then
+		echo >&2 WTF XMLCh
+		return 3
+	fi
+	if grep -F 'const K' tidy-fixes/fix*.yaml; then
+		echo >&2 WTF template
+		return 4
+	fi
+}
+
+do_convert() {
+	local build_dir max_args stage
+	build_dir=$1
+	max_args=$2
+	edit_prefix=$3
+
+	test -d "${build_dir}"
+
+	parallel --load 125% -q "${max_args}" --halt now,fail=2 "${BUILD_DIR}"/annotate convert -p "${build_dir}" -export-fixes "tidy-fixes/fix-convert-${edit_prefix}-{#}.yaml" {}
+}
+
+convert() {
+	sanity_check
+
+	echo Converting gpopt
+	remove_previous_fixes
+	time gpopt_files | do_convert "${GPDB_PATH}" -n1 gpopt
+
+	echo Converting gporca
+	time gporca_files | do_convert "${GPORCA_BUILD_DIR}" -n8 gporca
+
+	apply_fixes
+
+	git_add_all_src "Converted."
+}
+
+propagate() {
+	local prev_diff diff
+	prev_diff=$(diff_all_src)
+	local i
+	for i in {1..99}; do
+		sanity_check
+
+		echo Iteration \#$i
+		remove_previous_fixes
+		time gpopt_files | annotate "${GPDB_PATH}" -n1 propagate
+		apply_fixes
+		fix_all_includes
+
+		remove_previous_fixes
+		time gporca_files | annotate "${GPORCA_BUILD_DIR}" -n8 propagate
+		apply_fixes
+		fix_all_includes
+
+		diff=$(diff_all_src)
+		if [[ "${prev_diff}" = "${diff}" ]]; then
+			printf "Done propagation after %d iteration(s)\n" "${i}"
+			return 0
+		fi
+		git_add_all_src "Propagation iteration #${i}."
+		prev_diff=${diff}
+	done
+
+}
+
+gpopt_base() {
+	remove_previous_fixes
+	time gpopt_files | annotate "${GPDB_PATH}" -n1 base
+	apply_fixes
+	fix_all_includes
+	sanity_check
+	git_add_all_src "Apply base rules over gpopt translator."
+}
+
+gporca_base() {
+	remove_previous_fixes
+	time gporca_files | annotate "${GPORCA_BUILD_DIR}" -n16 base
+	apply_fixes
+	fix_all_includes
+	sanity_check
+	git_add_all_src "Apply base rules over gporca."
+}
+
+_main() {
+	local GPORCA_BUILD_DIR=$1
+
+	fix_relative_include_paths_in_compdb
+
+	HEAD_COMMIT=$(git rev-parse HEAD)
+
+	gpopt_base
+
+	gporca_base
+
+	propagate
+
+	convert
+
+	git diff "${HEAD_COMMIT}" -- '*.cpp' '*.h' | md5sum
+}
+
+_main "$@"
