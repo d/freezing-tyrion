@@ -1309,13 +1309,18 @@ void Annotator::InferCastFunctions() const {
 }
 
 void Annotator::InferPointerParamsForBoolFunctions() const {
-  for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
-           parmVarDecl(hasType(RefCountPointerType()), unless(isInstantiated()),
-                       hasDeclContext(
-                           cxxMethodDecl(returns(booleanType()), IsStatic())))
-               .bind("param"),
-           "param")) {
-    AnnotateParameter(param, PointerType(), kPointerAnnotation);
+  for (const auto* f : NodesFromMatchAST<clang::CXXMethodDecl>(
+           cxxMethodDecl(returns(booleanType()), IsStatic(),
+                         unless(isInstantiated()),
+                         hasAnyParameter(hasType(RefCountPointerType())))
+               .bind("f"),
+           "f")) {
+    for (const auto* param : llvm::make_filter_range(
+             f->parameters(), [this](const clang::ParmVarDecl* param) {
+               return Match(RefCountPointerType(), param->getType());
+             })) {
+      AnnotateParameter(param, PointerType(), kPointerAnnotation);
+    }
   }
 }
 

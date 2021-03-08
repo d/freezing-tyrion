@@ -19,7 +19,7 @@ TEST_F(BaseTest, paramPointBoolFunc) {
 }
 
 TEST_F(BaseTest, paramPointerBoolFuncNegativeCases) {
-  std::string code = R"C++(
+  std::string instantiated = R"C++(
     template <class U>
     struct R {
       static bool foo(U* u) {
@@ -28,14 +28,22 @@ TEST_F(BaseTest, paramPointerBoolFuncNegativeCases) {
       }
     };
     template struct R<T>;
-
+  )C++",
+              non_static = R"C++(
     struct Q {
       bool bar(T* t);
     };
-
+  )C++",
+              non_method = R"C++(
     static bool baz(T* t);
   )C++";
 
-  ASSERT_EQ(format(kPreamble + code), annotateAndFormat(code));
+  for (auto& code : {
+           instantiated,
+           non_static,
+           non_method,
+       }) {
+    ASSERT_EQ(format(kPreamble + code), annotateAndFormat(code));
+  }
 }
 }  // namespace orca_tidy
