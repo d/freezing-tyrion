@@ -36,12 +36,18 @@ TEST_F(BaseTest, paramPointerBoolFuncNegativeCases) {
   )C++",
               non_method = R"C++(
     static bool baz(T* t);
+  )C++",
+              has_output_param = R"C++(
+    struct Q {
+      static bool bar(T* t, T**);
+    };
   )C++";
 
-  for (auto& code : {
+  for (const auto& code : {
            instantiated,
            non_static,
            non_method,
+           has_output_param,
        }) {
     ASSERT_EQ(format(kPreamble + code), annotateAndFormat(code));
   }

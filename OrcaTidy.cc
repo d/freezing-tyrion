@@ -1310,9 +1310,10 @@ void Annotator::InferCastFunctions() const {
 
 void Annotator::InferPointerParamsForBoolFunctions() const {
   for (const auto* f : NodesFromMatchAST<clang::CXXMethodDecl>(
-           cxxMethodDecl(returns(booleanType()), IsStatic(),
-                         unless(isInstantiated()),
-                         hasAnyParameter(hasType(RefCountPointerType())))
+           cxxMethodDecl(
+               returns(booleanType()), IsStatic(), unless(isInstantiated()),
+               hasAnyParameter(hasType(RefCountPointerType())),
+               unless(hasAnyParameter(hasType(RefCountPointerPointerType()))))
                .bind("f"),
            "f")) {
     for (const auto* param : llvm::make_filter_range(
