@@ -254,17 +254,74 @@ void ConverterAstConsumer::DotGet(const clang::Expr* e) const {
 }
 
 void ConverterAstConsumer::ConvertCallCastFuncs() const {
-  for (const auto* call : NodesFromMatchAST<clang::CallExpr>(
-           callExpr(hasType(CastType())).bind("call"), "call")) {
-    auto range = clang::CharSourceRange::getTokenRange(
-        call->getCallee()->getSourceRange());
-    const auto* f = call->getDirectCallee();
-    auto pointee_source_range =
-        GetPointeeLocOfFirstTemplateArg(f->getFunctionTypeLoc().getReturnLoc())
-            .getSourceRange();
-    auto pointee_spelling = clang::Lexer::getSourceText(
-        clang::CharSourceRange::getTokenRange(pointee_source_range),
-        SourceManager(), LangOpts());
+  for (auto [call, enclosing_function] :
+       NodesFromMatchAST<clang::CallExpr, clang::FunctionDecl>(
+           callExpr(optionally(stmt(isInTemplateInstantiation(),
+                                    forFunction(functionDecl().bind("f")))),
+                    hasType(CastType()))
+               .bind("call"),
+           "call", "f")) {
+    auto source_range = call->getCallee()->getSourceRange();
+    auto range = clang::CharSourceRange::getTokenRange(source_range);
+
+    auto PointeeSpellingFromDirectCallee =
+        [this](const clang::FunctionDecl* direct_callee) {
+          auto pointee_source_range =
+              GetPointeeLocOfFirstTemplateArg(
+                  direct_callee->getFunctionTypeLoc().getReturnLoc())
+                  .getSourceRange();
+          return clang::Lexer::getSourceText(
+              clang::CharSourceRange::getTokenRange(pointee_source_range),
+              SourceManager(), LangOpts());
+        };
+
+    auto ExprInTemplate = [this](
+                              clang::SourceRange callee_source_range,
+                              const clang::FunctionDecl* enclosing_function) {
+      auto* func_in_primary_template =
+          enclosing_function->getTemplateInstantiationPattern();
+      auto exprs_in_primary_template = NodesFromMatchNode<clang::Expr>(
+          traverse(clang::TK_IgnoreUnlessSpelledInSource,
+                   stmt(forEachDescendant(
+                       expr(HasSourceRange(callee_source_range)).bind("e")))),
+          *func_in_primary_template->getBody(), "e");
+      assert(exprs_in_primary_template.size() == 1);
+      return exprs_in_primary_template.front();
+    };
+
+    auto PointeeSpellingFromNestedNameSpecifier =
+        [](const clang::Expr* callee_in_template) {
+          assert(callee_in_template->isTypeDependent());
+          const auto* dre = llvm::dyn_cast<clang::DependentScopeDeclRefExpr>(
+              callee_in_template);
+          const auto* me = llvm::dyn_cast<clang::CXXDependentScopeMemberExpr>(
+              callee_in_template);
+          assert(dre || me);
+          auto* callee_qualifier =
+              dre ? dre->getQualifier() : me->getQualifier();
+          const auto* qualifier_as_type = callee_qualifier->getAsType();
+          assert(qualifier_as_type);
+          const auto* template_type_parm_type =
+              llvm::dyn_cast<clang::TemplateTypeParmType>(qualifier_as_type);
+          assert(template_type_parm_type);
+          return template_type_parm_type->getDecl()->getName();
+        };
+
+    llvm::StringRef pointee_spelling;
+    if (enclosing_function) {
+      const clang::Expr* callee_in_template =
+          ExprInTemplate(source_range, enclosing_function);
+      if (const auto* direct_callee = llvm::cast_or_null<clang::FunctionDecl>(
+              callee_in_template->getReferencedDeclOfCallee())) {
+        pointee_spelling = PointeeSpellingFromDirectCallee(direct_callee);
+      } else {
+        pointee_spelling =
+            PointeeSpellingFromNestedNameSpecifier(callee_in_template);
+      }
+    } else {
+      const auto* direct_callee = call->getDirectCallee();
+      pointee_spelling = PointeeSpellingFromDirectCallee(direct_callee);
+    }
     auto replacement_text = ("gpos::dyn_cast<" + pointee_spelling + ">").str();
     tooling::Replacement r{SourceManager(), range, replacement_text,
                            LangOpts()};

@@ -112,6 +112,11 @@ AST_MATCHER_P(clang::QualType, IgnoringAnnotationImpl, TypeMatcher,
   return type_matcher.matches(StripAnnotation(Node), Finder, Builder);
 }
 
+AST_MATCHER_P(clang::Stmt, HasSourceRangeImpl, clang::SourceRange,
+              source_range) {
+  return Node.getSourceRange() == source_range;
+}
+
 }  // namespace
 
 clang::QualType StripElaborated(clang::QualType qual_type) {
@@ -245,6 +250,10 @@ clang::TypeLoc GetPointeeLocOfFirstTemplateArg(clang::TypeLoc type_loc) {
       ->getTypeLoc()
       .getAs<clang::PointerTypeLoc>()
       .getPointeeLoc();
+}
+
+StatementMatcher HasSourceRange(clang::SourceRange source_range) {
+  return HasSourceRangeImpl(source_range);
 }
 
 }  // namespace orca_tidy

@@ -304,5 +304,7 @@ void AnnotateSourceRange(
 
 clang::TypeLoc GetPointeeLocOfFirstTemplateArg(clang::TypeLoc type_loc);
 
+StatementMatcher HasSourceRange(clang::SourceRange source_range);
+
 }  // namespace orca_tidy
 #endif  // ORCATIDY__ASTHELPERS_H_
