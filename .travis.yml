@@ -15,6 +15,7 @@ addons:
       - parallel
       - llvm-dev
       - clang
+      - g++-10
         # We need this or CMake errors out importing Clang. It's annoying that
         # we have to have a version number here because I really just want
         # (that thing that HEAD llvm-dev depends on)
@@ -33,5 +34,5 @@ after_script:
 
 script:
   - CLANG_FORMAT=clang-format-12 hack/fmt chk
-  - LLVM_ROOT=/usr LDFLAGS=-fuse-ld=lld hack/hack gen Debug build
+  - CC=gcc-10 CXX=g++-10 LLVM_ROOT=/usr LDFLAGS=-fuse-ld=lld hack/hack gen Debug build
   - hack/hack test build
