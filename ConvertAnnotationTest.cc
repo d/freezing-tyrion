@@ -125,6 +125,29 @@ TEST_F(ConvertAnnotation, eraseRelease) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(ConvertAnnotation, eraseAddRef) {
+  std::string code = R"C++(
+    void F(gpos::owner<T*>);
+
+    void f(gpos::pointer<T*> t) {
+      t->AddRef();
+      return F(t);
+    }
+  )C++",
+              expected_changed_code = R"C++(
+    void F(gpos::Ref<T>);
+
+    void f(T* t) {
+      ;
+      return F(t);
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 TEST_F(ConvertAnnotation, typedefFRet) {
   std::string code = R"C++(
     typedef gpos::owner<T*>(PFo)();

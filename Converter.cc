@@ -26,6 +26,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
     ConvertRefArrayTypedefs();
     ConvertPointers();
     ConvertOwners();
+    EraseAddRefs();
     ConvertOwnerToPointerImpCastToGet();
     ConvertCallCastFuncs();
   }
@@ -46,6 +47,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
   void ConvertRefArrayTypedefs() const;
   void ConvertPointers() const;
   void ConvertOwners() const;
+  void EraseAddRefs() const;
   void ConvertOwnerToPointerImpCastToGet() const;
   void ConvertCallCastFuncs() const;
 
@@ -371,6 +373,13 @@ void ConverterAstConsumer::ConvertCallCastFuncs() const {
     tooling::Replacement r{SourceManager(), range, replacement_text,
                            LangOpts()};
     CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
+  }
+}
+
+void ConverterAstConsumer::EraseAddRefs() const {
+  for (const auto* e : NodesFromMatchAST<clang::Expr>(
+           callExpr(AddRefOn(expr())).bind("e"), "e")) {
+    EraseStmt(e);
   }
 }
 
