@@ -40,10 +40,13 @@ AST_MATCHER(clang::NamedDecl, Unused) {
 using CXXMethodMatcher = decltype(isOverride());
 AST_MATCHER_P(clang::CXXMethodDecl, HasOverridden, CXXMethodMatcher,
               inner_matcher) {
-  return llvm::any_of(Node.overridden_methods(),
-                      [=, this](const clang::CXXMethodDecl* m) {
-                        return inner_matcher.matches(*m, Finder, Builder);
-                      });
+  for (const auto* m : Node.overridden_methods()) {
+    auto result = *Builder;
+    if (!inner_matcher.matches(*m, Finder, &result)) continue;
+    *Builder = std::move(result);
+    return true;
+  }
+  return false;
 }
 
 AST_MATCHER(clang::FunctionDecl, HasRedecls) {
