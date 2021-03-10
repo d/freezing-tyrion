@@ -41,7 +41,7 @@ using CXXMethodMatcher = decltype(isOverride());
 AST_MATCHER_P(clang::CXXMethodDecl, HasOverridden, CXXMethodMatcher,
               inner_matcher) {
   return llvm::any_of(Node.overridden_methods(),
-                      [=](const clang::CXXMethodDecl* m) {
+                      [=, this](const clang::CXXMethodDecl* m) {
                         return inner_matcher.matches(*m, Finder, Builder);
                       });
 }
