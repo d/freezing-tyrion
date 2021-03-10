@@ -15,7 +15,7 @@ TEST_F(ConvertAnnotation, pointerToRaw) {
     };
   )C++";
 
-  auto changed_code = annotateAndFormat(code);
+  auto changed_code = annotateAndFormat(std::move(code));
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
@@ -32,7 +32,7 @@ TEST_F(ConvertAnnotation, constPointerToRaw) {
     };
   )C++";
 
-  auto changed_code = annotateAndFormat(code);
+  auto changed_code = annotateAndFormat(std::move(code));
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
@@ -49,7 +49,7 @@ TEST_F(ConvertAnnotation, ownerToRef) {
     };
   )C++";
 
-  auto changed_code = annotateAndFormat(code);
+  auto changed_code = annotateAndFormat(std::move(code));
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
@@ -72,7 +72,7 @@ TEST_F(ConvertAnnotation, funcRet) {
     S* i(T*);
   )C++";
 
-  auto changed_code = annotateAndFormat(code);
+  auto changed_code = annotateAndFormat(std::move(code));
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
@@ -89,7 +89,38 @@ TEST_F(ConvertAnnotation, var) {
     void g() { gpos::Ref<T> l = MakeT(); }
   )C++";
 
-  auto changed_code = annotateAndFormat(code);
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
+TEST_F(ConvertAnnotation, eraseRelease) {
+  std::string code = R"C++(
+    class R {
+      gpos::owner<T*> t_;
+      ~R() { t_->Release(); }
+    };
+
+    gpos::owner<T*> MakeT();
+    void f() {
+      gpos::owner<T*> t = MakeT();
+      gpos::SafeRelease(t);
+    }
+  )C++",
+              expected_changed_code = R"C++(
+    class R {
+      gpos::Ref<T> t_;
+      ~R() { ; }
+    };
+
+    gpos::Ref<T> MakeT();
+    void f() {
+      gpos::Ref<T> t = MakeT();
+      ;
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
@@ -104,7 +135,7 @@ TEST_F(ConvertAnnotation, typedefFRet) {
     typedef T*(PFp)();
   )C++";
 
-  auto changed_code = annotateAndFormat(code);
+  auto changed_code = annotateAndFormat(std::move(code));
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
@@ -119,7 +150,7 @@ TEST_F(ConvertAnnotation, typedefPfRet) {
     typedef T* (*PFp)();
   )C++";
 
-  auto changed_code = annotateAndFormat(code);
+  auto changed_code = annotateAndFormat(std::move(code));
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
@@ -136,7 +167,7 @@ TEST_F(ConvertAnnotation, typedefPmfRet) {
     typedef T* (R::*PFp)();
   )C++";
 
-  auto changed_code = annotateAndFormat(code);
+  auto changed_code = annotateAndFormat(std::move(code));
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }

@@ -271,4 +271,24 @@ StatementMatcher CallRefArraySubscript() {
       cxxMethodDecl(hasOverloadedOperatorName("[]"), ofClass(RefArrayDecl()))));
 }
 
+StatementMatcher FieldReferenceFor(const DeclarationMatcher& field_matcher) {
+  return memberExpr(member(field_matcher),
+                    hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
+}
+
+StatementMatcher ReleaseCallExpr(const ExpressionMatcher& reference_to_field) {
+  auto release = cxxMemberCallExpr(
+      callee(cxxMethodDecl(hasName("Release"), parameterCountIs(0))),
+      on(reference_to_field));
+  auto safe_release = callExpr(
+      callee(functionDecl(hasName("SafeRelease"), parameterCountIs(1))),
+      hasArgument(0, reference_to_field));
+  return anyOf(release, safe_release);
+}
+
+StatementMatcher AddRefOn(const ExpressionMatcher& expr_matcher) {
+  return cxxMemberCallExpr(callee(cxxMethodDecl(hasName("AddRef"))),
+                           on(expr_matcher));
+}
+
 }  // namespace orca_tidy

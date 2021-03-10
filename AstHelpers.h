@@ -311,5 +311,9 @@ StatementMatcher HasSourceRange(clang::SourceRange source_range);
 __attribute__((const)) DeclarationMatcher RefArrayDecl();
 __attribute__((const)) TemplateArgumentMatcher RefersToCleanupRelease();
 
+StatementMatcher FieldReferenceFor(DeclarationMatcher const& field_matcher);
+StatementMatcher ReleaseCallExpr(ExpressionMatcher const& reference_to_field);
+StatementMatcher AddRefOn(ExpressionMatcher const& expr_matcher);
+
 }  // namespace orca_tidy
 #endif  // ORCATIDY__ASTHELPERS_H_

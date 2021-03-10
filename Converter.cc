@@ -40,6 +40,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
   void StripPointer(clang::TypeLoc type_loc) const;
   void OwnerToRef(clang::TypeLoc type_loc) const;
   void DotGet(const clang::Expr* e) const;
+  void EraseStmt(const clang::Stmt* e) const;
 
   void ConvertCcacheTypedefs() const;
   void ConvertRefArrayTypedefs() const;
@@ -97,12 +98,29 @@ void ConverterAstConsumer::ConvertOwners() const {
     OwnerToRef(v->getTypeSourceInfo()->getTypeLoc());
   }
 
+  for (const auto* e : NodesFromMatchAST<clang::Expr>(
+           callExpr(ReleaseCallExpr(IgnoringParenCastFuncs(anyOf(
+                        declRefExpr(to(varDecl(hasType(OwnerType())))),
+                        FieldReferenceFor(fieldDecl(hasType(OwnerType())))))))
+               .bind("e"),
+           "e")) {
+    EraseStmt(e);
+  }
+
   for (const auto* t : NodesFromMatchAST<clang::TypedefNameDecl>(
            typedefNameDecl(hasType(IsAnyFunctionType(Returns(OwnerType()))))
                .bind("typedef_decl"),
            "typedef_decl")) {
     OwnerToRef(ExtractFunctionTypeLoc(t).getReturnLoc());
   }
+}
+
+void ConverterAstConsumer::EraseStmt(const clang::Stmt* e) const {
+  tooling::Replacement r{
+      SourceManager(),
+      clang::CharSourceRange::getTokenRange(e->getSourceRange()), "",
+      LangOpts()};
+  CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
 }
 
 void ConverterAstConsumer::StripPointer(clang::TypeLoc type_loc) const {

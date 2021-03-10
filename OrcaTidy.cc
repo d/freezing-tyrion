@@ -12,26 +12,6 @@ namespace tooling = clang::tooling;
 
 using FileToReplacements = std::map<std::string, tooling::Replacements>;
 
-static auto FieldReferenceFor(DeclarationMatcher const& field_matcher) {
-  return memberExpr(member(field_matcher),
-                    hasObjectExpression(ignoringParenImpCasts(cxxThisExpr())));
-}
-
-static auto ReleaseCallExpr(ExpressionMatcher const& reference_to_field) {
-  auto release = cxxMemberCallExpr(
-      callee(cxxMethodDecl(hasName("Release"), parameterCountIs(0))),
-      on(reference_to_field));
-  auto safe_release = callExpr(
-      callee(functionDecl(hasName("SafeRelease"), parameterCountIs(1))),
-      hasArgument(0, reference_to_field));
-  return callExpr(anyOf(release, safe_release));
-}
-
-static auto AddRefOn(ExpressionMatcher const& expr_matcher) {
-  return cxxMemberCallExpr(callee(cxxMethodDecl(hasName("AddRef"))),
-                           on(expr_matcher));
-}
-
 AST_MATCHER(clang::NamedDecl, Unused) {
   return Node.hasAttr<clang::UnusedAttr>() || !Node.getDeclName() ||
          !Node.isReferenced();
