@@ -50,7 +50,8 @@ add_executable(
   ConvertAnnotationTest.cc
   ConvertCcacheTest.cc
   OwnerToPointerTest.cc
-  CastingTest.cc)
+  CastingTest.cc
+  ConvertRefArrayTest.cc)
 target_link_libraries(orca-tidy-test orca_tidy gmock_main)
 
 include(GoogleTest)

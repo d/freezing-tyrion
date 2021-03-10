@@ -256,4 +256,19 @@ StatementMatcher HasSourceRange(clang::SourceRange source_range) {
   return HasSourceRangeImpl(source_range);
 }
 
+DeclarationMatcher RefArrayDecl() {
+  return classTemplateSpecializationDecl(
+      hasName("::gpos::CDynamicPtrArray"),
+      hasTemplateArgument(1, RefersToCleanupRelease()));
+}
+
+TemplateArgumentMatcher RefersToCleanupRelease() {
+  return refersToDeclaration(functionDecl(hasName("CleanupRelease")));
+}
+
+StatementMatcher CallRefArraySubscript() {
+  return cxxOperatorCallExpr(callee(
+      cxxMethodDecl(hasOverloadedOperatorName("[]"), ofClass(RefArrayDecl()))));
+}
+
 }  // namespace orca_tidy

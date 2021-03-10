@@ -21,6 +21,7 @@ using VarMatcher = decltype(clang::ast_matchers::hasLocalStorage());
 using ParamMatcher = decltype(clang::ast_matchers::hasDefaultArgument());
 using clang::ast_matchers::DeclarationMatcher;
 using clang::ast_matchers::StatementMatcher;
+using clang::ast_matchers::TemplateArgumentMatcher;
 using clang::ast_matchers::TypeMatcher;
 
 using NamedMatcher = decltype(clang::ast_matchers::hasName(""));
@@ -44,6 +45,7 @@ CallCcacheAccessorMethodsReturningOwner();
 
 __attribute__((const)) StatementMatcher CallCDynPtrArrSubscriptOn(
     const ExpressionMatcher& expr);
+__attribute__((const)) StatementMatcher CallRefArraySubscript();
 
 StatementMatcher Deref(const ExpressionMatcher& expr);
 StatementMatcher AddrOf(const ExpressionMatcher& expr);
@@ -305,6 +307,9 @@ void AnnotateSourceRange(
 clang::TypeLoc GetPointeeLocOfFirstTemplateArg(clang::TypeLoc type_loc);
 
 StatementMatcher HasSourceRange(clang::SourceRange source_range);
+
+__attribute__((const)) DeclarationMatcher RefArrayDecl();
+__attribute__((const)) TemplateArgumentMatcher RefersToCleanupRelease();
 
 }  // namespace orca_tidy
 #endif  // ORCATIDY__ASTHELPERS_H_

@@ -23,6 +23,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
 
   void HandleTranslationUnit(clang::ASTContext& context) override {
     ConvertCcacheTypedefs();
+    ConvertRefArrayTypedefs();
     ConvertPointers();
     ConvertOwners();
     ConvertOwnerToPointerImpCastToGet();
@@ -41,6 +42,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
   void DotGet(const clang::Expr* e) const;
 
   void ConvertCcacheTypedefs() const;
+  void ConvertRefArrayTypedefs() const;
   void ConvertPointers() const;
   void ConvertOwners() const;
   void ConvertOwnerToPointerImpCastToGet() const;
@@ -214,8 +216,33 @@ void ConverterAstConsumer::ConvertCcacheTypedefs() const {
   }
 }
 
+void ConverterAstConsumer::ConvertRefArrayTypedefs() const {
+  for (const auto* typedef_decl : NodesFromMatchAST<clang::TypedefNameDecl>(
+           typedefNameDecl(hasType(qualType(hasDeclaration(RefArrayDecl()))))
+               .bind("typedef_decl"),
+           "typedef_decl")) {
+    auto underlying_type_loc = typedef_decl->getTypeSourceInfo()->getTypeLoc();
+    auto elem_type_loc =
+        underlying_type_loc
+            .getAsAdjusted<clang::TemplateSpecializationTypeLoc>()
+            .getArgLoc(0);
+    auto range = clang::CharSourceRange::getTokenRange(
+        underlying_type_loc.getSourceRange());
+    auto elem_type_spelling = clang::Lexer::getSourceText(
+        clang::CharSourceRange::getTokenRange(elem_type_loc.getSourceRange()),
+        SourceManager(), LangOpts());
+    auto new_type_spelling =
+        ("gpos::Vector<gpos::Ref<" + elem_type_spelling + ">>").str();
+    tooling::Replacement r{SourceManager(), range, new_type_spelling,
+                           LangOpts()};
+    CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
+  }
+}
+
 void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
-  auto has_owner_type = hasType(qualType(anyOf(OwnerType(), LeakedType())));
+  auto has_owner_type =
+      anyOf(hasType(qualType(anyOf(OwnerType(), LeakedType()))),
+            CallRefArraySubscript());
   auto return_owner_as_pointer = returnStmt(
       hasReturnValue(ignoringParenImpCasts(expr(has_owner_type).bind("owner"))),
       forFunction(returns(PointerType())));

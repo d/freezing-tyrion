@@ -209,10 +209,7 @@ static StatementMatcher PassedAsArgumentToNonPointerOutputParam(
 }
 
 __attribute__((const)) static DeclarationMatcher MethodOfRefArray() {
-  return cxxMethodDecl(ofClass(classTemplateSpecializationDecl(
-      hasName("::gpos::CDynamicPtrArray"),
-      hasTemplateArgument(
-          1, refersToDeclaration(functionDecl(hasName("CleanupRelease")))))));
+  return cxxMethodDecl(ofClass(RefArrayDecl()));
 }
 
 static auto ForEachArgumentToRefArrayMethodWithOwnerParam(
@@ -250,9 +247,6 @@ static auto ForEachArgumentToUlongToExprArrayMapWithOwnerParam(
 
 static StatementMatcher ForEachArgumentToHashMapMethodWithOwnerParam(
     const ExpressionMatcher& arg_matcher) {
-  auto refers_to_cleanup_release =
-      refersToDeclaration(functionDecl(hasName("CleanupRelease")));
-
   auto OnHashMap = [](auto... class_template_specialization_matchers) {
     return allOf(MethodOfHashMap(),
                  ofClass(classTemplateSpecializationDecl(
@@ -267,10 +261,10 @@ static StatementMatcher ForEachArgumentToHashMapMethodWithOwnerParam(
     return Call("Insert", method);
   };
 
-  auto k_is_ref = hasTemplateArgument(4, refers_to_cleanup_release);
-  auto k_is_not_ref = hasTemplateArgument(4, unless(refers_to_cleanup_release));
-  auto t_is_ref = hasTemplateArgument(5, refers_to_cleanup_release);
-  auto t_is_not_ref = hasTemplateArgument(5, unless(refers_to_cleanup_release));
+  auto k_is_ref = hasTemplateArgument(4, RefersToCleanupRelease());
+  auto k_is_not_ref = hasTemplateArgument(4, unless(RefersToCleanupRelease()));
+  auto t_is_ref = hasTemplateArgument(5, RefersToCleanupRelease());
+  auto t_is_not_ref = hasTemplateArgument(5, unless(RefersToCleanupRelease()));
 
   auto CallInsertOnHashMapRefKRefT = CallInsert(OnHashMap(k_is_ref, t_is_ref));
   auto CallInsertOnHashMapRefK = CallInsert(OnHashMap(k_is_ref, t_is_not_ref));
