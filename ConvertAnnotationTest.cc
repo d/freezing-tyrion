@@ -45,7 +45,7 @@ TEST_F(ConvertAnnotation, ownerToRef) {
   )C++",
               expected_changed_code = R"C++(
     struct R {
-      Ref<T> t;
+      gpos::Ref<T> t;
     };
   )C++";
 
@@ -68,7 +68,7 @@ TEST_F(ConvertAnnotation, funcRet) {
 
     T* f();
     const T* g();
-    Ref<T> h();
+    gpos::Ref<T> h();
     S* i(T*);
   )C++";
 
@@ -84,9 +84,9 @@ TEST_F(ConvertAnnotation, var) {
     void g() { gpos::leaked<T*> l = MakeT(); }
   )C++",
               expected_changed_code = R"C++(
-    Ref<T> MakeT();
-    void f(Ref<T> o, T* p);
-    void g() { Ref<T> l = MakeT(); }
+    gpos::Ref<T> MakeT();
+    void f(gpos::Ref<T> o, T* p);
+    void g() { gpos::Ref<T> l = MakeT(); }
   )C++";
 
   auto changed_code = annotateAndFormat(code);
@@ -100,7 +100,7 @@ TEST_F(ConvertAnnotation, typedefFRet) {
     typedef gpos::pointer<T*>(PFp)();
   )C++",
               expected_changed_code = R"C++(
-    typedef Ref<T>(PFo)();
+    typedef gpos::Ref<T>(PFo)();
     typedef T*(PFp)();
   )C++";
 
@@ -115,7 +115,7 @@ TEST_F(ConvertAnnotation, typedefPfRet) {
     typedef gpos::pointer<T*> (*PFp)();
   )C++",
               expected_changed_code = R"C++(
-    typedef Ref<T> (*PFo)();
+    typedef gpos::Ref<T> (*PFo)();
     typedef T* (*PFp)();
   )C++";
 
@@ -132,7 +132,7 @@ TEST_F(ConvertAnnotation, typedefPmfRet) {
   )C++",
               expected_changed_code = R"C++(
     struct R {};
-    typedef Ref<T> (R::*PFo)();
+    typedef gpos::Ref<T> (R::*PFo)();
     typedef T* (R::*PFp)();
   )C++";
 

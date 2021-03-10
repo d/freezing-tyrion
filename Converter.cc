@@ -137,7 +137,7 @@ void ConverterAstConsumer::OwnerToRef(clang::TypeLoc type_loc) const {
       clang::CharSourceRange::getTokenRange(inner_source_range);
   auto pointee_spelling = clang::Lexer::getSourceText(
       inner_token_range, SourceManager(), LangOpts());
-  auto replacement_text = ("Ref<" + pointee_spelling + ">").str();
+  auto replacement_text = ("gpos::Ref<" + pointee_spelling + ">").str();
 
   tooling::Replacement r{SourceManager(), range, replacement_text, LangOpts()};
   CantFail(file_to_replaces_[r.getFilePath().str()].add(r));

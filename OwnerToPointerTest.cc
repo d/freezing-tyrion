@@ -12,7 +12,7 @@ TEST_F(OwnerToPointer, ret) {
   )C++",
               expected_changed_code = R"C++(
     struct R {
-      Ref<T> t;
+      gpos::Ref<T> t;
       T* GetT() { return t.get(); }
     };
   )C++";
@@ -41,7 +41,7 @@ TEST_F(OwnerToPointer, varInitAssign) {
   )C++",
               expected_changed_code = R"C++(
     class R {
-      Ref<T> t_;
+      gpos::Ref<T> t_;
 
      public:
       ~R();
@@ -81,7 +81,7 @@ TEST_F(OwnerToPointer, funcArg) {
     };
 
     class R {
-      Ref<T> t_;
+      gpos::Ref<T> t_;
       bool g() { return f(t_.get()); }
       void h() { Q q(t_.get()); }
     };
@@ -113,12 +113,12 @@ TEST_F(OwnerToPointer, ctorInitializer) {
     };
 
     struct R : Q {
-      R(Ref<T> t) : Q(t.get()) {}
+      R(gpos::Ref<T> t) : Q(t.get()) {}
     };
 
     class P {
       T* t_;
-      P(Ref<T> t) : t_(t.get()) {}
+      P(gpos::Ref<T> t) : t_(t.get()) {}
     };
   )C++";
 
