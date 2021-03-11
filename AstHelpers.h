@@ -66,6 +66,8 @@ auto SelfOrHasDescendant(const Matcher& matcher) {
   return anyOf(matcher, hasDescendant(matcher));
 }
 
+AST_MATCHER(clang::CallExpr, IsCallToStdMove) { return Node.isCallToStdMove(); }
+
 AST_MATCHER(clang::CXXMethodDecl, IsStatic) { return Node.isStatic(); }
 
 using DeclSet = llvm::DenseSet<const clang::Decl*>;

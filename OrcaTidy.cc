@@ -914,8 +914,7 @@ void Annotator::PropagateTailCall() const {
                                        unless(hasDeclContext(functionDecl(
                                            hasName("SafeRelease")))))
                                .bind("param"))),
-                   hasDeclaration(
-                       functionDecl(unless(hasName("std::move"))))))),
+                   unless(callExpr(IsCallToStdMove()))))),
                *r, "param", "var", "arg")) {
         if (!IsUniqRefToDeclInStmt(arg, var, r)) continue;
 
