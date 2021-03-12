@@ -206,11 +206,6 @@ static auto ForEachArgumentToRefArrayMethodWithOwnerParam(
           hasArgument(0, IgnoringParenCastFuncs(arg_matcher))));
 }
 
-__attribute__((const)) static DeclarationMatcher MethodOfHashMap() {
-  return cxxMethodDecl(
-      ofClass(classTemplateSpecializationDecl(hasName("::gpos::CHashMap"))));
-}
-
 static StatementMatcher CallHashMapFindOn(const ExpressionMatcher& expr) {
   return cxxMemberCallExpr(
       callee(cxxMethodDecl(hasName("Find"), MethodOfHashMap())), on(expr));

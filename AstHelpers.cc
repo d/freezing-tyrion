@@ -262,6 +262,24 @@ DeclarationMatcher RefArrayDecl() {
       hasTemplateArgument(1, RefersToCleanupRelease()));
 }
 
+DeclarationMatcher MethodOfHashMap() {
+  return cxxMethodDecl(ofClass(HashMapDecl()));
+}
+static auto HMK(const TemplateArgumentMatcher& matcher) {
+  return hasTemplateArgument(4, matcher);
+}
+static auto HMT(const TemplateArgumentMatcher& matcher) {
+  return hasTemplateArgument(5, matcher);
+}
+static auto HMRefK() { return HMK(RefersToCleanupRelease()); }
+static auto HMNotRefK() { return unless(HMRefK()); }
+static auto HMRefT() { return HMT(RefersToCleanupRelease()); }
+static auto HMNotRefT() { return unless(HMRefT()); }
+
+DeclarationMatcher HashMapRefKRefTDecl() {
+  return HashMapDecl(HMRefK(), HMRefT());
+}
+
 TemplateArgumentMatcher RefersToCleanupRelease() {
   return refersToDeclaration(functionDecl(hasName("CleanupRelease")));
 }

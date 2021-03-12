@@ -311,6 +311,14 @@ clang::TypeLoc GetPointeeLocOfFirstTemplateArg(clang::TypeLoc type_loc);
 StatementMatcher HasSourceRange(clang::SourceRange source_range);
 
 __attribute__((const)) DeclarationMatcher RefArrayDecl();
+
+__attribute__((const)) DeclarationMatcher MethodOfHashMap();
+template <class... ArgMatchers>
+__attribute__((const)) DeclarationMatcher HashMapDecl(ArgMatchers... args) {
+  return clang::ast_matchers::classTemplateSpecializationDecl(
+      clang::ast_matchers::hasName("::gpos::CHashMap"), args...);
+}
+__attribute__((const)) DeclarationMatcher HashMapRefKRefTDecl();
 __attribute__((const)) TemplateArgumentMatcher RefersToCleanupRelease();
 
 StatementMatcher FieldReferenceFor(DeclarationMatcher const& field_matcher);
