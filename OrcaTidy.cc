@@ -277,7 +277,7 @@ AST_MATCHER(clang::VarDecl, IsImmediatelyBeforeAddRef) {
       .matches(Node, Finder, Builder);
 }
 
-class Annotator : public NodesFromMatchBase<Annotator> {
+class Annotator : public AstHelperMixin<Annotator> {
  public:
   Annotator(const ActionOptions& action_options,
             FileToReplacements& replacements, clang::ASTContext& ast_context,

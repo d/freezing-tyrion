@@ -169,7 +169,7 @@ AST_MATCHER_P(clang::DeclStmt, ForEachDeclaration, DeclarationMatcher,
 }
 
 template <class Derived>
-struct NodesFromMatchBase {
+struct AstHelperMixin {
   /// Convenience interface to go through the results of an AST match by
   /// directly iterating over node. For example, instead of saying
   ///

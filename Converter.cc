@@ -12,7 +12,7 @@ static const constexpr llvm::StringRef kRefAnnotation = "gpos::Ref";
 
 namespace {
 class ConverterAstConsumer : public clang::ASTConsumer,
-                             public NodesFromMatchBase<ConverterAstConsumer> {
+                             public AstHelperMixin<ConverterAstConsumer> {
  public:
   void Initialize(clang::ASTContext& context) override { context_ = &context; }
   clang::ASTContext& AstContext() const { return *context_; }
