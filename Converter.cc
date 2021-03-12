@@ -2,6 +2,7 @@
 #include "AstHelpers.h"
 #include "SwitchMatcher.h"
 #include "clang/Lex/Lexer.h"
+#include "llvm/Support/FormatVariadic.h"
 
 // NOLINTNEXTLINE: google-build-using-namespace
 using namespace clang::ast_matchers;
@@ -24,6 +25,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
   void HandleTranslationUnit(clang::ASTContext& context) override {
     ConvertCcacheTypedefs();
     ConvertRefArrayTypedefs();
+    ConvertHashMapTypedefs();
     ConvertPointers();
     ConvertOwners();
     EraseAddRefs();
@@ -33,12 +35,16 @@ class ConverterAstConsumer : public clang::ASTConsumer,
 
  private:
   void StripPointer(clang::TypeLoc type_loc) const;
+  llvm::StringRef GetSourceTextOfTemplateArg(
+      clang::TemplateSpecializationTypeLoc specialization_type_loc,
+      unsigned int i) const;
   void OwnerToRef(clang::TypeLoc type_loc) const;
   void DotGet(const clang::Expr* e) const;
   void EraseStmt(const clang::Stmt* e) const;
 
   void ConvertCcacheTypedefs() const;
   void ConvertRefArrayTypedefs() const;
+  void ConvertHashMapTypedefs() const;
   void ConvertPointers() const;
   void ConvertOwners() const;
   void EraseAddRefs() const;
@@ -224,21 +230,55 @@ void ConverterAstConsumer::ConvertCcacheTypedefs() const {
   }
 }
 
+llvm::StringRef orca_tidy::ConverterAstConsumer::GetSourceTextOfTemplateArg(
+    clang::TemplateSpecializationTypeLoc specialization_type_loc,
+    unsigned int i) const {
+  return GetSourceText(specialization_type_loc.getArgLoc(i).getSourceRange());
+}
+
 void ConverterAstConsumer::ConvertRefArrayTypedefs() const {
   for (const auto* typedef_decl : NodesFromMatchAST<clang::TypedefNameDecl>(
            typedefNameDecl(hasType(qualType(hasDeclaration(RefArrayDecl()))))
                .bind("typedef_decl"),
            "typedef_decl")) {
     auto underlying_type_loc = typedef_decl->getTypeSourceInfo()->getTypeLoc();
-    auto elem_type_loc =
-        underlying_type_loc
-            .getAsAdjusted<clang::TemplateSpecializationTypeLoc>()
-            .getArgLoc(0);
     auto range = clang::CharSourceRange::getTokenRange(
         underlying_type_loc.getSourceRange());
-    auto elem_type_spelling = GetSourceText(elem_type_loc.getSourceRange());
+    auto specialization_type_loc =
+        underlying_type_loc
+            .getAsAdjusted<clang::TemplateSpecializationTypeLoc>();
+    auto elem_type_spelling =
+        GetSourceTextOfTemplateArg(specialization_type_loc, 0);
     auto new_type_spelling =
         ("gpos::Vector<gpos::Ref<" + elem_type_spelling + ">>").str();
+    tooling::Replacement r{SourceManager(), range, new_type_spelling,
+                           LangOpts()};
+    CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
+  }
+}
+
+void ConverterAstConsumer::ConvertHashMapTypedefs() const {
+  for (const auto* typedef_decl : NodesFromMatchAST<clang::TypedefNameDecl>(
+           typedefNameDecl(
+               hasType(qualType(hasDeclaration(HashMapRefKRefTDecl()))))
+               .bind("typedef_decl"),
+           "typedef_decl")) {
+    auto underlying_type_loc = typedef_decl->getTypeSourceInfo()->getTypeLoc();
+    auto specialization_type_loc =
+        underlying_type_loc
+            .getAsAdjusted<clang::TemplateSpecializationTypeLoc>();
+    auto range = clang::CharSourceRange::getTokenRange(
+        underlying_type_loc.getSourceRange());
+    auto k_spelling = GetSourceTextOfTemplateArg(specialization_type_loc, 0);
+    auto t_spelling = GetSourceTextOfTemplateArg(specialization_type_loc, 1);
+    auto hash_spelling = GetSourceTextOfTemplateArg(specialization_type_loc, 2);
+    auto eq_spelling = GetSourceTextOfTemplateArg(specialization_type_loc, 3);
+    auto new_type_spelling =
+        llvm::formatv(
+            "gpos::UnorderedMap<gpos::Ref<{0}>, "
+            "gpos::Ref<{1}>, gpos::RefHash<{0}, {2}>, gpos::RefEq<{0}, {3}>>",
+            k_spelling, t_spelling, hash_spelling, eq_spelling)
+            .str();
     tooling::Replacement r{SourceManager(), range, new_type_spelling,
                            LangOpts()};
     CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
