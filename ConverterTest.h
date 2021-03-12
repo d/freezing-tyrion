@@ -99,6 +99,11 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
     template <class K, class T, ULONG (*HashFn)(const K*),
               BOOL (*EqFn)(const K*, const K*), void (*DestroyKFn)(K*),
               void (*DestroyTFn)(T*)>
+    class CHashMapIter;
+
+    template <class K, class T, ULONG (*HashFn)(const K*),
+              BOOL (*EqFn)(const K*, const K*), void (*DestroyKFn)(K*),
+              void (*DestroyTFn)(T*)>
     class CHashMap : public CRefCount<
                          CHashMap<K, T, HashFn, EqFn, DestroyKFn, DestroyTFn>> {
      public:

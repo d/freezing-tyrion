@@ -258,26 +258,41 @@ void ConverterAstConsumer::ConvertRefArrayTypedefs() const {
 }
 
 void ConverterAstConsumer::ConvertHashMapTypedefs() const {
-  for (const auto* typedef_decl : NodesFromMatchAST<clang::TypedefNameDecl>(
-           typedefNameDecl(
-               hasType(qualType(hasDeclaration(HashMapRefKRefTDecl()))))
+  auto ExtractTemplateArgs =
+      [this](clang::TemplateSpecializationTypeLoc specialization_type_loc) {
+        return std::tuple{
+            GetSourceTextOfTemplateArg(specialization_type_loc, 0),
+            GetSourceTextOfTemplateArg(specialization_type_loc, 1),
+            GetSourceTextOfTemplateArg(specialization_type_loc, 2),
+            GetSourceTextOfTemplateArg(specialization_type_loc, 3),
+        };
+      };
+  for (auto [typedef_decl, hm] :
+       NodesFromMatchAST<clang::TypedefNameDecl, clang::Decl>(
+           typedefNameDecl(hasType(qualType(hasDeclaration(
+                               anyOf(decl(HashMapRefKRefTDecl()).bind("hm"),
+                                     HashMapIterRefKRefTDecl())))))
                .bind("typedef_decl"),
-           "typedef_decl")) {
+           "typedef_decl", "hm")) {
     auto underlying_type_loc = typedef_decl->getTypeSourceInfo()->getTypeLoc();
     auto specialization_type_loc =
         underlying_type_loc
             .getAsAdjusted<clang::TemplateSpecializationTypeLoc>();
     auto range = clang::CharSourceRange::getTokenRange(
         underlying_type_loc.getSourceRange());
-    auto k_spelling = GetSourceTextOfTemplateArg(specialization_type_loc, 0);
-    auto t_spelling = GetSourceTextOfTemplateArg(specialization_type_loc, 1);
-    auto hash_spelling = GetSourceTextOfTemplateArg(specialization_type_loc, 2);
-    auto eq_spelling = GetSourceTextOfTemplateArg(specialization_type_loc, 3);
-    auto new_type_spelling =
-        llvm::formatv(
-            "gpos::UnorderedMap<gpos::Ref<{0}>, "
-            "gpos::Ref<{1}>, gpos::RefHash<{0}, {2}>, gpos::RefEq<{0}, {3}>>",
-            k_spelling, t_spelling, hash_spelling, eq_spelling)
+    auto [k_spelling, t_spelling, hash_spelling, eq_spelling] =
+        ExtractTemplateArgs(specialization_type_loc);
+    const char* const
+        fmtHM = R"C++(gpos::UnorderedMap<gpos::Ref<{0}>, gpos::Ref<{1}>,
+                                         gpos::RefHash<{0}, {2}>,
+                                         gpos::RefEq<{0}, {3}>>)C++";
+    const char* const fmtHMI =
+        R"C++(gpos::UnorderedMap<gpos::Ref<{0}>, gpos::Ref<{1}>,
+                                 gpos::RefHash<{0}, {2}>,
+                                 gpos::RefEq<{0}, {3}>>::LegacyIterator)C++";
+    std::string new_type_spelling =
+        llvm::formatv(hm ? fmtHM : fmtHMI, k_spelling, t_spelling,
+                      hash_spelling, eq_spelling)
             .str();
     tooling::Replacement r{SourceManager(), range, new_type_spelling,
                            LangOpts()};

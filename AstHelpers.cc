@@ -279,7 +279,9 @@ static auto HMNotRefT() { return unless(HMRefT()); }
 DeclarationMatcher HashMapRefKRefTDecl() {
   return HashMapDecl(HMRefK(), HMRefT());
 }
-
+DeclarationMatcher HashMapIterRefKRefTDecl() {
+  return HashMapIterDecl(HMRefK(), HMRefT());
+}
 TemplateArgumentMatcher RefersToCleanupRelease() {
   return refersToDeclaration(functionDecl(hasName("CleanupRelease")));
 }

@@ -336,7 +336,13 @@ __attribute__((const)) DeclarationMatcher HashMapDecl(ArgMatchers... args) {
   return clang::ast_matchers::classTemplateSpecializationDecl(
       clang::ast_matchers::hasName("::gpos::CHashMap"), args...);
 }
+template <class... ArgMatchers>
+__attribute__((const)) DeclarationMatcher HashMapIterDecl(ArgMatchers... args) {
+  return clang::ast_matchers::classTemplateSpecializationDecl(
+      clang::ast_matchers::hasName("::gpos::CHashMapIter"), args...);
+}
 __attribute__((const)) DeclarationMatcher HashMapRefKRefTDecl();
+__attribute__((const)) DeclarationMatcher HashMapIterRefKRefTDecl();
 __attribute__((const)) TemplateArgumentMatcher RefersToCleanupRelease();
 
 StatementMatcher FieldReferenceFor(DeclarationMatcher const& field_matcher);
