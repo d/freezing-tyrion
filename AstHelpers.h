@@ -2,6 +2,7 @@
 #define ORCATIDY__ASTHELPERS_H_
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/Lex/Lexer.h"
 #include "clang/Tooling/Core/Replacement.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -169,7 +170,20 @@ AST_MATCHER_P(clang::DeclStmt, ForEachDeclaration, DeclarationMatcher,
 }
 
 template <class Derived>
-struct AstHelperMixin {
+class AstHelperMixin {
+  clang::ASTContext& GetAstContext() const {
+    return static_cast<const Derived*>(this)->AstContext();
+  }
+
+ public:
+  clang::SourceManager& SourceManager() const {
+    return GetAstContext().getSourceManager();
+  }
+
+  const clang::LangOptions& LangOpts() const {
+    return GetAstContext().getLangOpts();
+  }
+
   /// Convenience interface to go through the results of an AST match by
   /// directly iterating over node. For example, instead of saying
   ///
@@ -222,8 +236,7 @@ struct AstHelperMixin {
   /// \endcode
   template <class... Nodes, class Matcher, class... Ids>
   auto NodesFromMatchAST(Matcher matcher, Ids... ids) const {
-    auto matches = clang::ast_matchers::match(
-        matcher, static_cast<const Derived*>(this)->AstContext());
+    auto matches = clang::ast_matchers::match(matcher, GetAstContext());
     auto nodes = MakeVector(llvm::map_range(
         matches, [ids...](const clang::ast_matchers::BoundNodes& bound_nodes) {
           return GetNode<Nodes...>(bound_nodes, ids...);
@@ -233,8 +246,7 @@ struct AstHelperMixin {
 
   template <class... Nodes, class Matcher, class Node, class... Ids>
   auto NodesFromMatchNode(Matcher matcher, const Node& node, Ids... ids) const {
-    auto matches = clang::ast_matchers::match(
-        matcher, node, static_cast<const Derived*>(this)->AstContext());
+    auto matches = clang::ast_matchers::match(matcher, node, GetAstContext());
     auto nodes = MakeVector(llvm::map_range(
         matches, [ids...](const clang::ast_matchers::BoundNodes& bound_nodes) {
           return GetNode<Nodes...>(bound_nodes, ids...);
@@ -254,6 +266,12 @@ struct AstHelperMixin {
                                llvm::StringRef id) const {
     auto nodes_from_match = NodesFromMatchNode<clang::Decl>(matcher, node, id);
     return {nodes_from_match.begin(), nodes_from_match.end()};
+  }
+
+  auto GetSourceText(clang::SourceRange source_range) const {
+    return clang::Lexer::getSourceText(
+        clang::CharSourceRange::getTokenRange(source_range), SourceManager(),
+        LangOpts());
   }
 
   VarMatcher Assigned(const ExpressionMatcher& expr_matcher) const {

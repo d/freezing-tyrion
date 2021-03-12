@@ -32,12 +32,6 @@ class ConverterAstConsumer : public clang::ASTConsumer,
   }
 
  private:
-  clang::SourceManager& SourceManager() const {
-    return context_->getSourceManager();
-  }
-
-  const clang::LangOptions& LangOpts() const { return context_->getLangOpts(); }
-
   void StripPointer(clang::TypeLoc type_loc) const;
   void OwnerToRef(clang::TypeLoc type_loc) const;
   void DotGet(const clang::Expr* e) const;
@@ -138,10 +132,7 @@ void ConverterAstConsumer::StripPointer(clang::TypeLoc type_loc) const {
   inner_source_range.setBegin(
       template_specialization.getLAngleLoc().getLocWithOffset(1));
 
-  auto inner_token_range =
-      clang::CharSourceRange::getTokenRange(inner_source_range);
-  auto replacement_text = clang::Lexer::getSourceText(
-      inner_token_range, SourceManager(), LangOpts());
+  auto replacement_text = GetSourceText(inner_source_range);
 
   tooling::Replacement r{SourceManager(), range, replacement_text, LangOpts()};
   CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
@@ -153,10 +144,7 @@ void ConverterAstConsumer::OwnerToRef(clang::TypeLoc type_loc) const {
   auto inner_source_range =
       GetPointeeLocOfFirstTemplateArg(IgnoringElaboratedQualified(type_loc))
           .getSourceRange();
-  auto inner_token_range =
-      clang::CharSourceRange::getTokenRange(inner_source_range);
-  auto pointee_spelling = clang::Lexer::getSourceText(
-      inner_token_range, SourceManager(), LangOpts());
+  auto pointee_spelling = GetSourceText(inner_source_range);
   auto replacement_text = ("gpos::Ref<" + pointee_spelling + ">").str();
 
   tooling::Replacement r{SourceManager(), range, replacement_text, LangOpts()};
@@ -248,9 +236,7 @@ void ConverterAstConsumer::ConvertRefArrayTypedefs() const {
             .getArgLoc(0);
     auto range = clang::CharSourceRange::getTokenRange(
         underlying_type_loc.getSourceRange());
-    auto elem_type_spelling = clang::Lexer::getSourceText(
-        clang::CharSourceRange::getTokenRange(elem_type_loc.getSourceRange()),
-        SourceManager(), LangOpts());
+    auto elem_type_spelling = GetSourceText(elem_type_loc.getSourceRange());
     auto new_type_spelling =
         ("gpos::Vector<gpos::Ref<" + elem_type_spelling + ">>").str();
     tooling::Replacement r{SourceManager(), range, new_type_spelling,
@@ -293,8 +279,7 @@ void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
 
 void ConverterAstConsumer::DotGet(const clang::Expr* e) const {
   auto range = clang::CharSourceRange::getTokenRange(e->getSourceRange());
-  auto e_src_txt =
-      clang::Lexer::getSourceText(range, SourceManager(), LangOpts()).str();
+  auto e_src_txt = GetSourceText(e->getSourceRange()).str();
   tooling::Replacement r{SourceManager(), range, e_src_txt + ".get()",
                          LangOpts()};
   CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
@@ -317,9 +302,7 @@ void ConverterAstConsumer::ConvertCallCastFuncs() const {
               GetPointeeLocOfFirstTemplateArg(
                   direct_callee->getFunctionTypeLoc().getReturnLoc())
                   .getSourceRange();
-          return clang::Lexer::getSourceText(
-              clang::CharSourceRange::getTokenRange(pointee_source_range),
-              SourceManager(), LangOpts());
+          return GetSourceText(pointee_source_range);
         };
 
     auto ExprInTemplate = [this](

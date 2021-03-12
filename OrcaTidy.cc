@@ -929,8 +929,7 @@ VarMatcher Annotator::AddRefdIn(const clang::FunctionDecl* f) const {
 
 void Annotator::MoveSourceRange(clang::SourceRange source_range) const {
   auto range = clang::CharSourceRange::getTokenRange(source_range);
-  auto arg_text =
-      clang::Lexer::getSourceText(range, source_manager_, lang_opts_);
+  auto arg_text = GetSourceText(source_range);
   std::string new_arg = ("std::move(" + arg_text + ")").str();
   tooling::Replacement replacement(source_manager_, range, new_arg, lang_opts_);
   llvm::cantFail(
