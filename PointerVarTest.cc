@@ -205,6 +205,12 @@ TEST_F(PropagateTest, varPointNegativeCases) {
               auto_type = R"C++(
     T* F();
     void f() { auto t = F(); }
+  )C++",
+              macro = R"C++(
+#define yolo(TYPE) \
+      bool IsNull##TYPE(TYPE* x) { return false; }
+
+    yolo(T);
   )C++";
 
   for (const auto& code : {
@@ -220,6 +226,7 @@ TEST_F(PropagateTest, varPointNegativeCases) {
            passed_to_ctor_init,
            followed_by_addref,
            auto_type,
+           macro,
        }) {
     auto changed_code = annotateAndFormat(code);
 

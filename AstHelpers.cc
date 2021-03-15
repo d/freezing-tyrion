@@ -311,4 +311,9 @@ StatementMatcher AddRefOn(const ExpressionMatcher& expr_matcher) {
                            on(expr_matcher));
 }
 
+bool IsInMacro(clang::SourceRange source_range) {
+  return source_range.isInvalid() || source_range.getBegin().isMacroID() ||
+         source_range.getEnd().isMacroID();
+}
+
 }  // namespace orca_tidy

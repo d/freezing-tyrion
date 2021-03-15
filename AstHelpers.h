@@ -349,5 +349,7 @@ StatementMatcher FieldReferenceFor(DeclarationMatcher const& field_matcher);
 StatementMatcher ReleaseCallExpr(ExpressionMatcher const& reference_to_field);
 StatementMatcher AddRefOn(ExpressionMatcher const& expr_matcher);
 
+bool IsInMacro(clang::SourceRange source_range);
+
 }  // namespace orca_tidy
 #endif  // ORCATIDY__ASTHELPERS_H_

@@ -403,6 +403,7 @@ class Annotator : public AstHelperMixin<Annotator> {
     RememberFunc(f, annotation);
     auto rt = f->getReturnType();
     auto rt_range = f->getReturnTypeSourceRange();
+    if (IsInMacro(rt_range)) return;
     if (rt->getPointeeType().isLocalConstQualified()) {
       FindConstTokenBefore(f->getBeginLoc(), rt_range);
     }
@@ -460,6 +461,8 @@ class Annotator : public AstHelperMixin<Annotator> {
       if (IsAnnotated(v->getType())) std::terminate();
 
       auto source_range = v->getTypeSourceInfo()->getTypeLoc().getSourceRange();
+      // We can't really edit the result of macro expansion
+      if (IsInMacro(source_range)) continue;
       if (v->getType()->getPointeeType().isLocalConstQualified() &&
           !v->getType()->isTypedefNameType()) {
         FindConstTokenBefore(v->getBeginLoc(), source_range);
