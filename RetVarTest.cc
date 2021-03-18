@@ -93,8 +93,7 @@ TEST_F(RetVarTest, NegativeCases) {
 
     void foo(gpos::owner<T*> t) {
       CtorParens<R>(t);
-      CtorBraces<R>(t);
-      if (false) return;
+      CtorBraces<R>(std::move(t));
     }
   )C++";
   auto changed_code = annotateAndFormat(code);

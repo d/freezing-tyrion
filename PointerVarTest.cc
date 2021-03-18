@@ -120,27 +120,15 @@ TEST_F(PropagateTest, varPointNegativeCases) {
     void f(T* t) { F(&t); }
   )C++",
               passed_to_non_pointer_param_of_func = R"C++(
-    void F(gpos::owner<T*>);
     void G(T*);
 
-    void f(T* t) {
-      F(t);
-      if (false) return;
-    }
     void g(T* t) { G(t); }
   )C++",
               passed_to_non_pointer_param_of_ctor = R"C++(
-    struct R {
-      R(gpos::owner<T*>);
-    };
     struct Q {
       Q(T*);
     };
 
-    void f(T* t) {
-      R r{t};
-      if (false) return;
-    }
     void g(T* t) { Q r(t); }
   )C++",
               passed_to_overload_expr = R"C++(
@@ -189,10 +177,9 @@ TEST_F(PropagateTest, varPointNegativeCases) {
               passed_to_ctor_init = R"C++(
     T* F(T*);
     class R {
-      gpos::pointer<T*> t_;
       gpos::owner<T*> t2_;
       gpos::owner<T*> t3_;
-      R(T* t, T* t2, T* t3) : t_(t), t2_(F(t2)), t3_(F(F(t3))) {}
+      R(T* t2, T* t3) : t2_(F(t2)), t3_(F(F(t3))) {}
     };
   )C++",
               followed_by_addref = R"C++(

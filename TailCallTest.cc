@@ -44,6 +44,27 @@ TEST_F(TailCall, varMoveOwn) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(TailCall, varMoveOwnCtorInitOwn) {
+  std::string code = R"C++(
+    class R {
+      gpos::owner<T*> t_;
+
+      R(T* t) : t_(t) {}
+    };
+  )C++",
+              expected_changed_code = R"C++(
+    class R {
+      gpos::owner<T*> t_;
+
+      R(gpos::owner<T*> t) : t_(std::move(t)) {}
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 TEST_F(TailCall, varMoveOwnNegative) {
   std::string code = R"C++(
     struct R : T {
@@ -99,6 +120,27 @@ TEST_F(TailCall, varPoint) {
       return Unannotated() && F(t2);
     }
     void bar(gpos::pointer<T*> t, gpos::pointer<S*> s) { H(R(s)) || F(t); }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
+TEST_F(TailCall, varPointCtorInitPoint) {
+  std::string code = R"C++(
+    class R {
+      gpos::pointer<T*> t_;
+
+      R(T* t) : t_(t) {}
+    };
+  )C++",
+              expected_changed_code = R"C++(
+    class R {
+      gpos::pointer<T*> t_;
+
+      R(gpos::pointer<T*> t) : t_(t) {}
+    };
   )C++";
 
   auto changed_code = annotateAndFormat(code);

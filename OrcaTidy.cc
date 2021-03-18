@@ -609,8 +609,6 @@ class Annotator : public AstHelperMixin<Annotator> {
       const clang::FunctionDecl* f) const;
   VarMatcher PassedToOwnerCtorBaseInitializerOf(
       const clang::FunctionDecl* f) const;
-  VarMatcher PassedToNonPointerCtorBaseInitializerOf(
-      const clang::FunctionDecl* f) const;
   VarMatcher AddRefdIn(const clang::FunctionDecl* f) const;
   StatementMatcher InitOrAssignNonPointerVarWith(
       const ExpressionMatcher& expr) const;
@@ -771,16 +769,6 @@ VarMatcher Annotator::PassedToOwnerCtorBaseInitializerOf(
       *f, "param"));
 }
 
-VarMatcher Annotator::PassedToNonPointerCtorBaseInitializerOf(
-    const clang::FunctionDecl* f) const {
-  return IsInSet(DeclSetFromMatchNode(
-      cxxConstructorDecl(forEachConstructorInitializer(cxxCtorInitializer(
-          isBaseInitializer(),
-          withInitializer(cxxConstructExpr(ForEachArgumentWithNonPointerParam(
-              declRefExpr(to(parmVarDecl().bind("param"))))))))),
-      *f, "param"));
-}
-
 void Annotator::PropagateReturnOwner() const {
   for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
            functionDecl(
@@ -824,8 +812,10 @@ void Annotator::PropagateReturnOwner() const {
 // var).
 void Annotator::PropagateTailCall() const {
   for (const auto* f : NodesFromMatchAST<clang::FunctionDecl>(
-           functionDecl(hasBody(stmt())).bind("f"), "f")) {
-    auto last_stmts = LastStatementsOfFunc(f, &ast_context_);
+           functionDecl(unless(isExpansionInSystemHeader()), hasBody(stmt()))
+               .bind("f"),
+           "f")) {
+    auto last_use_stmts = LastUseStatementsOfFunc(f);
     auto add_refd = AddRefdIn(f);
     auto assigned = IsInSet(DeclSetFromMatchNode(
         stmt(forEachDescendant(
@@ -833,68 +823,150 @@ void Annotator::PropagateTailCall() const {
         *f->getBody(), "var"));
     auto add_ref_or_assigned = anyOf(add_refd, assigned);
 
-    for (const auto* r : last_stmts) {
-      for (auto [var, arg] : NodesFromMatchNode<clang::VarDecl, clang::Expr>(
-               stmt(findAll(CallOrConstruct(ForEachArgumentWithOwnerParam(
-                   expr(declRefExpr(
-                            to(varDecl(hasLocalStorage(), varDecl().bind("var"),
-                                       unless(add_refd)))),
-                        expr().bind("arg")))))),
-               *r, "var", "arg")) {
-        if (!IsUniqRefToDeclInStmt(arg, var, r)) continue;
-        AnnotateVarOwner(var);
-        MoveSourceRange(arg->getSourceRange());
+    for (auto [stmt_or_cxx_ctor_initializer, vars] : last_use_stmts) {
+      assert(stmt_or_cxx_ctor_initializer);
+      auto is_last_use = IsInSet(vars);
+
+      const clang::Stmt* r;
+      const auto* cxx_ctor_initializer =
+          stmt_or_cxx_ctor_initializer
+              .dyn_cast<const clang::CXXCtorInitializer*>();
+
+      auto IsInteresting = [](const clang::CXXCtorInitializer* initializer) {
+        if (initializer->isBaseInitializer()) return false;
+        const auto* init = initializer->getInit();
+        if (llvm::isa<clang::DeclRefExpr>(IgnoreParenCastFuncs(init)))
+          return true;
+        return false;
+      };
+
+      if (cxx_ctor_initializer && !IsInteresting(cxx_ctor_initializer)) {
+        r = cxx_ctor_initializer->getInit();
+      } else {
+        r = stmt_or_cxx_ctor_initializer.dyn_cast<const clang::Stmt*>();
+      }
+
+      auto VarAndDeclRef =
+          [](const clang::CXXCtorInitializer* cxx_ctor_initializer) {
+            const auto* dre = llvm::cast<clang::DeclRefExpr>(
+                IgnoreParenCastFuncs(cxx_ctor_initializer->getInit()));
+            const auto* var = llvm::cast<clang::VarDecl>(dre->getDecl());
+            return std::tuple{var, dre};
+          };
+      if (r) {
+        for (auto [var, arg] : NodesFromMatchNode<clang::VarDecl, clang::Expr>(
+                 stmt(findAll(CallOrConstruct(ForEachArgumentWithOwnerParam(
+                     expr(declRefExpr(to(
+                              varDecl(hasLocalStorage(), varDecl().bind("var"),
+                                      is_last_use, unless(add_refd)))),
+                          expr().bind("arg")))))),
+                 *r, "var", "arg")) {
+          if (!IsUniqRefToDeclInStmt(arg, var, r)) continue;
+          AnnotateVarOwner(var);
+          MoveSourceRange(arg->getSourceRange());
+        }
+      } else {
+        if (Match(cxxCtorInitializer(
+                      withInitializer(IgnoringParenCastFuncs(
+                          declRefExpr(to(parmVarDecl(is_last_use))))),
+                      forField(hasType(OwnerType()))),
+                  *cxx_ctor_initializer)) {
+          auto [var, dre] = VarAndDeclRef(cxx_ctor_initializer);
+          AnnotateVarOwner(var);
+          MoveSourceRange(dre->getSourceRange());
+        }
       }
 
       auto is_used_in_non_pointer_ctor_initializers =
-          anyOf(PassedToCtorInitializerForOwnerFieldOf(f),
-                PassedToNonPointerCtorBaseInitializerOf(f));
+          PassedToCtorInitializerForOwnerFieldOf(f);
 
-      for (const auto* var : NodesFromMatchNode<clang::VarDecl>(
-               stmt(findAll(CallOrConstruct(
-                   ForEachArgumentWithPointerParam(declRefExpr(to(
-                       varDecl(unless(isInstantiated()), hasLocalStorage(),
-                               unless(is_used_in_non_pointer_ctor_initializers))
-                           .bind("var"))))))),
-               *r, "var")) {
-        if (Match(stmt(SelfOrHasDescendant(PassedAsArgumentToNonPointerParam(
-                      declRefExpr(to(equalsNode(var)))))),
-                  *r))
-          continue;
-        AnnotateVarPointer(var);
+      auto passed_to_non_pointer_param = IsInSet(DeclSetFromMatchNode(
+          decl(forEachDescendant(PassedAsArgumentToNonPointerParam(
+              declRefExpr(to(varDecl().bind("v")))))),
+          *f, "v"));
+
+      if (r) {
+        for (const auto* var : NodesFromMatchNode<clang::VarDecl>(
+                 stmt(findAll(CallOrConstruct(
+                     ForEachArgumentWithPointerParam(declRefExpr(to(
+                         varDecl(
+                             unless(isInstantiated()), hasLocalStorage(),
+                             is_last_use,
+                             unless(is_used_in_non_pointer_ctor_initializers),
+                             unless(passed_to_non_pointer_param))
+                             .bind("var"))))))),
+                 *r, "var")) {
+          if (Match(stmt(SelfOrHasDescendant(PassedAsArgumentToNonPointerParam(
+                        declRefExpr(to(equalsNode(var)))))),
+                    *r))
+            continue;
+
+          AnnotateVarPointer(var);
+        }
+      } else {
+        if (Match(cxxCtorInitializer(
+                      withInitializer(
+                          IgnoringParenCastFuncs(declRefExpr(to(parmVarDecl(
+                              unless(isInstantiated()), is_last_use,
+                              unless(is_used_in_non_pointer_ctor_initializers),
+                              unless(passed_to_non_pointer_param)))))),
+                      forField(hasType(PointerType()))),
+                  *cxx_ctor_initializer)) {
+          auto [var, _] = VarAndDeclRef(cxx_ctor_initializer);
+          AnnotateVarPointer(var);
+        }
       }
 
-      for (const auto* param : NodesFromMatchNode<clang::ParmVarDecl>(
-               stmt(findAll(NonTemplateCallOrConstruct(ForEachArgumentWithParam(
-                   declRefExpr(to(varDecl(hasLocalStorage(), PointerVar(),
-                                          unless(add_ref_or_assigned)))),
-                   parmVarDecl(unless(isInstantiated())).bind("param"))))),
-               *r, "param")) {
-        AnnotateVarPointer(param);
+      if (r) {
+        for (const auto* param : NodesFromMatchNode<clang::ParmVarDecl>(
+                 stmt(findAll(
+                     NonTemplateCallOrConstruct(ForEachArgumentWithParam(
+                         declRefExpr(to(varDecl(hasLocalStorage(), PointerVar(),
+                                                is_last_use,
+                                                unless(add_ref_or_assigned)))),
+                         parmVarDecl(unless(isInstantiated()))
+                             .bind("param"))))),
+                 *r, "param")) {
+          AnnotateVarPointer(param);
+        }
       }
 
-      for (auto [param, var, arg] :
-           NodesFromMatchNode<clang::ParmVarDecl, clang::VarDecl, clang::Expr>(
-               stmt(findAll(CallOrConstruct(
-                   ForEachArgumentWithParam(
-                       declRefExpr(
-                           to(varDecl(
-                                  hasLocalStorage(), OwnerVar(),
-                                  unless(
-                                      is_used_in_non_pointer_ctor_initializers))
-                                  .bind("var")))
-                           .bind("arg"),
-                       optionally(
-                           parmVarDecl(unless(isInstantiated()),
-                                       unless(hasDeclContext(functionDecl(
-                                           hasName("SafeRelease")))))
-                               .bind("param"))),
-                   unless(callExpr(IsCallToStdMove()))))),
-               *r, "param", "var", "arg")) {
-        if (!IsUniqRefToDeclInStmt(arg, var, r)) continue;
+      if (r) {
+        for (
+            auto [param, var, arg] :
+            NodesFromMatchNode<clang::ParmVarDecl, clang::VarDecl, clang::Expr>(
+                stmt(findAll(CallOrConstruct(
+                    ForEachArgumentWithParam(
+                        declRefExpr(
+                            to(varDecl(
+                                   hasLocalStorage(), OwnerVar(), is_last_use,
+                                   unless(
+                                       is_used_in_non_pointer_ctor_initializers))
+                                   .bind("var")))
+                            .bind("arg"),
+                        optionally(
+                            parmVarDecl(unless(isInstantiated()),
+                                        unless(hasDeclContext(functionDecl(
+                                            hasName("SafeRelease")))))
+                                .bind("param"))),
+                    unless(callExpr(IsCallToStdMove()))))),
+                *r, "param", "var", "arg")) {
+          if (!IsUniqRefToDeclInStmt(arg, var, r)) continue;
 
-        if (param) AnnotateVarOwner(param);
-        MoveSourceRange(arg->getSourceRange());
+          // Note we can't simply use unless(passed_to_non_pointer_param),
+          // because the param we potentially annotate here can be non-pointer
+          // (unannotated). Also note it's important we start matching from the
+          // function, not the body of the function, because we want to also
+          // search through constructor initializers!
+          if (Match(functionDecl(hasDescendant(CallOrConstruct(
+                        ForEachArgumentWithNonPointerParam(declRefExpr(
+                            unless(equalsNode(arg)), to(equalsNode(var))))))),
+                    *f))
+            continue;
+
+          if (param) AnnotateVarOwner(param);
+          MoveSourceRange(arg->getSourceRange());
+        }
       }
     }
   }
@@ -1185,24 +1257,24 @@ void Annotator::PropagatePointerVars() const {
               ReleaseCallExpr(ref_to_var)));
   };
   for (const auto* var : NodesFromMatchAST<clang::VarDecl>(
-           varDecl(hasLocalStorage(), hasType(RefCountPointerType()),
-                   unless(hasInitializer(ignoringParenImpCasts(
-                       CallCcacheAccessorMethodsReturningOwner()))),
-                   unless(IsImmediatelyBeforeAddRef()),
-                   unless(isInstantiated()), decl().bind("var"),
-                   hasDeclContext(functionDecl(hasBody(stmt()))),
-                   hasDeclContext(functionDecl(unless(anyOf(
-                       hasBody(hasDescendant(
-                           CounterexampleForVar(equalsBoundNode("var")))),
-                       cxxConstructorDecl(
-                           hasAnyConstructorInitializer(withInitializer(anyOf(
-                               IgnoringParenCastFuncs(
-                                   declRefExpr(to(equalsBoundNode("var")))),
-                               PassedAsArgumentToNonPointerParam(
-                                   declRefExpr(to(equalsBoundNode("var")))),
-                               hasDescendant(PassedAsArgumentToNonPointerParam(
-                                   declRefExpr(
-                                       to(equalsBoundNode("var")))))))))))))),
+           varDecl(
+               hasLocalStorage(), hasType(RefCountPointerType()),
+               unless(hasInitializer(ignoringParenImpCasts(
+                   CallCcacheAccessorMethodsReturningOwner()))),
+               unless(IsImmediatelyBeforeAddRef()), unless(isInstantiated()),
+               decl().bind("var"),
+               hasDeclContext(functionDecl(hasBody(stmt()))),
+               hasDeclContext(functionDecl(unless(anyOf(
+                   hasBody(hasDescendant(
+                       CounterexampleForVar(equalsBoundNode("var")))),
+                   cxxConstructorDecl(hasAnyConstructorInitializer(
+                       Switch()
+                           .Case(withInitializer(IgnoringParenCastFuncs(
+                                     declRefExpr(to(equalsBoundNode("var"))))),
+                                 forField(hasType(OwnerType())))
+                           .Default(withInitializer(SelfOrHasDescendant(
+                               PassedAsArgumentToNonPointerParam(declRefExpr(
+                                   to(equalsBoundNode("var")))))))))))))),
            "var")) {
     AnnotateVarPointer(var);
   }

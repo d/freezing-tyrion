@@ -168,38 +168,92 @@ TypeMatcher RefCountPointerPointerType() {
   return pointsTo(RefCountPointerType());
 }
 
-StmtSet LastStatementsOfFunc(const clang::FunctionDecl* f,
-                             clang::ASTContext* context) {
+LastUseStmts LastUseStatementsOfFunc(const clang::FunctionDecl* f) {
+  clang::ASTContext* context = &f->getASTContext();
   if (!f->getBody()) [[unlikely]]
     return {};
 
+  LastUseStmts ret;
   clang::CFG::BuildOptions build_options;
+  build_options.AddInitializers = true;
+
   auto cfg = clang::CFG::buildCFG(f, f->getBody(), context, build_options);
+  if (!cfg) return ret;
+
   const auto* exit_block = &cfg->getExit();
-  auto last_statements = llvm::map_range(
-      llvm::make_filter_range(
-          cfg->const_nodes(),
-          [exit_block](const clang::CFGBlock* cfg_block) {
-            auto reachable_succs = MakeVector(llvm::make_filter_range(
-                cfg_block->succs(),
-                [](const clang::CFGBlock::AdjacentBlock ab) {
-                  return ab.isReachable();
-                }));
-            // a branch?
-            if (reachable_succs.size() != 1) return false;
-            // not the "last" block?
-            if (reachable_succs.front() != exit_block) return false;
-            // last element isn't a statement?
-            if (cfg_block->empty() ||
-                !cfg_block->back().getAs<clang::CFGStmt>())
-              return false;
-            return true;
-          }),
-      [](const clang::CFGBlock* cfg_block) {
-        return cfg_block->back().castAs<clang::CFGStmt>().getStmt();
-      });
-  return {last_statements.begin(), last_statements.end()};
+  auto exiting_blocks = MakeVector(llvm::make_filter_range(
+      exit_block->preds(),
+      [exit_block](const clang::CFGBlock::AdjacentBlock pred) {
+        if (!pred.isReachable()) return false;
+        auto reachable_succs = MakeVector(llvm::make_filter_range(
+            pred->succs(), [](const clang::CFGBlock::AdjacentBlock ab) {
+              return ab.isReachable();
+            }));
+        // a branch?
+        if (reachable_succs.size() != 1) return false;
+        // not the "last" block?
+        if (reachable_succs.front() != exit_block) return false;
+        // degenerate / empty block?
+        if (pred->empty()) return false;
+
+        return true;
+      }));
+
+  for (const auto cfg_block : exiting_blocks) {
+    DeclSet seen;
+    for (auto elem_ref : cfg_block->rrefs()) {
+      auto kind = elem_ref->getKind();
+      switch (elem_ref->getKind()) {
+        case clang::CFGElement::Statement:
+        case clang::CFGElement::Initializer:
+          break;
+        case clang::CFGElement::DeleteDtor:
+          continue;
+        case clang::CFGElement::ScopeBegin:
+        case clang::CFGElement::ScopeEnd:
+        case clang::CFGElement::NewAllocator:
+        case clang::CFGElement::LifetimeEnds:
+        case clang::CFGElement::LoopExit:
+        case clang::CFGElement::Constructor:
+        case clang::CFGElement::CXXRecordTypedCall:
+        case clang::CFGElement::AutomaticObjectDtor:
+        case clang::CFGElement::BaseDtor:
+        case clang::CFGElement::MemberDtor:
+        case clang::CFGElement::TemporaryDtor:
+          elem_ref.dump();
+          std::terminate();
+      }
+
+      StmtOrCXXCtorInitializer stmt_or_cxx_ctor_initializer;
+      const clang::Stmt* statement;
+      if (elem_ref->getKind() == clang::CFGElement::Initializer) {
+        auto cfg_init = elem_ref->castAs<clang::CFGInitializer>();
+        stmt_or_cxx_ctor_initializer = cfg_init.getInitializer();
+        statement = cfg_init.getInitializer()->getInit();
+      } else {
+        auto cfg_stmt = elem_ref->castAs<clang::CFGStmt>();
+        stmt_or_cxx_ctor_initializer = cfg_stmt.getStmt();
+        statement = cfg_stmt.getStmt();
+      }
+      auto MakeVarSet = [](auto&& range) {
+        return DeclSet{range.begin(), range.end()};
+      };
+      auto vars = MakeVarSet(llvm::map_range(
+          match(stmt(forEachDescendant(
+                    declRefExpr(to(varDecl(unless(IsInSet(seen))).bind("v"))))),
+                *statement, f->getASTContext()),
+          [](const BoundNodes& bound_nodes) {
+            return bound_nodes.getNodeAs<clang::VarDecl>("v");
+          }));
+
+      if (vars.empty()) continue;
+      ret.push_back({stmt_or_cxx_ctor_initializer, vars});
+      seen.insert(vars.begin(), vars.end());
+    }
+  }
+  return ret;
 }
+
 bool IsUniqRefToDeclInStmt(const clang::Expr* e, const clang::Decl* d,
                            const clang::Stmt* s) {
   return match(stmt(SelfOrHasDescendant(

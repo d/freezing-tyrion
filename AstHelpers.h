@@ -76,10 +76,12 @@ AST_MATCHER_P(clang::Decl, IsInSet, DeclSet, nodes) {
   return nodes.contains(&Node);
 }
 
-using StmtSet = llvm::DenseSet<const clang::Stmt*>;
+using StmtOrCXXCtorInitializer =
+    llvm::PointerUnion<const clang::Stmt*, const clang::CXXCtorInitializer*>;
+using LastUseStmts =
+    llvm::SmallVector<std::tuple<StmtOrCXXCtorInitializer, DeclSet>>;
 
-StmtSet LastStatementsOfFunc(const clang::FunctionDecl* f,
-                             clang::ASTContext* context);
+LastUseStmts LastUseStatementsOfFunc(const clang::FunctionDecl* c);
 
 clang::QualType StripElaborated(clang::QualType qual_type);
 TypeMatcher IgnoringElaborated(const TypeMatcher& type_matcher);
