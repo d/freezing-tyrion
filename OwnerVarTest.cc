@@ -458,7 +458,7 @@ TEST_F(PropagateTest, ctorParamOwnInitField) {
       gpos::owner<T*> t_;
 
      public:
-      R(T* t) : t_(t) {}
+      R(T* t) : t_(t) { Assert(t); }
       ~R();
     };
   )C++",
@@ -467,7 +467,7 @@ TEST_F(PropagateTest, ctorParamOwnInitField) {
       gpos::owner<T*> t_;
 
      public:
-      R(gpos::owner<T*> t) : t_(t) {}
+      R(gpos::owner<T*> t) : t_(t) { Assert(t); }
       ~R();
     };
   )C++";
@@ -498,7 +498,7 @@ TEST_F(PropagateTest, ctorParamOwnInitBase) {
     };
 
     struct Q : R {
-      Q(T* t) : R(t) {}
+      Q(T* t) : R(t) { Assert(t); }
     };
   )C++",
               expected_changed_code = R"C++(
@@ -507,7 +507,7 @@ TEST_F(PropagateTest, ctorParamOwnInitBase) {
     };
 
     struct Q : R {
-      Q(gpos::owner<T*> t) : R(t) {}
+      Q(gpos::owner<T*> t) : R(t) { Assert(t); }
     };
   )C++";
 
