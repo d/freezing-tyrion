@@ -102,7 +102,8 @@ void ConverterAstConsumer::ConvertOwners() const {
 
   for (const auto* e : NodesFromMatchAST<clang::Expr>(
            callExpr(ReleaseCallExpr(IgnoringParenCastFuncs(anyOf(
-                        declRefExpr(to(varDecl(hasType(OwnerType())))),
+                        IgnoringStdMove(
+                            declRefExpr(to(varDecl(hasType(OwnerType()))))),
                         FieldReferenceFor(fieldDecl(hasType(OwnerType())))))))
                .bind("e"),
            "e")) {

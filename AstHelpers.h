@@ -96,9 +96,15 @@ AST_MATCHER_P(clang::Expr, IgnoringCastFuncs, ExpressionMatcher,
 }
 
 const clang::Expr* IgnoreParenCastFuncs(const clang::Expr* expr);
+const clang::Expr* IgnoreStdMove(const clang::Expr* expr);
+
 AST_MATCHER_P(clang::Expr, IgnoringParenCastFuncs, ExpressionMatcher,
               inner_matcher) {
   return inner_matcher.matches(*IgnoreParenCastFuncs(&Node), Finder, Builder);
+}
+
+AST_MATCHER_P(clang::Expr, IgnoringStdMove, ExpressionMatcher, inner_matcher) {
+  return inner_matcher.matches(*IgnoreStdMove(&Node), Finder, Builder);
 }
 
 inline auto ForEachArgumentWithParam(ExpressionMatcher arg_matcher,

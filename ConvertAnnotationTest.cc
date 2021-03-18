@@ -104,7 +104,7 @@ TEST_F(ConvertAnnotation, eraseRelease) {
     gpos::owner<T*> MakeT();
     void f() {
       gpos::owner<T*> t = MakeT();
-      gpos::SafeRelease(t);
+      gpos::SafeRelease(std::move(t));
     }
   )C++",
               expected_changed_code = R"C++(

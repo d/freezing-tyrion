@@ -142,6 +142,14 @@ const clang::Expr* IgnoreParenCastFuncs(const clang::Expr* expr) {
       clang::IgnoreCastsSingleStep, IgnoreCastFuncsSingleStep);
 }
 
+const clang::Expr* IgnoreStdMove(const clang::Expr* e) {
+  if (const auto* call = llvm::dyn_cast<clang::CallExpr>(e);
+      call && call->isCallToStdMove()) {
+    return call->getArg(0);
+  }
+  return e;
+}
+
 const clang::Expr* IgnoreCastFuncs(const clang::Expr* expr) {
   return clang::IgnoreExprNodes(const_cast<clang::Expr*>(expr),
                                 IgnoreCastFuncsSingleStep);
