@@ -112,6 +112,13 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
     };
 
     template <class T>
+    class CAutoRef {
+     public:
+      explicit CAutoRef(T* = nullptr);
+      const CAutoRef& operator=(T*);
+    };
+
+    template <class T>
     ULONG HashValue(const T*);
 
     template <class T>

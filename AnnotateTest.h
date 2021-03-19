@@ -35,6 +35,14 @@ class AnnotateTest : public OrcaTidyTest<AnnotateTest> {
       BOOL Insert(K *key, T *value);
       BOOL Replace(const K *key, T *ptNew);
     };
+
+    template <class T>
+    class CAutoRef {
+     public:
+      explicit CAutoRef(T * = nullptr);
+      const CAutoRef &operator=(T *);
+    };
+
     }  // namespace gpos
 
     struct T : gpos::CRefCount<T> {};

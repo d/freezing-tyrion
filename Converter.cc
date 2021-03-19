@@ -31,6 +31,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
     EraseAddRefs();
     ConvertOwnerToPointerImpCastToGet();
     ConvertCallCastFuncs();
+    ConvertAutoRef();
   }
 
  private:
@@ -50,6 +51,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
   void EraseAddRefs() const;
   void ConvertOwnerToPointerImpCastToGet() const;
   void ConvertCallCastFuncs() const;
+  void ConvertAutoRef() const;
 
   std::map<std::string, tooling::Replacements>& file_to_replaces_;
   clang::ASTContext* context_;
@@ -419,6 +421,28 @@ void ConverterAstConsumer::EraseAddRefs() const {
   for (const auto* e : NodesFromMatchAST<clang::Expr>(
            callExpr(AddRefOn(expr())).bind("e"), "e")) {
     EraseStmt(e);
+  }
+}
+
+void orca_tidy::ConverterAstConsumer::ConvertAutoRef() const {
+  for (const auto* v : NodesFromMatchAST<clang::VarDecl>(
+           varDecl(hasType(classTemplateSpecializationDecl(
+                       hasName("gpos::CAutoRef"))),
+                   hasInitializer(cxxConstructExpr(
+                       hasArgument(0, ignoringParenImpCasts(callExpr())))))
+               .bind("v"),
+           "v")) {
+    auto type_loc = v->getTypeSourceInfo()->getTypeLoc();
+    auto specialization_type_loc =
+        type_loc.getAsAdjusted<clang::TemplateSpecializationTypeLoc>();
+    auto elem_type_spelling =
+        GetSourceTextOfTemplateArg(specialization_type_loc, 0);
+
+    tooling::Replacement r{
+        SourceManager(),
+        clang::CharSourceRange::getTokenRange(type_loc.getSourceRange()),
+        llvm::formatv("gpos::Ref<{0}>", elem_type_spelling).str(), LangOpts()};
+    CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
   }
 }
 
