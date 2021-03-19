@@ -304,6 +304,11 @@ class AstHelperMixin {
     return {nodes_from_match.begin(), nodes_from_match.end()};
   }
 
+  template <class Matcher, class Node>
+  bool Match(Matcher matcher, const Node& node) const {
+    return !clang::ast_matchers::match(matcher, node, GetAstContext()).empty();
+  }
+
   auto GetSourceText(clang::SourceRange source_range) const {
     return clang::Lexer::getSourceText(
         clang::CharSourceRange::getTokenRange(source_range), SourceManager(),
@@ -386,6 +391,19 @@ StatementMatcher ReleaseCallExpr(ExpressionMatcher const& reference_to_field);
 StatementMatcher AddRefOn(ExpressionMatcher const& expr_matcher);
 
 bool IsInMacro(clang::SourceRange source_range);
+
+template <class Parent, class Node>
+const Parent* GetParentAs(const Node& node, clang::ASTContext& ast_context) {
+  for (auto potential_parent : ast_context.getParents(node))
+    if (const auto* parent = potential_parent.template get<Parent>(); parent)
+      return parent;
+  return nullptr;
+}
+
+StatementMatcher StmtIsImmediatelyBefore(const StatementMatcher& rhs);
+StatementMatcher StmtIsImmediatelyAfter(const StatementMatcher& lhs);
+
+__attribute__((const)) DeclarationMatcher AutoRefDecl();
 
 }  // namespace orca_tidy
 #endif  // ORCATIDY__ASTHELPERS_H_

@@ -33,34 +33,6 @@ AST_MATCHER(clang::FunctionDecl, HasRedecls) {
   return Node.getFirstDecl() != Node.getMostRecentDecl();
 }
 
-template <class Parent, class Node>
-const Parent* GetParentAs(const Node& node, clang::ASTContext& ast_context) {
-  for (auto potential_parent : ast_context.getParents(node))
-    if (const auto* parent = potential_parent.template get<Parent>(); parent)
-      return parent;
-  return nullptr;
-}
-
-AST_MATCHER_P(clang::Stmt, StmtIsImmediatelyBefore, StatementMatcher, rhs) {
-  const auto* compound_stmt =
-      GetParentAs<clang::CompoundStmt>(Node, Finder->getASTContext());
-  if (!compound_stmt) return false;
-  const auto* node_it = llvm::find(compound_stmt->body(), &Node);
-  const auto* rhs_it = std::next(node_it);
-  return rhs_it != compound_stmt->body_end() &&
-         rhs.matches(**rhs_it, Finder, Builder);
-}
-
-AST_MATCHER_P(clang::Stmt, StmtIsImmediatelyAfter, StatementMatcher, lhs) {
-  const auto* compound_stmt =
-      GetParentAs<clang::CompoundStmt>(Node, Finder->getASTContext());
-  if (!compound_stmt) return false;
-  auto node_it = llvm::find(llvm::reverse(compound_stmt->body()), &Node);
-  auto lhs_it = std::next(node_it);
-  return lhs_it != compound_stmt->body_rend() &&
-         lhs.matches(**lhs_it, Finder, Builder);
-}
-
 AST_MATCHER_P(clang::RecordDecl, HasField, DeclarationMatcher, field_matcher) {
   return matchesFirstInPointerRange(field_matcher, Node.field_begin(),
                                     Node.field_end(), Finder,
@@ -531,11 +503,6 @@ class Annotator : public AstHelperMixin<Annotator> {
       FindConstTokenBefore(field_decl->getBeginLoc(), type_range);
 
     AnnotateSourceRange(type_range, annotation);
-  }
-
-  template <class Matcher, class Node>
-  bool Match(Matcher matcher, const Node& node) const {
-    return !match(matcher, node, ast_context_).empty();
   }
 
   bool IsOwner(const clang::QualType& type) const {

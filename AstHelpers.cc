@@ -85,12 +85,12 @@ DeclarationMatcher SingleDecl() {
 }
 
 StatementMatcher AssignTo(const ExpressionMatcher& lhs) {
-  return binaryOperator(hasOperatorName("="), hasLHS(lhs));
+  return binaryOperation(hasOperatorName("="), hasLHS(lhs));
 }
 
 StatementMatcher AssignTo(const ExpressionMatcher& lhs,
                           const ExpressionMatcher& rhs) {
-  return binaryOperator(hasOperatorName("="), hasLHS(lhs), hasRHS(rhs));
+  return binaryOperation(hasOperatorName("="), hasLHS(lhs), hasRHS(rhs));
 }
 
 namespace {
@@ -115,6 +115,26 @@ AST_MATCHER_P(clang::QualType, IgnoringAnnotationImpl, TypeMatcher,
 AST_MATCHER_P(clang::Stmt, HasSourceRangeImpl, clang::SourceRange,
               source_range) {
   return Node.getSourceRange() == source_range;
+}
+
+AST_MATCHER_P(clang::Stmt, StmtIsImmediatelyBeforeImpl, StatementMatcher, rhs) {
+  const auto* compound_stmt =
+      GetParentAs<clang::CompoundStmt>(Node, Finder->getASTContext());
+  if (!compound_stmt) return false;
+  const auto* node_it = llvm::find(compound_stmt->body(), &Node);
+  const auto* rhs_it = std::next(node_it);
+  return rhs_it != compound_stmt->body_end() &&
+         rhs.matches(**rhs_it, Finder, Builder);
+}
+
+AST_MATCHER_P(clang::Stmt, StmtIsImmediatelyAfterImpl, StatementMatcher, lhs) {
+  const auto* compound_stmt =
+      GetParentAs<clang::CompoundStmt>(Node, Finder->getASTContext());
+  if (!compound_stmt) return false;
+  auto node_it = llvm::find(llvm::reverse(compound_stmt->body()), &Node);
+  auto lhs_it = std::next(node_it);
+  return lhs_it != compound_stmt->body_rend() &&
+         lhs.matches(**lhs_it, Finder, Builder);
 }
 
 }  // namespace
@@ -376,6 +396,17 @@ StatementMatcher AddRefOn(const ExpressionMatcher& expr_matcher) {
 bool IsInMacro(clang::SourceRange source_range) {
   return source_range.isInvalid() || source_range.getBegin().isMacroID() ||
          source_range.getEnd().isMacroID();
+}
+
+StatementMatcher StmtIsImmediatelyBefore(const StatementMatcher& rhs) {
+  return StmtIsImmediatelyBeforeImpl(rhs);
+}
+StatementMatcher StmtIsImmediatelyAfter(const StatementMatcher& lhs) {
+  return StmtIsImmediatelyAfterImpl(lhs);
+}
+
+DeclarationMatcher AutoRefDecl() {
+  return classTemplateSpecializationDecl(hasName("gpos::CAutoRef"));
 }
 
 }  // namespace orca_tidy

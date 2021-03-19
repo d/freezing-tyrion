@@ -41,7 +41,9 @@ class ConverterAstConsumer : public clang::ASTConsumer,
       unsigned int i) const;
   void OwnerToRef(clang::TypeLoc type_loc) const;
   void DotGet(const clang::Expr* e) const;
+  void EraseSourcRange(const clang::SourceRange source_range) const;
   void EraseStmt(const clang::Stmt* e) const;
+  void EraseDecl(const clang::Decl* d) const;
 
   void ConvertCcacheTypedefs() const;
   void ConvertRefArrayTypedefs() const;
@@ -56,6 +58,14 @@ class ConverterAstConsumer : public clang::ASTConsumer,
   std::map<std::string, tooling::Replacements>& file_to_replaces_;
   clang::ASTContext* context_;
 };
+
+static StatementMatcher VarSandwiching(const DeclarationMatcher& var1,
+                                       const DeclarationMatcher& var2,
+                                       const StatementMatcher& assignment) {
+  return declStmt(hasSingleDecl(var1),
+                  StmtIsImmediatelyBefore(declStmt(
+                      has(var2), StmtIsImmediatelyBefore(assignment))));
+}
 
 void ConverterAstConsumer::ConvertPointers() const {
   for (const auto* field : NodesFromMatchAST<clang::FieldDecl>(
@@ -119,13 +129,19 @@ void ConverterAstConsumer::ConvertOwners() const {
     OwnerToRef(ExtractFunctionTypeLoc(t).getReturnLoc());
   }
 }
+void orca_tidy::ConverterAstConsumer::EraseSourcRange(
+    const clang::SourceRange source_range) const {
+  tooling::Replacement r{SourceManager(),
+                         clang::CharSourceRange::getTokenRange(source_range),
+                         "", LangOpts()};
+  CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
+}
 
 void ConverterAstConsumer::EraseStmt(const clang::Stmt* e) const {
-  tooling::Replacement r{
-      SourceManager(),
-      clang::CharSourceRange::getTokenRange(e->getSourceRange()), "",
-      LangOpts()};
-  CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
+  EraseSourcRange(e->getSourceRange());
+}
+void orca_tidy::ConverterAstConsumer::EraseDecl(const clang::Decl* d) const {
+  EraseSourcRange(d->getSourceRange());
 }
 
 void ConverterAstConsumer::StripPointer(clang::TypeLoc type_loc) const {
@@ -426,8 +442,7 @@ void ConverterAstConsumer::EraseAddRefs() const {
 
 void orca_tidy::ConverterAstConsumer::ConvertAutoRef() const {
   for (const auto* v : NodesFromMatchAST<clang::VarDecl>(
-           varDecl(hasType(classTemplateSpecializationDecl(
-                       hasName("gpos::CAutoRef"))),
+           varDecl(hasType(AutoRefDecl()),
                    hasInitializer(cxxConstructExpr(
                        hasArgument(0, ignoringParenImpCasts(callExpr())))))
                .bind("v"),
@@ -443,6 +458,30 @@ void orca_tidy::ConverterAstConsumer::ConvertAutoRef() const {
         clang::CharSourceRange::getTokenRange(type_loc.getSourceRange()),
         llvm::formatv("gpos::Ref<{0}>", elem_type_spelling).str(), LangOpts()};
     CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
+  }
+
+  for (auto [auto_ref, assign, dre] :
+       NodesFromMatchAST<clang::VarDecl, clang::Expr, clang::Expr>(
+           VarSandwiching(
+               varDecl(hasType(AutoRefDecl())).bind("auto_ref"),
+               varDecl(hasType(OwnerType())).bind("v"),
+               stmt(
+                   AssignTo(
+                       declRefExpr(to(equalsBoundNode("auto_ref"))).bind("dre"),
+                       IgnoringParenCastFuncs(
+                           declRefExpr(to(equalsBoundNode("v"))))))
+                   .bind("assign")),
+           "auto_ref", "assign", "dre")) {
+    const auto* compound_stmt = GetParentAs<clang::Stmt>(*assign, AstContext());
+    assert(compound_stmt);
+
+    if (Match(stmt(hasDescendant(declRefExpr(unless(equalsNode(dre)),
+                                             to(equalsNode(auto_ref))))),
+              *compound_stmt))
+      continue;
+
+    EraseDecl(auto_ref);
+    EraseStmt(assign);
   }
 }
 
