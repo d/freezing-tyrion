@@ -89,7 +89,7 @@ void ConverterAstConsumer::ConvertPointers() const {
            typedefNameDecl(hasType(IsAnyFunctionType(Returns(PointerType()))))
                .bind("typedef_decl"),
            "typedef_decl")) {
-    StripPointer(ExtractFunctionTypeLoc(t).getReturnLoc());
+    StripPointer(ExtractFunctionProtoTypeLoc(t).getReturnLoc());
   }
 }
 
@@ -126,7 +126,7 @@ void ConverterAstConsumer::ConvertOwners() const {
            typedefNameDecl(hasType(IsAnyFunctionType(Returns(OwnerType()))))
                .bind("typedef_decl"),
            "typedef_decl")) {
-    OwnerToRef(ExtractFunctionTypeLoc(t).getReturnLoc());
+    OwnerToRef(ExtractFunctionProtoTypeLoc(t).getReturnLoc());
   }
 }
 void orca_tidy::ConverterAstConsumer::EraseSourcRange(

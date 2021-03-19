@@ -29,13 +29,9 @@ using NamedMatcher = decltype(clang::ast_matchers::hasName(""));
 static TypeMatcher AnnotationType(NamedMatcher named_matcher);
 
 __attribute__((const)) TypeMatcher OwnerType();
-
 __attribute__((const)) TypeMatcher PointerType();
-
 __attribute__((const)) TypeMatcher LeakedType();
-
 __attribute__((const)) TypeMatcher CastType();
-
 __attribute__((const)) TypeMatcher AnnotatedType();
 
 __attribute__((const)) TypeMatcher RefCountPointerType();
@@ -172,7 +168,7 @@ AST_MATCHER_P(clang::Type, IsAnyFunctionType, FunctionTypeMatcher,
   return function_type_matcher.matches(*f, Finder, Builder);
 }
 
-clang::FunctionTypeLoc ExtractFunctionTypeLoc(
+clang::FunctionProtoTypeLoc ExtractFunctionProtoTypeLoc(
     const clang::TypedefNameDecl* typedef_name_decl);
 
 template <class Range>

@@ -133,6 +133,59 @@ TEST_F(PropagateTest, pfStructArr) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(PropagateTest, pfArr) {
+  std::string code = R"C++(
+    bool G(S*, U*);
+    bool F(gpos::pointer<S*>, gpos::owner<U*>);
+
+    typedef bool (*pFSU)(S*, U*);
+
+    T* GG(gpos::owner<S*>);
+    gpos::pointer<T*> FF(S*);
+
+    typedef T* PTOS(S*);
+
+    void f() {
+      pFSU arr[] = {
+          &G,
+          F,
+      };
+
+      PTOS* arr2[] = {
+          GG,
+          FF,
+      };
+    }
+  )C++",
+              expected_changed_code = R"C++(
+    bool G(gpos::pointer<S*>, gpos::owner<U*>);
+    bool F(gpos::pointer<S*>, gpos::owner<U*>);
+
+    typedef bool (*pFSU)(gpos::pointer<S*>, gpos::owner<U*>);
+
+    gpos::pointer<T*> GG(gpos::owner<S*>);
+    gpos::pointer<T*> FF(gpos::owner<S*>);
+
+    typedef gpos::pointer<T*> PTOS(gpos::owner<S*>);
+
+    void f() {
+      pFSU arr[] = {
+          &G,
+          F,
+      };
+
+      PTOS* arr2[] = {
+          GG,
+          FF,
+      };
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 TEST_F(PropagateTest, pmfRet) {
   std::string code = R"C++(
     struct R {
@@ -181,7 +234,7 @@ TEST_F(PropagateTest, pfParamRet) {
     void f() { G(F); }
   )C++",
               expected_changed_code = R"C++(
-    typedef gpos::owner<T*> FOwn(S*);
+    typedef gpos::owner<T*> FOwn(gpos::pointer<S*>);
     void G(FOwn fown);
     gpos::owner<T*> F(gpos::pointer<S*>);
 

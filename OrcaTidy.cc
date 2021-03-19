@@ -101,35 +101,35 @@ static TypeMatcher TypeContainingTypedefFunctionPointer(
           typedef_matcher)),
       pointsTo(typedefNameDecl(hasType(hasCanonicalType(functionProtoType())),
                                typedef_matcher))));
-  return qualType(anyOf(
-      typedef_or_points_to_typedef,
-      arrayType(hasElementType(hasDeclaration(recordDecl(
-          HasField(fieldDecl(hasType(typedef_or_points_to_typedef)))))))));
+  return qualType(anyOf(typedef_or_points_to_typedef,
+                        arrayType(hasElementType(
+                            anyOf(hasDeclaration(recordDecl(HasField(fieldDecl(
+                                      hasType(typedef_or_points_to_typedef))))),
+                                  typedef_or_points_to_typedef)))));
 }
 
-using ProtoTypeMatcher = decltype(functionProtoType().bind(""));
 static ExpressionMatcher ExprInitializingFunctionPointer(
-    const ProtoTypeMatcher& fproto_matcher) {
-  return anyOf(
-      expr(hasType(qualType(anyOf(pointsTo(fproto_matcher), fproto_matcher)))),
-      initListExpr(hasDescendant(initListExpr(has(expr(hasType(
-          qualType(anyOf(pointsTo(fproto_matcher),
-                         memberPointerType(pointee(fproto_matcher)))))))))));
+    const FunctionMatcher& function_matcher) {
+  auto func = declRefExpr(to(functionDecl(function_matcher)));
+  auto p_func = AddrOf(func);
+  auto ref_to_func = anyOf(func, p_func);
+  return ignoringParenImpCasts(
+      anyOf(ref_to_func, initListExpr(forEachDescendant(expr(ref_to_func)))));
 }
 
 static StatementMatcher VarInitWithTypedefFunctionPointers(
     const DeclarationMatcher& typedef_matcher,
-    const ProtoTypeMatcher& fproto_matcher) {
+    const FunctionMatcher& function_matcher) {
   return declStmt(forEach(varDecl(
       hasType(TypeContainingTypedefFunctionPointer(typedef_matcher)),
-      hasInitializer(ExprInitializingFunctionPointer(fproto_matcher)))));
+      hasInitializer(ExprInitializingFunctionPointer(function_matcher)))));
 }
 
 static StatementMatcher CallPassingFunctionToTypedefFunctionPointer(
     const DeclarationMatcher& typedef_matcher,
-    const ProtoTypeMatcher& fproto_matcher) {
+    const FunctionMatcher& function_matcher) {
   return callExpr(forEachArgumentWithParamType(
-      ExprInitializingFunctionPointer(fproto_matcher),
+      ExprInitializingFunctionPointer(function_matcher),
       TypeContainingTypedefFunctionPointer(typedef_matcher)));
 }
 
@@ -225,6 +225,9 @@ AST_MATCHER(clang::VarDecl, IsImmediatelyBeforeAddRef) {
                      AddRefOn(declRefExpr(to(equalsNode(&Node))))))))
       .matches(Node, Finder, Builder);
 }
+
+static DeclarationMatcher VarFuncTypedefFuncProtoTypeReturns(
+    const TypeMatcher& annotation_matcher);
 
 class Annotator : public AstHelperMixin<Annotator> {
  public:
@@ -424,6 +427,8 @@ class Annotator : public AstHelperMixin<Annotator> {
   VarMatcher PointerVar() const;
 
   void RememberVar(const clang::Decl* var, llvm::StringRef annotation) const;
+  void RememberTypedefFunctionProtoType(const clang::TypedefNameDecl* td,
+                                        llvm::StringRef annotation) const;
 
   StatementMatcher CallReturningOwner() const;
 
@@ -505,11 +510,9 @@ class Annotator : public AstHelperMixin<Annotator> {
     AnnotateSourceRange(type_range, annotation);
   }
 
-  bool IsOwner(const clang::QualType& type) const {
-    return Match(OwnerType(), type);
-  }
+  bool IsOwner(clang::QualType type) const { return Match(OwnerType(), type); }
 
-  bool IsPointer(const clang::QualType& type) const {
+  bool IsPointer(clang::QualType type) const {
     return Match(PointerType(), type);
   }
 
@@ -519,7 +522,7 @@ class Annotator : public AstHelperMixin<Annotator> {
     return Match(LeakedType(), var->getType());
   }
 
-  bool IsAnnotated(const clang::QualType& type) const {
+  bool IsAnnotated(clang::QualType type) const {
     return Match(AnnotatedType(), type);
   }
 
@@ -530,6 +533,10 @@ class Annotator : public AstHelperMixin<Annotator> {
   bool IsPointer(const clang::Type* type) const {
     return Match(elaboratedType(namesType(PointerType())), *type);
   }
+
+  bool IsOwner(const clang::Decl* d) const;
+  bool IsPointer(const clang::Decl* d) const;
+  bool IsAnnotated(const clang::Decl* d) const;
 
   void AnnotateParameter(const clang::ParmVarDecl* p,
                          const TypeMatcher& annotation_matcher,
@@ -545,6 +552,13 @@ class Annotator : public AstHelperMixin<Annotator> {
   void PropagateFunctionPointers() const;
   void AnnotateTypedefFunctionProtoTypeReturnOwner(
       const clang::TypedefNameDecl* typedef_decl) const;
+  void AnnotateTypedefFunctionProtoTypeParams(
+      const clang::TypedefNameDecl* typedef_decl,
+      const clang::FunctionDecl* f) const;
+  void AnnotateTypedefFunctionProtoTypeReturnType(
+      const clang::TypedefNameDecl* typedef_decl,
+      const clang::FunctionDecl* f) const;
+
   void InferCastFunctions() const;
   void InferPointerParamsForBoolFunctions() const;
   void PropagateReturnOwner() const;
@@ -1159,25 +1173,65 @@ void Annotator::AnnotateParameter(const clang::ParmVarDecl* p,
 }
 
 void Annotator::PropagateFunctionPointers() const {
-  for (auto [td, fproto] :
-       NodesFromMatchAST<clang::TypedefNameDecl, clang::FunctionProtoType>(
+  for (auto [td, f] :
+       NodesFromMatchAST<clang::TypedefNameDecl, clang::FunctionDecl>(
            stmt(anyOf(VarInitWithTypedefFunctionPointers(
                           typedefNameDecl().bind("typedef_decl"),
-                          functionProtoType().bind("fproto")),
+                          functionDecl().bind("f")),
                       CallPassingFunctionToTypedefFunctionPointer(
                           typedefNameDecl().bind("typedef_decl"),
-                          functionProtoType().bind("fproto")))),
-           "typedef_decl", "fproto")) {
-    auto rt = fproto->getReturnType();
-    if (!Match(AnnotatedType(), rt)) continue;
+                          functionDecl().bind("f")))),
+           "typedef_decl", "f")) {
+    AnnotateTypedefFunctionProtoTypeReturnType(td, f);
+    AnnotateTypedefFunctionProtoTypeParams(td, f);
+  }
+}
 
-    if (IsOwner(rt)) {
-      AnnotateTypedefFunctionProtoTypeReturnOwner(td);
-    } else if (IsPointer(rt)) {
-      AnnotateTypedefFunctionProtoTypeReturnPointer(td);
+void Annotator::AnnotateTypedefFunctionProtoTypeReturnType(
+    const clang::TypedefNameDecl* typedef_decl,
+    const clang::FunctionDecl* f) const {
+  if (IsAnnotated(f)) {
+    if (IsOwner(f)) {
+      AnnotateTypedefFunctionProtoTypeReturnOwner(typedef_decl);
+    } else if (IsPointer(f)) {
+      AnnotateTypedefFunctionProtoTypeReturnPointer(typedef_decl);
+    }
+  } else if (IsAnnotated(typedef_decl)) {
+    if (IsOwner(typedef_decl))
+      AnnotateFunctionReturnOwner(f);
+    else if (IsPointer(typedef_decl))
+      AnnotateFunctionReturnPointer(f);
+  }
+}
+
+void Annotator::AnnotateTypedefFunctionProtoTypeParams(
+    const clang::TypedefNameDecl* typedef_decl,
+    const clang::FunctionDecl* f) const {
+  auto underlying_type = typedef_decl->getUnderlyingType();
+  if (auto t = underlying_type; !t->isFunctionPointerType() &&
+                                !t->isFunctionProtoType() &&
+                                !t->isMemberFunctionPointerType())
+    return;
+  auto function_type_loc = ExtractFunctionProtoTypeLoc(typedef_decl);
+
+  for (auto [f_param, typedef_param] :
+       llvm::zip(f->parameters(), function_type_loc.getParams())) {
+    if (IsAnnotated(f_param)) {
+      // Propagate annotation from function to the typedef
+      if (IsOwner(f_param))
+        AnnotateVarOwner(typedef_param);
+      else if (IsPointer(f_param))
+        AnnotateVarPointer(typedef_param);
+    } else if (IsAnnotated(typedef_param)) {
+      // Propagate annotation from typedef to function
+      if (IsOwner(typedef_param))
+        AnnotateVarOwner(f_param);
+      else if (IsPointer(typedef_param))
+        AnnotateVarPointer(f_param);
     }
   }
 }
+
 void Annotator::AnnotateTypedefFunctionProtoTypeReturnOwner(
     const clang::TypedefNameDecl* typedef_decl) const {
   AnnotateTypedefFunctionProtoTypeReturnType(typedef_decl, OwnerType(),
@@ -1190,6 +1244,11 @@ void Annotator::AnnotateTypedefFunctionProtoTypeReturnPointer(
                                              kPointerAnnotation);
 }
 
+void Annotator::RememberTypedefFunctionProtoType(
+    const clang::TypedefNameDecl* td, llvm::StringRef annotation) const {
+  RememberVar(td, annotation);
+}
+
 void Annotator::AnnotateTypedefFunctionProtoTypeReturnType(
     const clang::TypedefNameDecl* typedef_decl,
     const TypeMatcher& annotation_matcher, llvm::StringRef annotation) const {
@@ -1198,13 +1257,13 @@ void Annotator::AnnotateTypedefFunctionProtoTypeReturnType(
                                 !t->isFunctionProtoType() &&
                                 !t->isMemberFunctionPointerType())
     return;
-  auto underlying_loc = typedef_decl->getTypeSourceInfo()->getTypeLoc();
-  auto function_type_loc = ExtractFunctionTypeLoc(typedef_decl);
+  auto function_type_loc = ExtractFunctionProtoTypeLoc(typedef_decl);
   auto return_loc = function_type_loc.getReturnLoc();
   auto return_type = return_loc.getType();
 
   if (Match(annotation_matcher, return_type)) return;
 
+  RememberTypedefFunctionProtoType(typedef_decl, annotation);
   auto return_source_range = return_loc.getSourceRange();
   if (return_type->getPointeeType().isLocalConstQualified())
     FindConstTokenBefore(typedef_decl->getBeginLoc(), return_source_range);
@@ -1518,6 +1577,28 @@ VarMatcher Annotator::PointerVar() const {
   return anyOf(hasType(PointerType()), IsInSet(pointer_vars_));
 }
 
+bool Annotator::IsOwner(const clang::Decl* d) const {
+  return owner_vars_.contains(d) ||
+         Match(VarFuncTypedefFuncProtoTypeReturns(OwnerType()), *d);
+}
+bool Annotator::IsPointer(const clang::Decl* d) const {
+  return pointer_vars_.contains(d) ||
+         Match(VarFuncTypedefFuncProtoTypeReturns(PointerType()), *d);
+}
+bool Annotator::IsAnnotated(const clang::Decl* d) const {
+  return owner_vars_.contains(d) || pointer_vars_.contains(d) ||
+         Match(VarFuncTypedefFuncProtoTypeReturns(AnnotatedType()), *d);
+}
+
+DeclarationMatcher VarFuncTypedefFuncProtoTypeReturns(
+    const TypeMatcher& annotation_matcher) {
+  return Switch()
+      .Case(varDecl(), varDecl(hasType(annotation_matcher)))
+      .Case(functionDecl(), functionDecl(returns(annotation_matcher)))
+      .Default(typedefNameDecl(
+          hasType(IsAnyFunctionType(Returns(annotation_matcher)))));
+}
+
 void Annotator::RememberFunc(const clang::FunctionDecl* f,
                              llvm::StringRef annotation) const {
   // Hack: just record the func in the same sets as vars
@@ -1525,9 +1606,13 @@ void Annotator::RememberFunc(const clang::FunctionDecl* f,
 }
 
 StatementMatcher Annotator::CallReturningOwner() const {
-  return callExpr(anyOf(hasType(OwnerType()),
-                        callee(functionDecl(IsInSet(owner_vars_))),
-                        CallCcacheAccessorMethodsReturningOwner()));
+  auto returns_owner = IsInSet(owner_vars_);
+  return callExpr(
+      anyOf(hasType(OwnerType()), callee(functionDecl(returns_owner)),
+            callee(expr(ignoringParenImpCasts(
+                anyOf(hasType(typedefNameDecl(returns_owner)),
+                      hasType(pointsTo(typedefNameDecl(returns_owner))))))),
+            CallCcacheAccessorMethodsReturningOwner()));
 }
 
 StatementMatcher Annotator::PassedAsArgumentToNonPointerParam(
