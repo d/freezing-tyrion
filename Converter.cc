@@ -288,9 +288,12 @@ void ConverterAstConsumer::ConvertHashMapTypedefs() const {
       };
   for (auto [typedef_decl, hm] :
        NodesFromMatchAST<clang::TypedefNameDecl, clang::Decl>(
-           typedefNameDecl(hasType(qualType(hasDeclaration(
+           typedefNameDecl(unless(isInstantiated()),
+                           hasType(qualType(hasDeclaration(
                                anyOf(decl(HashMapRefKRefTDecl()).bind("hm"),
-                                     HashMapIterRefKRefTDecl())))))
+                                     HashMapIterRefKRefTDecl())))),
+                           unless(hasDeclContext(classTemplateDecl(
+                               hasName("gpos::CHashMapIter")))))
                .bind("typedef_decl"),
            "typedef_decl", "hm")) {
     auto underlying_type_loc = typedef_decl->getTypeSourceInfo()->getTypeLoc();
@@ -333,8 +336,13 @@ void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
       AssignTo(expr(hasType(PointerType())),
                IgnoringParenCastFuncs(expr(has_owner_type).bind("owner")));
   auto pass_owner_arg_to_poiner_param =
-      expr(IgnoringParenCastFuncs(invocation(ForEachArgumentWithParamType(
-          expr(has_owner_type).bind("owner"), PointerType()))));
+      expr(IgnoringParenCastFuncs(CallOrConstruct(
+          Switch()
+              .Case(hasDeclaration(
+                        cxxConstructorDecl(ofClass(HashMapIterDecl()))),
+                    hasArgument(0, expr(has_owner_type).bind("owner")))
+              .Default(ForEachArgumentWithParamType(
+                  expr(has_owner_type).bind("owner"), PointerType())))));
   for (const auto* owner : NodesFromMatchAST<clang::Expr>(
            stmt(anyOf(return_owner_as_pointer, init_pointer_vars,
                       assign_to_pointer_vars, pass_owner_arg_to_poiner_param)),

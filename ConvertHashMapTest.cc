@@ -29,16 +29,29 @@ TEST_F(ConvertHashMap, refKRefTIter) {
   std::string code = R"C++(
     struct U : gpos::CRefCount<U> {};
 
+    typedef gpos::CHashMap<T, U, T::UlHash, T::FEquals, gpos::CleanupRelease<T>,
+                           gpos::CleanupRelease<U>>
+        TUMap;
+
     typedef gpos::CHashMapIter<T, U, T::UlHash, T::FEquals,
                                gpos::CleanupRelease<T>, gpos::CleanupRelease<U>>
         TUMapIter;
+
+    void f(gpos::owner<TUMap*> tumap) { TUMapIter iter(tumap); }
   )C++",
               expected_changed_code = R"C++(
     struct U : gpos::CRefCount<U> {};
 
+    typedef gpos::UnorderedMap<gpos::Ref<T>, gpos::Ref<U>,
+                               gpos::RefHash<T, T::UlHash>,
+                               gpos::RefEq<T, T::FEquals>>
+        TUMap;
+
     typedef gpos::UnorderedMap<
         gpos::Ref<T>, gpos::Ref<U>, gpos::RefHash<T, T::UlHash>,
         gpos::RefEq<T, T::FEquals>>::LegacyIterator TUMapIter;
+
+    void f(gpos::Ref<TUMap> tumap) { TUMapIter iter(tumap.get()); }
   )C++";
 
   auto changed_code = annotateAndFormat(std::move(code));
