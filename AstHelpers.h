@@ -115,6 +115,13 @@ inline auto ForEachArgumentWithParamType(ExpressionMatcher arg_matcher,
       IgnoringParenCastFuncs(arg_matcher), param_matcher);
 }
 
+StatementMatcher ForEachArgumentToHashMapMethodWithPointerParam(
+    const ExpressionMatcher& arg_matcher);
+StatementMatcher ForEachArgumentToHashSetMethodWithOwnerParam(
+    const ExpressionMatcher& arg_matcher);
+StatementMatcher ForEachArgumentToHashSetMethodWithPointerParam(
+    const ExpressionMatcher& arg_matcher);
+
 /// Whenever we think of using \c forEachArgumentWithParam or
 /// \c forEachArgumentWithParamType with \c callExpr, we probably should also
 /// consider using them with \c cxxConstructExpr . That's what these two
@@ -367,20 +374,22 @@ StatementMatcher HasSourceRange(clang::SourceRange source_range);
 
 __attribute__((const)) DeclarationMatcher RefArrayDecl();
 
+using ClassTemplateSpecializationMatcher =
+    decltype(clang::ast_matchers::hasSpecializedTemplate(
+        clang::ast_matchers::decl()));
 __attribute__((const)) DeclarationMatcher MethodOfHashMap();
-template <class... ArgMatchers>
-__attribute__((const)) DeclarationMatcher HashMapDecl(ArgMatchers... args) {
-  return clang::ast_matchers::classTemplateSpecializationDecl(
-      clang::ast_matchers::hasName("::gpos::CHashMap"), args...);
-}
-template <class... ArgMatchers>
-__attribute__((const)) DeclarationMatcher HashMapIterDecl(ArgMatchers... args) {
-  return clang::ast_matchers::classTemplateSpecializationDecl(
-      clang::ast_matchers::hasName("::gpos::CHashMapIter"), args...);
-}
+__attribute__((const)) DeclarationMatcher HashMapDecl(
+    llvm::ArrayRef<ClassTemplateSpecializationMatcher> args = {});
+__attribute__((const)) DeclarationMatcher HashMapIterDecl(
+    llvm::ArrayRef<ClassTemplateSpecializationMatcher> args = {});
 __attribute__((const)) DeclarationMatcher HashMapRefKRefTDecl();
 __attribute__((const)) DeclarationMatcher HashMapIterRefKRefTDecl();
 __attribute__((const)) TemplateArgumentMatcher RefersToCleanupRelease();
+
+__attribute__((const)) DeclarationMatcher HashSetDecl(
+    llvm::ArrayRef<ClassTemplateSpecializationMatcher> matchers = {});
+__attribute__((const)) DeclarationMatcher RefHashSetDecl();
+__attribute__((const)) DeclarationMatcher MethodOfHashSet();
 
 StatementMatcher FieldReferenceFor(DeclarationMatcher const& field_matcher);
 StatementMatcher ReleaseCallExpr(ExpressionMatcher const& reference_to_field);

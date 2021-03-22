@@ -359,10 +359,10 @@ static auto HMRefT() { return HMT(RefersToCleanupRelease()); }
 static auto HMNotRefT() { return unless(HMRefT()); }
 
 DeclarationMatcher HashMapRefKRefTDecl() {
-  return HashMapDecl(HMRefK(), HMRefT());
+  return HashMapDecl({HMRefK(), HMRefT()});
 }
 DeclarationMatcher HashMapIterRefKRefTDecl() {
-  return HashMapIterDecl(HMRefK(), HMRefT());
+  return HashMapIterDecl({HMRefK(), HMRefT()});
 }
 TemplateArgumentMatcher RefersToCleanupRelease() {
   return refersToDeclaration(functionDecl(hasName("CleanupRelease")));
@@ -407,6 +407,62 @@ StatementMatcher StmtIsImmediatelyAfter(const StatementMatcher& lhs) {
 
 DeclarationMatcher AutoRefDecl() {
   return classTemplateSpecializationDecl(hasName("gpos::CAutoRef"));
+}
+
+DeclarationMatcher HashMapDecl(
+    llvm::ArrayRef<ClassTemplateSpecializationMatcher> args) {
+  return classTemplateSpecializationDecl(hasName("::gpos::CHashMap"),
+                                         classTemplateSpecializationDecl(args));
+}
+
+DeclarationMatcher HashMapIterDecl(
+    llvm::ArrayRef<ClassTemplateSpecializationMatcher> args) {
+  return classTemplateSpecializationDecl(hasName("::gpos::CHashMapIter"),
+                                         classTemplateSpecializationDecl(args));
+}
+
+DeclarationMatcher HashSetDecl(
+    llvm::ArrayRef<ClassTemplateSpecializationMatcher> matchers) {
+  return classTemplateSpecializationDecl(
+      hasName("::gpos::CHashSet"), classTemplateSpecializationDecl(matchers));
+}
+
+DeclarationMatcher MethodOfHashSet() {
+  return cxxMethodDecl(ofClass(HashSetDecl()));
+}
+
+static StatementMatcher ForEachArgumentWithConstQualifiedRefCountParamType(
+    const DeclarationMatcher& callee_decl_matcher,
+    const ExpressionMatcher& arg_matcher) {
+  return cxxMemberCallExpr(
+      callee(callee_decl_matcher),
+      ForEachArgumentWithParamType(
+          arg_matcher,
+          qualType(RefCountPointerType(), pointsTo(isConstQualified()))));
+}
+
+StatementMatcher ForEachArgumentToHashMapMethodWithPointerParam(
+    const ExpressionMatcher& arg_matcher) {
+  return ForEachArgumentWithConstQualifiedRefCountParamType(MethodOfHashMap(),
+                                                            arg_matcher);
+}
+
+StatementMatcher ForEachArgumentToHashSetMethodWithPointerParam(
+    const ExpressionMatcher& arg_matcher) {
+  return ForEachArgumentWithConstQualifiedRefCountParamType(MethodOfHashSet(),
+                                                            arg_matcher);
+}
+
+StatementMatcher ForEachArgumentToHashSetMethodWithOwnerParam(
+    const ExpressionMatcher& arg_matcher) {
+  auto insert_on_ref_hash_set =
+      cxxMethodDecl(ofClass(RefHashSetDecl()), hasName("Insert"));
+  return cxxMemberCallExpr(callee(insert_on_ref_hash_set),
+                           hasArgument(0, arg_matcher));
+}
+
+DeclarationMatcher RefHashSetDecl() {
+  return HashSetDecl({hasTemplateArgument(3, RefersToCleanupRelease())});
 }
 
 }  // namespace orca_tidy

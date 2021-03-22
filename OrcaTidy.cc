@@ -146,13 +146,13 @@ __attribute__((const)) static DeclarationMatcher MethodOfRefArray() {
 
 static auto ForEachArgumentToRefArrayMethodWithOwnerParam(
     const ExpressionMatcher& arg_matcher) {
-  return anyOf(
-      cxxMemberCallExpr(
-          callee(cxxMethodDecl(hasName("Replace"), MethodOfRefArray())),
-          hasArgument(1, IgnoringParenCastFuncs(arg_matcher))),
-      cxxMemberCallExpr(
-          callee(cxxMethodDecl(hasName("Append"), MethodOfRefArray())),
-          hasArgument(0, IgnoringParenCastFuncs(arg_matcher))));
+  return cxxMemberCallExpr(
+      callee(MethodOfRefArray()),
+      Switch()
+          .Case(callee(cxxMethodDecl(hasName("Replace"))),
+                hasArgument(1, IgnoringParenCastFuncs(arg_matcher)))
+          .Case(callee(cxxMethodDecl(hasName("Append"))),
+                hasArgument(0, IgnoringParenCastFuncs(arg_matcher))));
 }
 
 static StatementMatcher CallHashMapFindOn(const ExpressionMatcher& expr) {
@@ -174,10 +174,11 @@ static auto ForEachArgumentToUlongToExprArrayMapWithOwnerParam(
 
 static StatementMatcher ForEachArgumentToHashMapMethodWithOwnerParam(
     const ExpressionMatcher& arg_matcher) {
-  auto OnHashMap = [](auto... class_template_specialization_matchers) {
+  auto OnHashMap = [](llvm::ArrayRef<ClassTemplateSpecializationMatcher>
+                          class_template_specialization_matchers) {
     return allOf(MethodOfHashMap(),
                  ofClass(classTemplateSpecializationDecl(
-                     class_template_specialization_matchers...)));
+                     class_template_specialization_matchers)));
   };
 
   auto Call = [](llvm::StringRef name, const CXXMethodMatcher& method) {
@@ -193,11 +194,14 @@ static StatementMatcher ForEachArgumentToHashMapMethodWithOwnerParam(
   auto t_is_ref = hasTemplateArgument(5, RefersToCleanupRelease());
   auto t_is_not_ref = hasTemplateArgument(5, unless(RefersToCleanupRelease()));
 
-  auto CallInsertOnHashMapRefKRefT = CallInsert(OnHashMap(k_is_ref, t_is_ref));
-  auto CallInsertOnHashMapRefK = CallInsert(OnHashMap(k_is_ref, t_is_not_ref));
-  auto CallInsertOnHashMapRefT = CallInsert(OnHashMap(k_is_not_ref, t_is_ref));
+  auto CallInsertOnHashMapRefKRefT =
+      CallInsert(OnHashMap({k_is_ref, t_is_ref}));
+  auto CallInsertOnHashMapRefK =
+      CallInsert(OnHashMap({k_is_ref, t_is_not_ref}));
+  auto CallInsertOnHashMapRefT =
+      CallInsert(OnHashMap({k_is_not_ref, t_is_ref}));
 
-  auto CallReplaceOnHashMapRefT = Call("Replace", OnHashMap(t_is_ref));
+  auto CallReplaceOnHashMapRefT = Call("Replace", OnHashMap({t_is_ref}));
 
   return cxxMemberCallExpr(
       Switch()
@@ -209,15 +213,6 @@ static StatementMatcher ForEachArgumentToHashMapMethodWithOwnerParam(
                 hasArgument(1, IgnoringParenCastFuncs(arg_matcher)))
           .Case(CallReplaceOnHashMapRefT,
                 hasArgument(1, IgnoringParenCastFuncs(arg_matcher))));
-}
-
-static auto ForEachArgumentToHashMapMethodWithPointerParam(
-    const ExpressionMatcher& arg_matcher) {
-  return cxxMemberCallExpr(
-      callee(MethodOfHashMap()),
-      ForEachArgumentWithParamType(
-          arg_matcher,
-          qualType(RefCountPointerType(), pointsTo(isConstQualified()))));
 }
 
 AST_MATCHER(clang::VarDecl, IsImmediatelyBeforeAddRef) {
@@ -441,6 +436,7 @@ class Annotator : public AstHelperMixin<Annotator> {
         ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher),
         ForEachArgumentToUlongToExprArrayMapWithOwnerParam(arg_matcher),
         ForEachArgumentToHashMapMethodWithOwnerParam(arg_matcher),
+        ForEachArgumentToHashSetMethodWithOwnerParam(arg_matcher),
         ForEachArgumentWithParamType(arg_matcher, OwnerType()),
         ForEachArgumentWithParam(arg_matcher, OwnerVar()));
   }
@@ -450,6 +446,8 @@ class Annotator : public AstHelperMixin<Annotator> {
     return Switch()
         .Case(hasDeclaration(MethodOfRefArray()),
               ForEachArgumentToRefArrayMethodWithOwnerParam(arg_matcher))
+        .Case(hasDeclaration(MethodOfHashSet()),
+              ForEachArgumentToHashSetMethodWithOwnerParam(arg_matcher))
         .Case(hasDeclaration(MethodOfHashMap()),
               anyOf(ForEachArgumentToUlongToExprArrayMapWithOwnerParam(
                         arg_matcher),
@@ -466,6 +464,8 @@ class Annotator : public AstHelperMixin<Annotator> {
     return Switch()
         .Case(hasDeclaration(MethodOfHashMap()),
               ForEachArgumentToHashMapMethodWithPointerParam(arg_matcher))
+        .Case(hasDeclaration(MethodOfHashSet()),
+              ForEachArgumentToHashSetMethodWithPointerParam(arg_matcher))
         .Case(hasDeclaration(functionDecl()),
               ForEachArgumentWithParam(arg_matcher, PointerVar()))
         // called through a pf, or pmf
