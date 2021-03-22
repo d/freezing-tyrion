@@ -465,4 +465,15 @@ DeclarationMatcher RefHashSetDecl() {
   return HashSetDecl({hasTemplateArgument(3, RefersToCleanupRelease())});
 }
 
+DeclarationMatcher RefHashSetIterDecl() {
+  return HashSetIterDecl({hasTemplateArgument(3, RefersToCleanupRelease())});
+}
+
+DeclarationMatcher HashSetIterDecl(
+    llvm::ArrayRef<ClassTemplateSpecializationMatcher> matchers) {
+  return classTemplateSpecializationDecl(
+      hasName("::gpos::CHashSetIter"),
+      classTemplateSpecializationDecl(matchers));
+}
+
 }  // namespace orca_tidy

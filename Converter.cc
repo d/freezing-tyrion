@@ -26,6 +26,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
     ConvertCcacheTypedefs();
     ConvertRefArrayTypedefs();
     ConvertHashMapTypedefs();
+    ConvertHashSetTypedefs();
     ConvertPointers();
     ConvertOwners();
     EraseAddRefs();
@@ -48,6 +49,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
   void ConvertCcacheTypedefs() const;
   void ConvertRefArrayTypedefs() const;
   void ConvertHashMapTypedefs() const;
+  void ConvertHashSetTypedefs() const;
   void ConvertPointers() const;
   void ConvertOwners() const;
   void EraseAddRefs() const;
@@ -322,6 +324,45 @@ void ConverterAstConsumer::ConvertHashMapTypedefs() const {
   }
 }
 
+void orca_tidy::ConverterAstConsumer::ConvertHashSetTypedefs() const {
+  for (auto [typedef_decl, hs] :
+       NodesFromMatchAST<clang::TypedefNameDecl, clang::Decl>(
+           typedefNameDecl(
+               unless(isInstantiated()),
+               hasType(qualType(hasDeclaration(anyOf(
+                   decl(RefHashSetDecl()).bind("hs"), RefHashSetIterDecl())))),
+               unless(hasDeclContext(
+                   classTemplateDecl(hasName("gpos::CHashSetIter")))))
+               .bind("typedef_decl"),
+           "typedef_decl", "hs")) {
+    auto underlying_type_loc = typedef_decl->getTypeSourceInfo()->getTypeLoc();
+    auto range = clang::CharSourceRange::getTokenRange(
+        underlying_type_loc.getSourceRange());
+    auto specialization_type_loc =
+        underlying_type_loc
+            .getAsAdjusted<clang::TemplateSpecializationTypeLoc>();
+
+    auto k_spelling = GetSourceTextOfTemplateArg(specialization_type_loc, 0),
+         hash_spelling = GetSourceTextOfTemplateArg(specialization_type_loc, 1),
+         eq_spelling = GetSourceTextOfTemplateArg(specialization_type_loc, 2);
+
+    const char fmtHashSet[] =
+        R"C++(gpos::UnorderedSet<gpos::Ref<{0}>, gpos::RefHash<{0}, {1}>,
+                                 gpos::RefEq<{0}, {2}>>)C++";
+    const char fmtHashSetIter[] =
+        R"C++(gpos::UnorderedSet<gpos::Ref<{0}>, gpos::RefHash<{0}, {1}>,
+                                 gpos::RefEq<{0}, {2}>>::LegacyIterator)C++";
+    auto new_type_spelling =
+        llvm::formatv(hs ? fmtHashSet : fmtHashSetIter, k_spelling,
+                      hash_spelling, eq_spelling)
+            .str();
+
+    tooling::Replacement r{SourceManager(), range, new_type_spelling,
+                           LangOpts()};
+    CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
+  }
+}
+
 void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
   auto has_owner_type =
       anyOf(hasType(qualType(anyOf(OwnerType(), LeakedType()))),
@@ -340,6 +381,9 @@ void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
           Switch()
               .Case(hasDeclaration(
                         cxxConstructorDecl(ofClass(HashMapIterDecl()))),
+                    hasArgument(0, expr(has_owner_type).bind("owner")))
+              .Case(hasDeclaration(
+                        cxxConstructorDecl(ofClass(HashSetIterDecl()))),
                     hasArgument(0, expr(has_owner_type).bind("owner")))
               .Default(ForEachArgumentWithParamType(
                   expr(has_owner_type).bind("owner"), PointerType())))));

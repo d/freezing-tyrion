@@ -388,7 +388,10 @@ __attribute__((const)) TemplateArgumentMatcher RefersToCleanupRelease();
 
 __attribute__((const)) DeclarationMatcher HashSetDecl(
     llvm::ArrayRef<ClassTemplateSpecializationMatcher> matchers = {});
+__attribute__((const)) DeclarationMatcher HashSetIterDecl(
+    llvm::ArrayRef<ClassTemplateSpecializationMatcher> matchers = {});
 __attribute__((const)) DeclarationMatcher RefHashSetDecl();
+__attribute__((const)) DeclarationMatcher RefHashSetIterDecl();
 __attribute__((const)) DeclarationMatcher MethodOfHashSet();
 
 StatementMatcher FieldReferenceFor(DeclarationMatcher const& field_matcher);

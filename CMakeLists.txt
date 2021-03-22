@@ -53,7 +53,8 @@ add_executable(
   CastingTest.cc
   ConvertRefArrayTest.cc
   ConvertHashMapTest.cc
-  ConvertAutoRefTest.cc)
+  ConvertAutoRefTest.cc
+  ConvertHashSetTest.cc)
 target_link_libraries(orca-tidy-test orca_tidy gmock_main)
 
 include(GoogleTest)
