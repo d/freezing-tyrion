@@ -476,4 +476,18 @@ DeclarationMatcher HashSetIterDecl(
       classTemplateSpecializationDecl(matchers));
 }
 
+bool IsGpos(const clang::DeclContext* decl_context) {
+  if (!decl_context->isNamespace()) return false;
+  const auto* ns = llvm::cast<clang::NamespaceDecl>(decl_context);
+  if (!ns->getParent()->isTranslationUnit()) return false;
+  const auto* ii = ns->getIdentifier();
+  return ii && ii->isStr("gpos");
+}
+
+bool IsCleanupRelease(const clang::FunctionDecl* f) {
+  if (!IsGpos(f->getDeclContext())) return false;
+  const auto* ii = f->getIdentifier();
+  return ii && ii->isStr("CleanupRelease");
+}
+
 }  // namespace orca_tidy

@@ -413,5 +413,8 @@ StatementMatcher StmtIsImmediatelyAfter(const StatementMatcher& lhs);
 
 __attribute__((const)) DeclarationMatcher AutoRefDecl();
 
+bool IsGpos(const clang::DeclContext* decl_context);
+bool IsCleanupRelease(const clang::FunctionDecl* f);
+
 }  // namespace orca_tidy
 #endif  // ORCATIDY__ASTHELPERS_H_

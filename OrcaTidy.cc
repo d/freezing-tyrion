@@ -299,6 +299,8 @@ class Annotator : public AstHelperMixin<Annotator> {
                                  unsigned int parameter_index,
                                  const TypeMatcher& annotation_matcher,
                                  llvm::StringRef annotation) const {
+    if (IsCleanupRelease(function)) return;
+
     for (const auto* f : function->redecls()) {
       const auto* parm = f->getParamDecl(parameter_index);
       AnnotateOneVar(parm, annotation_matcher, annotation);
