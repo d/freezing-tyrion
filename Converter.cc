@@ -376,7 +376,7 @@ void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
   auto assign_to_pointer_vars =
       AssignTo(expr(hasType(PointerType())),
                IgnoringParenCastFuncs(expr(has_owner_type).bind("owner")));
-  auto pass_owner_arg_to_poiner_param =
+  auto pass_owner_arg_to_pointer_param =
       expr(IgnoringParenCastFuncs(CallOrConstruct(
           Switch()
               .Case(hasDeclaration(
@@ -385,11 +385,14 @@ void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
               .Case(hasDeclaration(
                         cxxConstructorDecl(ofClass(HashSetIterDecl()))),
                     hasArgument(0, expr(has_owner_type).bind("owner")))
+              .Case(hasDeclaration(cxxMethodDecl(
+                        hasName("::gpdxl::CDXLUtils::Serialize"))),
+                    hasArgument(1, expr(has_owner_type).bind("owner")))
               .Default(ForEachArgumentWithParamType(
                   expr(has_owner_type).bind("owner"), PointerType())))));
   for (const auto* owner : NodesFromMatchAST<clang::Expr>(
            stmt(anyOf(return_owner_as_pointer, init_pointer_vars,
-                      assign_to_pointer_vars, pass_owner_arg_to_poiner_param)),
+                      assign_to_pointer_vars, pass_owner_arg_to_pointer_param)),
            "owner")) {
     DotGet(owner);
   }
