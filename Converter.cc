@@ -488,6 +488,8 @@ void ConverterAstConsumer::ConvertCallCastFuncs() const {
 void ConverterAstConsumer::EraseAddRefs() const {
   for (const auto* e : NodesFromMatchAST<clang::Expr>(
            callExpr(AddRefOn(expr())).bind("e"), "e")) {
+    if (IsInMacro(e->getSourceRange())) continue;
+
     EraseStmt(e);
   }
 }
