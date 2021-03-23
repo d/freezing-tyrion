@@ -99,9 +99,13 @@ AST_MATCHER_P(clang::QualType, IgnoringElaboratedImpl, TypeMatcher,
   return type_matcher.matches(StripElaborated(Node), Finder, Builder);
 }
 
+// FIXME: could have returned const Expr, if not for an LLVM bug
 inline clang::Expr* IgnoreCastFuncsSingleStep(clang::Expr* e) {
-  if (auto* call = llvm::dyn_cast<clang::CallExpr>(e);
-      call && call->getNumArgs() > 0 && IsCastFunc(call->getCalleeDecl())) {
+  auto* call = llvm::dyn_cast<clang::CallExpr>(e);
+  if (!call || call->getNumArgs() != 1) return e;
+
+  auto* callee_decl = call->getCalleeDecl();
+  if (IsCastFunc(callee_decl) || IsUniversalCastFunc(callee_decl)) {
     return call->getArg(0);
   }
   return e;
@@ -152,8 +156,30 @@ TypeMatcher IgnoringElaborated(const TypeMatcher& type_matcher) {
 
 bool IsCastFunc(const clang::Decl* decl) {
   if (!decl) return false;
-  return !match(functionDecl(returns(CastType())), *decl, decl->getASTContext())
-              .empty();
+  const auto* f = llvm::dyn_cast<clang::FunctionDecl>(decl);
+  if (!f) return false;
+
+  const auto* template_specialization_type =
+      f->getDeclaredReturnType()
+          .getTypePtr()
+          ->getAs<clang::TemplateSpecializationType>();
+  if (!template_specialization_type) return false;
+
+  const auto* template_decl =
+      template_specialization_type->getTemplateName().getAsTemplateDecl();
+
+  const auto* ii = template_decl->getIdentifier();
+  return IsGpos(template_decl->getDeclContext()) && ii &&
+         ii->isStr("cast_func");
+}
+
+bool IsUniversalCastFunc(const clang::Decl* d) {
+  const auto* f = llvm::dyn_cast_or_null<clang::FunctionDecl>(d);
+  if (!f) return false;
+
+  const auto* ii = f->getIdentifier();
+  return IsGpos(f->getDeclContext()) && ii &&
+         (ii->isStr("dyn_cast") || ii->isStr("cast"));
 }
 
 const clang::Expr* IgnoreParenCastFuncs(const clang::Expr* expr) {
@@ -171,6 +197,7 @@ const clang::Expr* IgnoreStdMove(const clang::Expr* e) {
 }
 
 const clang::Expr* IgnoreCastFuncs(const clang::Expr* expr) {
+  // FIXME: const_cast because of a bug. Fix this upstream in LLVM
   return clang::IgnoreExprNodes(const_cast<clang::Expr*>(expr),
                                 IgnoreCastFuncsSingleStep);
 }

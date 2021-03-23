@@ -84,6 +84,7 @@ TypeMatcher IgnoringElaborated(const TypeMatcher& type_matcher);
 clang::QualType StripAnnotation(clang::QualType qual_type);
 TypeMatcher IgnoringAnnotation(const TypeMatcher& inner_matcher);
 
+bool IsUniversalCastFunc(const clang::Decl* d);
 bool IsCastFunc(const clang::Decl* decl);
 const clang::Expr* IgnoreCastFuncs(const clang::Expr* expr);
 AST_MATCHER_P(clang::Expr, IgnoringCastFuncs, ExpressionMatcher,

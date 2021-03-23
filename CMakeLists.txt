@@ -50,7 +50,6 @@ add_executable(
   ConvertAnnotationTest.cc
   ConvertCcacheTest.cc
   OwnerToPointerTest.cc
-  CastingTest.cc
   ConvertRefArrayTest.cc
   ConvertHashMapTest.cc
   ConvertAutoRefTest.cc

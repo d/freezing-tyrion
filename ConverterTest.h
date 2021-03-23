@@ -56,6 +56,16 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
       Ref<U> getAs() &&;
     };
 
+    template <class To, class From>
+    To* cast(From*);
+    template <class To, class From>
+    const To* cast(const From*);
+
+    template <class To, class From>
+    To* dyn_cast(From*);
+    template <class To, class From>
+    const To* dyn_cast(const From*);
+
     template <class K, ULONG (*HashFn)(const K*)>
     struct RefHash;
 

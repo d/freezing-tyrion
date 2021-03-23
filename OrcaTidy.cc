@@ -4,6 +4,7 @@
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/Support/FormatVariadic.h"
 
 namespace orca_tidy {
 // NOLINTNEXTLINE(google-build-using-namespace)
@@ -333,6 +334,7 @@ class Annotator : public AstHelperMixin<Annotator> {
       auto rt = f->getReturnType();
       if (Match(annotation_matcher, rt)) continue;
       if (IsCast(rt)) continue;
+      if (IsAnnotated(rt)) std::terminate();
       AnnotateFunctionReturnType(f, annotation);
     }
   }
@@ -578,6 +580,7 @@ class Annotator : public AstHelperMixin<Annotator> {
   void PropagateOwnerVars() const;
   void PropagateOutputParams() const;
   void PropagateVirtualFunctionParamTypes() const;
+  void CovertCallsToCastFuncs() const;
   void PropagateParameterAmongRedecls() const;
   void AnnotateMultiDecls() const;
   void AnnotateMultiVar(const clang::DeclStmt* decl_stmt,
@@ -662,6 +665,8 @@ bool Annotator::Propagate() const {
   PropagateTailCall();
 
   PropagateFunctionPointers();
+
+  CovertCallsToCastFuncs();
 
   AnnotateMultiDecls();
 
@@ -1653,6 +1658,120 @@ CXXMemberCallMatcher Annotator::CallGetter() const {
                      callee(functionDecl(IsInSet(pointer_vars_)))),
                on(declRefExpr(to(varDecl()))),
                callee(cxxMethodDecl(parameterCountIs(0))));
+}
+
+void Annotator::CovertCallsToCastFuncs() const {
+  for (auto [call, enclosing_function] :
+       NodesFromMatchAST<clang::CallExpr, clang::FunctionDecl>(
+           callExpr(callee(functionDecl(returns(CastType()))),
+                    optionally(stmt(isInTemplateInstantiation(),
+                                    forFunction(functionDecl().bind("f")))))
+               .bind("call"),
+           "call", "f")) {
+    auto source_range = call->getCallee()->getSourceRange();
+    auto range = clang::CharSourceRange::getTokenRange(source_range);
+
+    auto PointeeSpellingFromDirectCallee =
+        [this](const clang::FunctionDecl* direct_callee) {
+          auto pointee_source_range =
+              GetPointeeLocOfFirstTemplateArg(
+                  direct_callee->getFunctionTypeLoc().getReturnLoc())
+                  .getSourceRange();
+          return GetSourceText(pointee_source_range);
+        };
+
+    auto ExprInTemplate = [this](
+                              clang::SourceRange callee_source_range,
+                              const clang::FunctionDecl* enclosing_function) {
+      auto* func_in_primary_template =
+          enclosing_function->getTemplateInstantiationPattern();
+      auto exprs_in_primary_template = NodesFromMatchNode<clang::Expr>(
+          traverse(clang::TK_IgnoreUnlessSpelledInSource,
+                   stmt(forEachDescendant(
+                       expr(HasSourceRange(callee_source_range)).bind("e")))),
+          *func_in_primary_template->getBody(), "e");
+      assert(exprs_in_primary_template.size() == 1);
+      return exprs_in_primary_template.front();
+    };
+
+    auto PointeeSpellingFromNestedNameSpecifier =
+        [](const clang::Expr* callee_in_template) {
+          assert(callee_in_template->isTypeDependent());
+          const auto* dre = llvm::dyn_cast<clang::DependentScopeDeclRefExpr>(
+              callee_in_template);
+          const auto* me = llvm::dyn_cast<clang::CXXDependentScopeMemberExpr>(
+              callee_in_template);
+          assert(dre || me);
+          auto* callee_qualifier =
+              dre ? dre->getQualifier() : me->getQualifier();
+          const auto* qualifier_as_type = callee_qualifier->getAsType();
+          assert(qualifier_as_type);
+          const auto* template_type_parm_type =
+              llvm::dyn_cast<clang::TemplateTypeParmType>(qualifier_as_type);
+          assert(template_type_parm_type);
+          return template_type_parm_type->getDecl()->getName();
+        };
+
+    llvm::StringRef pointee_spelling;
+    if (enclosing_function) {
+      const clang::Expr* callee_in_template =
+          ExprInTemplate(source_range, enclosing_function);
+      if (const auto* direct_callee = llvm::cast_or_null<clang::FunctionDecl>(
+              callee_in_template->getReferencedDeclOfCallee())) {
+        pointee_spelling = PointeeSpellingFromDirectCallee(direct_callee);
+      } else {
+        pointee_spelling =
+            PointeeSpellingFromNestedNameSpecifier(callee_in_template);
+      }
+    } else {
+      const auto* direct_callee = call->getDirectCallee();
+      pointee_spelling = PointeeSpellingFromDirectCallee(direct_callee);
+    }
+    auto replacement_text =
+        llvm::formatv("gpos::dyn_cast<{0}>", pointee_spelling).str();
+    tooling::Replacement r{SourceManager(), range, replacement_text,
+                           LangOpts()};
+    CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
+  }
+
+  for (const auto* cast : NodesFromMatchAST<clang::CStyleCastExpr>(
+           cStyleCastExpr(hasCastKind(clang::CK_BaseToDerived),
+                          hasDestinationType(RefCountPointerType()))
+               .bind("cast"),
+           "cast")) {
+    auto type_loc = cast->getTypeInfoAsWritten()->getTypeLoc();
+    auto pointee_loc =
+        type_loc.getAsAdjusted<clang::PointerTypeLoc>().getPointeeLoc();
+    auto pointee_spelling = GetSourceText(pointee_loc.getSourceRange());
+
+    const auto* source_expression = cast->getSubExprAsWritten();
+    auto source_expression_spelling =
+        GetSourceText(source_expression->getSourceRange());
+
+    bool is_const_cast =
+        source_expression->getType()->getPointeeType().isConstQualified() &&
+        !pointee_loc.getType().isConstQualified();
+    const char* fmtGood = "gpos::cast<{0}>({1})";
+    const char* fmtNaughty = "const_cast<{0}*>(gpos::cast<{0}>({1}))";
+    auto replacement_text =
+        llvm::formatv(is_const_cast ? fmtNaughty : fmtGood, pointee_spelling,
+                      source_expression_spelling)
+            .str();
+
+    tooling::Replacement r{
+        SourceManager(),
+        clang::CharSourceRange::getTokenRange(cast->getSourceRange()),
+        replacement_text, LangOpts()};
+    // Because of the expansive nature of this edit, it's likely to conflict
+    // with other edits within the call expression. Bail and try on next
+    // invocation.
+    //
+    // Theoretically, there still is another failure mode: we successfully
+    // added the universal cast here, and go on to conflict with a subsequent
+    // annotation (e.g. move) in the source expression (added in the next
+    // "inner" iteration).
+    llvm::consumeError(file_to_replaces_[r.getFilePath().str()].add(r));
+  }
 }
 
 class AnnotateASTConsumer : public clang::ASTConsumer {
