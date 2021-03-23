@@ -85,6 +85,14 @@ void ConverterAstConsumer::ConvertPointers() const {
     StripPointer(v->getTypeSourceInfo()->getTypeLoc());
   }
 
+  for (const auto* v : NodesFromMatchAST<clang::VarDecl>(
+           varDecl(hasType(pointsTo(PointerType()))).bind("v"), "v")) {
+    StripPointer(v->getTypeSourceInfo()
+                     ->getTypeLoc()
+                     .getAs<clang::PointerTypeLoc>()
+                     .getPointeeLoc());
+  }
+
   for (const auto* t : NodesFromMatchAST<clang::TypedefNameDecl>(
            typedefNameDecl(hasType(IsAnyFunctionType(Returns(PointerType()))))
                .bind("typedef_decl"),
@@ -112,10 +120,21 @@ void ConverterAstConsumer::ConvertOwners() const {
     OwnerToRef(v->getTypeSourceInfo()->getTypeLoc());
   }
 
-  for (const auto* e : NodesFromMatchAST<clang::Expr>(
+  for (const auto* v : NodesFromMatchAST<clang::VarDecl>(
+           varDecl(hasType(pointsTo(OwnerType()))).bind("v"), "v")) {
+    OwnerToRef(v->getTypeSourceInfo()
+                   ->getTypeLoc()
+                   .getAs<clang::PointerTypeLoc>()
+                   .getPointeeLoc());
+  }
+
+  for (StatementMatcher
+           ref_to_owner_var = declRefExpr(to(varDecl(hasType(OwnerType())))),
+           deref_owner_star =
+               Deref(declRefExpr(to(varDecl(hasType(pointsTo(OwnerType()))))));
+       const auto *e : NodesFromMatchAST<clang::Expr>(
            callExpr(ReleaseCallExpr(IgnoringParenCastFuncs(anyOf(
-                        IgnoringStdMove(
-                            declRefExpr(to(varDecl(hasType(OwnerType()))))),
+                        IgnoringStdMove(ref_to_owner_var), deref_owner_star,
                         FieldReferenceFor(fieldDecl(hasType(OwnerType())))))))
                .bind("e"),
            "e")) {

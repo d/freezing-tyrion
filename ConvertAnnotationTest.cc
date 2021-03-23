@@ -82,11 +82,13 @@ TEST_F(ConvertAnnotation, var) {
     gpos::owner<T*> MakeT();
     void f(gpos::owner<T*> o, gpos::pointer<T*> p);
     void g() { gpos::leaked<T*> l = MakeT(); }
+    void h(gpos::owner<T*>* po, gpos::pointer<T*>* pp);
   )C++",
               expected_changed_code = R"C++(
     gpos::Ref<T> MakeT();
     void f(gpos::Ref<T> o, T* p);
     void g() { gpos::Ref<T> l = MakeT(); }
+    void h(gpos::Ref<T>* po, T** pp);
   )C++";
 
   auto changed_code = annotateAndFormat(std::move(code));
@@ -102,9 +104,10 @@ TEST_F(ConvertAnnotation, eraseRelease) {
     };
 
     gpos::owner<T*> MakeT();
-    void f() {
+    void f(gpos::owner<T*>* po) {
       gpos::owner<T*> t = MakeT();
       gpos::SafeRelease(std::move(t));
+      gpos::SafeRelease(*po);
     }
   )C++",
               expected_changed_code = R"C++(
@@ -114,8 +117,9 @@ TEST_F(ConvertAnnotation, eraseRelease) {
     };
 
     gpos::Ref<T> MakeT();
-    void f() {
+    void f(gpos::Ref<T>* po) {
       gpos::Ref<T> t = MakeT();
+      ;
       ;
     }
   )C++";
