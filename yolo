@@ -58,9 +58,13 @@ fix_relative_include_paths_in_compdb() {
 }
 
 git_add_all_src() {
+	time fmt_all_src
 	git add -u -- '*.cpp' '*.h'
-	time git diff --cached --name-only -- '*.cpp' '*.h' | parallel -qn8 "${CLANG_FORMAT}" -i
 	git commit --allow-empty -m "$1" -- '*.cpp' '*.h'
+}
+
+fmt_all_src() {
+	git diff --name-only -- '*.cpp' '*.h' | parallel -qn8 "${CLANG_FORMAT}" -i
 }
 
 diff_all_src() {
@@ -131,6 +135,7 @@ propagate() {
 		apply_fixes
 		fix_all_includes
 
+		fmt_all_src
 		diff=$(diff_all_src)
 		if [[ "${prev_diff}" = "${diff}" ]]; then
 			printf "Done propagation after %d iteration(s)\n" "${i}"
