@@ -335,7 +335,14 @@ class Annotator : public AstHelperMixin<Annotator> {
       if (Match(annotation_matcher, rt)) continue;
       if (IsCast(rt)) continue;
       if (IsAnnotated(rt)) std::terminate();
+
       AnnotateFunctionReturnType(f, annotation);
+
+      if (auto kind = f->getTemplateSpecializationKind();
+          isTemplateInstantiation(kind)) {
+        AnnotateFunctionReturnType(f->getTemplateInstantiationPattern(),
+                                   annotation_matcher, annotation);
+      }
     }
   }
 

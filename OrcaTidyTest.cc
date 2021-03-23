@@ -82,6 +82,39 @@ TEST_F(PropagateTest, retOwnFunc) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(PropagateTest, retOwnFuncTemplate) {
+  std::string code = R"C++(
+    gpos::owner<T*> F();
+
+    template <class U>
+    U* f();
+
+    template <class U>
+    U* f() {
+      return F();
+    }
+
+    template T* f();
+  )C++",
+              expected_changed_code = R"C++(
+    gpos::owner<T*> F();
+
+    template <class U>
+    gpos::owner<U*> f();
+
+    template <class U>
+    gpos::owner<U*> f() {
+      return F();
+    }
+
+    template T* f();
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 TEST_F(PropagateTest, vfunRetUp) {
   std::string code = R"C++(
     struct Q {
