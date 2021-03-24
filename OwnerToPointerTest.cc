@@ -126,4 +126,19 @@ TEST_F(OwnerToPointer, ctorInitializer) {
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
+
+TEST_F(OwnerToPointer, deref) {
+  std::string code = R"C++(
+    void f(gpos::pointer<T*>);
+    void g(gpos::owner<T*>* po) { f(*po); }
+  )C++",
+              expected_changed_code = R"C++(
+    void f(T*);
+    void g(gpos::Ref<T>* po) { f(po->get()); }
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
 }  // namespace orca_tidy

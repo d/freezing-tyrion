@@ -425,9 +425,16 @@ void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
 
 void ConverterAstConsumer::DotGet(const clang::Expr* e) const {
   auto range = clang::CharSourceRange::getTokenRange(e->getSourceRange());
-  auto e_src_txt = GetSourceText(e->getSourceRange()).str();
-  tooling::Replacement r{SourceManager(), range, e_src_txt + ".get()",
-                         LangOpts()};
+  std::string replacement_text;
+  if (const auto* uo = llvm::dyn_cast<clang::UnaryOperator>(e);
+      uo && uo->getOpcode() == clang::UO_Deref) {
+    replacement_text = llvm::formatv(
+        "{0}->get()", GetSourceText(uo->getSubExpr()->getSourceRange()));
+  } else {
+    auto e_src_txt = GetSourceText(e->getSourceRange());
+    replacement_text = llvm::formatv("{0}.get()", e_src_txt);
+  }
+  tooling::Replacement r{SourceManager(), range, replacement_text, LangOpts()};
   CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
 }
 
