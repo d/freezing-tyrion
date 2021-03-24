@@ -141,6 +141,8 @@ AST_MATCHER_P(clang::Stmt, StmtIsImmediatelyAfterImpl, StatementMatcher, lhs) {
          lhs.matches(**lhs_it, Finder, Builder);
 }
 
+AST_MATCHER(clang::Decl, IsInGposImpl) { return IsGpos(Node.getDeclContext()); }
+
 }  // namespace
 
 clang::QualType StripElaborated(clang::QualType qual_type) {
@@ -367,7 +369,7 @@ StatementMatcher HasSourceRange(clang::SourceRange source_range) {
 
 DeclarationMatcher RefArrayDecl() {
   return classTemplateSpecializationDecl(
-      hasName("::gpos::CDynamicPtrArray"),
+      IsInGpos(), hasName("CDynamicPtrArray"),
       hasTemplateArgument(1, RefersToCleanupRelease()));
 }
 
@@ -502,6 +504,8 @@ DeclarationMatcher HashSetIterDecl(
       hasName("::gpos::CHashSetIter"),
       classTemplateSpecializationDecl(matchers));
 }
+
+DeclarationMatcher IsInGpos() { return IsInGposImpl(); }
 
 bool IsGpos(const clang::DeclContext* decl_context) {
   if (!decl_context->isNamespace()) return false;

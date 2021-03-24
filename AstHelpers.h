@@ -414,6 +414,7 @@ StatementMatcher StmtIsImmediatelyAfter(const StatementMatcher& lhs);
 
 __attribute__((const)) DeclarationMatcher AutoRefDecl();
 
+__attribute__((const)) DeclarationMatcher IsInGpos();
 bool IsGpos(const clang::DeclContext* decl_context);
 bool IsCleanupRelease(const clang::FunctionDecl* f);
 

@@ -64,7 +64,7 @@ class SwitchBuilder {
   }
 
  public:
-  explicit SwitchBuilder(DefaultMatcher&& default_matcher,
+  explicit SwitchBuilder(DefaultMatcher default_matcher,
                          CaseThenTupleType<CaseThens...> case_thens)
       : default_matcher_(std::move(default_matcher)),
         case_thens_(std::move(case_thens)) {}
@@ -79,9 +79,9 @@ class SwitchBuilder {
   }
 
   template <class D>
-  SwitchBuilder<D, CaseThens...> Default(D&& d) && {
-    return SwitchBuilder<D, CaseThens...>{std::forward<D>(d),
-                                          std::move(case_thens_)};
+  SwitchBuilder<std::remove_reference_t<D>, CaseThens...> Default(D&& d) && {
+    return SwitchBuilder<std::remove_reference_t<D>, CaseThens...>{
+        std::forward<D>(d), std::move(case_thens_)};
   }
 
   template <class T>

@@ -2,6 +2,7 @@
 #include "AstHelpers.h"
 #include "SwitchMatcher.h"
 #include "clang/Lex/Lexer.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/FormatVariadic.h"
 
 // NOLINTNEXTLINE: google-build-using-namespace
@@ -32,6 +33,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
     EraseAddRefs();
     ConvertOwnerToPointerImpCastToGet();
     ConvertAutoRef();
+    ReplaceSortFunctors();
   }
 
  private:
@@ -54,6 +56,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
   void EraseAddRefs() const;
   void ConvertOwnerToPointerImpCastToGet() const;
   void ConvertAutoRef() const;
+  void ReplaceSortFunctors() const;
 
   std::map<std::string, tooling::Replacements>& file_to_replaces_;
   clang::ASTContext* context_;
@@ -447,7 +450,7 @@ void ConverterAstConsumer::EraseAddRefs() const {
   }
 }
 
-void orca_tidy::ConverterAstConsumer::ConvertAutoRef() const {
+void ConverterAstConsumer::ConvertAutoRef() const {
   for (const auto* v : NodesFromMatchAST<clang::VarDecl>(
            varDecl(hasType(AutoRefDecl()),
                    hasInitializer(cxxConstructExpr(
@@ -489,6 +492,37 @@ void orca_tidy::ConverterAstConsumer::ConvertAutoRef() const {
 
     EraseDecl(auto_ref);
     EraseStmt(assign);
+  }
+}
+
+void ConverterAstConsumer::ReplaceSortFunctors() const {
+  auto known_sort_cmp_fn = declRefExpr(
+      to(functionDecl(hasAnyName("IDatumCmp", "ICmpPrjElemsArr", "CPointCmp",
+                                 "StatsPredSortCmpFunc"))
+             .bind("f")));
+  for (auto [f, arg] : NodesFromMatchAST<clang::FunctionDecl, clang::Expr>(
+           cxxMemberCallExpr(
+               callee(cxxMethodDecl(hasName("Sort"), ofClass(RefArrayDecl()))),
+               argumentCountIs(1),
+               hasArgument(0, ignoringParenImpCasts(
+                                  expr(Switch()
+                                           .Case(unaryOperator(),
+                                                 AddrOf(known_sort_cmp_fn))
+                                           .Default(known_sort_cmp_fn))
+                                      .bind("arg")))),
+           "f", "arg")) {
+    auto name = f->getName();
+    std::string replacement_text =
+        llvm::StringSwitch<std::string>(name)
+            .Case("IDatumCmp", "gpopt::DatumLess{}")
+            .Case("ICmpPrjElemsArr", "gpopt::ProjectElementArrayLess{}")
+            .Case("CPointCmp", "gpnaucrates::PointLess{}")
+            .Case("StatsPredSortCmpFunc", "gpnaucrates::StatsPredColIdLess{}");
+
+    auto range = clang::CharSourceRange::getTokenRange(arg->getSourceRange());
+    tooling::Replacement r{SourceManager(), range, replacement_text,
+                           LangOpts()};
+    CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
   }
 }
 
