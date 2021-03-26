@@ -1619,12 +1619,24 @@ StatementMatcher Annotator::CallReturningOwner() const {
 
 StatementMatcher Annotator::PassedAsArgumentToNonPointerParam(
     const ExpressionMatcher& expr_matcher) const {
-  return anyOf(
-      CallOrConstruct(ForEachArgumentWithNonPointerParam(expr_matcher)),
-      parenListExpr(has(expr_matcher)), initListExpr(has(expr_matcher)),
-      callExpr(
-          callee(expr(anyOf(unresolvedLookupExpr(), unresolvedMemberExpr()))),
-          hasAnyArgument(IgnoringParenCastFuncs(expr_matcher))));
+  return Switch()
+      .Case(CallOrConstruct(),
+            CallOrConstruct(
+                Switch()
+                    // best effort to sniff out a callExpr in an un-instantiated
+                    // function template: the callees are typically an
+                    // UnresolvedLookupExpr, an UnresolvedMemberExpr, or a
+                    // DependentScopeDeclRefExpr. For simplicity, just say the
+                    // callee doesn't have a declaration.
+                    //
+                    // There's a theoretic possibility of false positive, for
+                    // example calling a function that returns a function
+                    // pointer, and immediately calling _that_ pointer.
+                    .Case(unless(hasDeclaration(decl())),
+                          hasAnyArgument(IgnoringParenCastFuncs(expr_matcher)))
+                    .Default(ForEachArgumentWithNonPointerParam(expr_matcher))))
+      .Default(anyOf(parenListExpr(has(expr_matcher)),
+                     initListExpr(has(expr_matcher))));
 }
 
 StatementMatcher Annotator::InitOrAssignNonPointerVarWith(
