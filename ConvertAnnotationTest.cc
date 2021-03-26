@@ -80,12 +80,14 @@ TEST_F(ConvertAnnotation, funcRet) {
 TEST_F(ConvertAnnotation, var) {
   std::string code = R"C++(
     gpos::owner<T*> MakeT();
+    void e() { gpos::pointer<T*> p1, p2; }
     void f(gpos::owner<T*> o, gpos::pointer<T*> p);
     void g() { gpos::leaked<T*> l = MakeT(); }
     void h(gpos::owner<T*>* po, gpos::pointer<T*>* pp);
   )C++",
               expected_changed_code = R"C++(
     gpos::Ref<T> MakeT();
+    void e() { T *p1, *p2; }
     void f(gpos::Ref<T> o, T* p);
     void g() { gpos::Ref<T> l = MakeT(); }
     void h(gpos::Ref<T>* po, T** pp);

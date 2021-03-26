@@ -38,6 +38,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
 
  private:
   void StripPointer(clang::TypeLoc type_loc) const;
+  void AddStar(const clang::VarDecl* v) const;
   llvm::StringRef GetSourceTextOfTemplateArg(
       clang::TemplateSpecializationTypeLoc specialization_type_loc,
       unsigned int i) const;
@@ -85,7 +86,19 @@ void ConverterAstConsumer::ConvertPointers() const {
 
   for (const auto* v : NodesFromMatchAST<clang::VarDecl>(
            varDecl(hasType(PointerType())).bind("v"), "v")) {
-    StripPointer(v->getTypeSourceInfo()->getTypeLoc());
+    if (const auto* decl_stmt = GetParentAs<clang::DeclStmt>(*v, AstContext());
+        decl_stmt && !decl_stmt->isSingleDecl()) {
+      auto vars = llvm::map_range(decl_stmt->decls(), [](const clang::Decl* d) {
+        return llvm::cast<clang::VarDecl>(d);
+      });
+      const auto* front = *vars.begin();
+      StripPointer(front->getTypeSourceInfo()->getTypeLoc());
+      for (const auto* var : llvm::drop_begin(vars)) {
+        AddStar(var);
+      }
+    } else {
+      StripPointer(v->getTypeSourceInfo()->getTypeLoc());
+    }
   }
 
   for (const auto* v : NodesFromMatchAST<clang::VarDecl>(
@@ -524,6 +537,14 @@ void ConverterAstConsumer::ReplaceSortFunctors() const {
                            LangOpts()};
     CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
   }
+}
+void orca_tidy::ConverterAstConsumer::AddStar(const clang::VarDecl* v) const {
+  auto id_range = clang::SourceRange{v->getLocation(), v->getEndLoc()};
+  auto range = clang::CharSourceRange::getTokenRange(id_range);
+  tooling::Replacement r{SourceManager(), range,
+                         llvm::formatv("*{0}", GetSourceText(id_range)).str(),
+                         LangOpts()};
+  CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
 }
 
 }  // namespace
