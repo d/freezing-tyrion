@@ -378,6 +378,8 @@ __attribute__((const)) DeclarationMatcher RefArrayDecl();
 using ClassTemplateSpecializationMatcher =
     decltype(clang::ast_matchers::hasSpecializedTemplate(
         clang::ast_matchers::decl()));
+using CXXMethodMatcher = decltype(clang::ast_matchers::isOverride());
+
 __attribute__((const)) DeclarationMatcher MethodOfHashMap();
 __attribute__((const)) DeclarationMatcher HashMapDecl(
     llvm::ArrayRef<ClassTemplateSpecializationMatcher> args = {});
@@ -394,6 +396,7 @@ __attribute__((const)) DeclarationMatcher HashSetIterDecl(
 __attribute__((const)) DeclarationMatcher RefHashSetDecl();
 __attribute__((const)) DeclarationMatcher RefHashSetIterDecl();
 __attribute__((const)) DeclarationMatcher MethodOfHashSet();
+__attribute__((const)) DeclarationMatcher AddRefAppendMethod();
 
 StatementMatcher FieldReferenceFor(DeclarationMatcher const& field_matcher);
 StatementMatcher ReleaseCallExpr(ExpressionMatcher const& reference_to_field);

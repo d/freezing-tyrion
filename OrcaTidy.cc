@@ -18,7 +18,6 @@ AST_MATCHER(clang::NamedDecl, Unused) {
          !Node.isReferenced();
 }
 
-using CXXMethodMatcher = decltype(isOverride());
 AST_MATCHER_P(clang::CXXMethodDecl, HasOverridden, CXXMethodMatcher,
               inner_matcher) {
   for (const auto* m : Node.overridden_methods()) {
@@ -463,6 +462,7 @@ class Annotator : public AstHelperMixin<Annotator> {
               anyOf(ForEachArgumentToUlongToExprArrayMapWithOwnerParam(
                         arg_matcher),
                     ForEachArgumentToHashMapMethodWithOwnerParam(arg_matcher)))
+        .Case(hasDeclaration(AddRefAppendMethod()), unless(expr()))
         .Case(hasDeclaration(functionDecl()),
               ForEachArgumentWithParam(arg_matcher, unless(PointerVar())))
         // called through a pf, or pmf
@@ -477,6 +477,8 @@ class Annotator : public AstHelperMixin<Annotator> {
               ForEachArgumentToHashMapMethodWithPointerParam(arg_matcher))
         .Case(hasDeclaration(MethodOfHashSet()),
               ForEachArgumentToHashSetMethodWithPointerParam(arg_matcher))
+        .Case(hasDeclaration(AddRefAppendMethod()),
+              ForEachArgumentWithParam(arg_matcher, decl()))
         .Case(hasDeclaration(functionDecl()),
               ForEachArgumentWithParam(arg_matcher, PointerVar()))
         // called through a pf, or pmf

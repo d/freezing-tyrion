@@ -521,4 +521,8 @@ bool IsCleanupRelease(const clang::FunctionDecl* f) {
   return ii && ii->isStr("CleanupRelease");
 }
 
+DeclarationMatcher AddRefAppendMethod() {
+  return cxxMethodDecl(hasName("::gpopt::CUtils::AddRefAppend"));
+}
+
 }  // namespace orca_tidy

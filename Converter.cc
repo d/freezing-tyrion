@@ -400,29 +400,30 @@ void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
   auto has_owner_type =
       anyOf(hasType(qualType(anyOf(OwnerType(), LeakedType()))),
             CallRefArraySubscript());
-  auto return_owner_as_pointer = returnStmt(
-      hasReturnValue(ignoringParenImpCasts(expr(has_owner_type).bind("owner"))),
-      forFunction(returns(PointerType())));
-  auto init_pointer_vars = declStmt(ForEachDeclaration(varDecl(
-      hasType(PointerType()), hasInitializer(IgnoringParenCastFuncs(
-                                  expr(has_owner_type).bind("owner"))))));
-  auto assign_to_pointer_vars =
-      AssignTo(expr(hasType(PointerType())),
-               IgnoringParenCastFuncs(expr(has_owner_type).bind("owner")));
-  auto pass_owner_arg_to_pointer_param =
-      expr(IgnoringParenCastFuncs(CallOrConstruct(
-          Switch()
-              .Case(hasDeclaration(
-                        cxxConstructorDecl(ofClass(HashMapIterDecl()))),
-                    hasArgument(0, expr(has_owner_type).bind("owner")))
-              .Case(hasDeclaration(
-                        cxxConstructorDecl(ofClass(HashSetIterDecl()))),
-                    hasArgument(0, expr(has_owner_type).bind("owner")))
-              .Case(hasDeclaration(cxxMethodDecl(
-                        hasName("::gpdxl::CDXLUtils::Serialize"))),
-                    hasArgument(1, expr(has_owner_type).bind("owner")))
-              .Default(ForEachArgumentWithParamType(
-                  expr(has_owner_type).bind("owner"), PointerType())))));
+  auto owner_expr = expr(has_owner_type).bind("owner");
+  auto return_owner_as_pointer =
+      returnStmt(hasReturnValue(ignoringParenImpCasts(owner_expr)),
+                 forFunction(returns(PointerType())));
+  auto init_pointer_vars = declStmt(ForEachDeclaration(
+      varDecl(hasType(PointerType()),
+              hasInitializer(IgnoringParenCastFuncs(owner_expr)))));
+  auto assign_to_pointer_vars = AssignTo(expr(hasType(PointerType())),
+                                         IgnoringParenCastFuncs(owner_expr));
+  auto pass_owner_arg_to_pointer_param = expr(IgnoringParenCastFuncs(
+      CallOrConstruct(Switch()
+                          .Case(hasDeclaration(cxxConstructorDecl(
+                                    ofClass(HashMapIterDecl()))),
+                                hasArgument(0, owner_expr))
+                          .Case(hasDeclaration(cxxConstructorDecl(
+                                    ofClass(HashSetIterDecl()))),
+                                hasArgument(0, owner_expr))
+                          .Case(hasDeclaration(cxxMethodDecl(
+                                    hasName("::gpdxl::CDXLUtils::Serialize"))),
+                                hasArgument(1, owner_expr))
+                          .Case(hasDeclaration(AddRefAppendMethod()),
+                                ForEachArgumentWithParam(owner_expr, decl()))
+                          .Default(ForEachArgumentWithParamType(
+                              owner_expr, PointerType())))));
   for (const auto* owner : NodesFromMatchAST<clang::Expr>(
            stmt(anyOf(return_owner_as_pointer, init_pointer_vars,
                       assign_to_pointer_vars, pass_owner_arg_to_pointer_param)),
@@ -431,9 +432,8 @@ void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
   }
 
   for (const auto* owner : NodesFromMatchAST<clang::Expr>(
-           cxxCtorInitializer(
-               forField(hasType(PointerType())),
-               withInitializer(expr(has_owner_type).bind("owner"))),
+           cxxCtorInitializer(forField(hasType(PointerType())),
+                              withInitializer(owner_expr)),
            "owner")) {
     DotGet(owner);
   }
