@@ -161,29 +161,6 @@ static StatementMatcher CallPassingFunctionToTypedefFunctionPointer(
       TypeContainingTypedefFunctionPointer(typedef_matcher)));
 }
 
-/// Whenever we think of using \c forEachArgumentWithParam or
-/// \c forEachArgumentWithParamType with \c callExpr, we probably should also
-/// consider using them with \c cxxConstructExpr . That's what these two
-/// matchers, \c NonTemplateCallOrConstruct, and \c CallOrConstruct are for:
-/// they will match either a \c CallExpr or a \c CXXConstructExpr with all your
-/// passed in matchers.
-/// In addition, we should consider the non-template version when we intend to
-/// infer the parameter annotations for the callee, because function templates
-/// (or methods of class templates) can exhibit different owning behavior
-/// depending on the instantiation (c.f. \c CDynamicPtrArrary::Append)
-template <class... Matchers>
-static auto CallOrConstruct(Matchers... matchers) {
-  return expr(anyOf(IgnoringParenCastFuncs(callExpr(matchers...)),
-                    cxxConstructExpr(matchers...)));
-}
-
-template <class... Matchers>
-static auto NonTemplateCallOrConstruct(Matchers... matchers) {
-  return CallOrConstruct(
-      unless(hasDeclaration(functionDecl(isTemplateInstantiation()))),
-      matchers...);
-}
-
 static StatementMatcher PassedAsArgumentToNonPointerOutputParam(
     const ExpressionMatcher& expr_matcher) {
   return CallOrConstruct(ForEachArgumentWithParamType(
