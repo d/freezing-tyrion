@@ -1048,7 +1048,7 @@ void Annotator::InferOwnerVars() const {
 void Annotator::InferGetters() const {
   for (const auto* f : NodesFromMatchAST<clang::CXXMethodDecl>(
            cxxMethodDecl(
-               returns(RefCountPointerType()),
+               unless(isInstantiated()), returns(RefCountPointerType()),
                hasBody(anyOf(
                    stmt(hasDescendant(returnStmt(hasReturnValue(
                             ignoringParenImpCasts(FieldReferenceFor(
