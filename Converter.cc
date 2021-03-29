@@ -26,7 +26,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
   void HandleTranslationUnit(clang::ASTContext& context) override {
     ConvertCcacheTypedefs();
     ConvertRefArrayTypedefs();
-    ConvertHashMapTypedefs();
+    ConvertHashMap();
     ConvertHashSetTypedefs();
     ConvertPointers();
     ConvertOwners();
@@ -50,7 +50,7 @@ class ConverterAstConsumer : public clang::ASTConsumer,
 
   void ConvertCcacheTypedefs() const;
   void ConvertRefArrayTypedefs() const;
-  void ConvertHashMapTypedefs() const;
+  void ConvertHashMap() const;
   void ConvertHashSetTypedefs() const;
   void ConvertPointers() const;
   void ConvertOwners() const;
@@ -311,7 +311,7 @@ void ConverterAstConsumer::ConvertRefArrayTypedefs() const {
   }
 }
 
-void ConverterAstConsumer::ConvertHashMapTypedefs() const {
+void ConverterAstConsumer::ConvertHashMap() const {
   auto ExtractTemplateArgs =
       [this](clang::TemplateSpecializationTypeLoc specialization_type_loc) {
         return std::tuple{
@@ -321,17 +321,22 @@ void ConverterAstConsumer::ConvertHashMapTypedefs() const {
             GetSourceTextOfTemplateArg(specialization_type_loc, 3),
         };
       };
-  for (auto [typedef_decl, hm] :
-       NodesFromMatchAST<clang::TypedefNameDecl, clang::Decl>(
-           typedefNameDecl(unless(isInstantiated()),
-                           hasType(qualType(hasDeclaration(
-                               anyOf(decl(HashMapRefKRefTDecl()).bind("hm"),
-                                     HashMapIterRefKRefTDecl())))),
-                           unless(hasDeclContext(classTemplateDecl(
-                               hasName("gpos::CHashMapIter")))))
-               .bind("typedef_decl"),
-           "typedef_decl", "hm")) {
-    auto underlying_type_loc = typedef_decl->getTypeSourceInfo()->getTypeLoc();
+  for (auto [typedef_decl, v, hm] :
+       NodesFromMatchAST<clang::TypedefNameDecl, clang::VarDecl, clang::Decl>(
+           mapAnyOf(typedefNameDecl, varDecl)
+               .with(unless(isInstantiated()),
+                     hasType(qualType(hasDeclaration(
+                         anyOf(decl(HashMapRefKRefTDecl()).bind("hm"),
+                               HashMapIterRefKRefTDecl())))),
+                     unless(hasDeclContext(
+                         classTemplateDecl(hasName("gpos::CHashMapIter")))),
+                     anyOf(typedefNameDecl().bind("typedef_decl"),
+                           varDecl().bind("var"))),
+           "typedef_decl", "var", "hm")) {
+    clang::TypeLoc underlying_type_loc =
+        (typedef_decl ? typedef_decl->getTypeSourceInfo()
+                      : v->getTypeSourceInfo())
+            ->getTypeLoc();
     auto specialization_type_loc =
         underlying_type_loc
             .getAsAdjusted<clang::TemplateSpecializationTypeLoc>();
