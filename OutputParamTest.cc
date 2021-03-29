@@ -9,12 +9,14 @@ TEST_F(OutParamBase, ownReleaseSafeRelease) {
 
     void foo(T** ppt) { (*ppt)->Release(); }
     void bar(T** ppt) { SafeRelease(*ppt); }
+    void baz(T*& pt) { SafeRelease(pt); }
   )C++",
               expected_changed_code = R"C++(
     void foo(gpos::owner<T*>*);
 
     void foo(gpos::owner<T*>* ppt) { (*ppt)->Release(); }
     void bar(gpos::owner<T*>* ppt) { SafeRelease(*ppt); }
+    void baz(gpos::owner<T*>& pt) { SafeRelease(pt); }
   )C++";
 
   auto changed_code = annotateAndFormat(std::move(code));
@@ -24,15 +26,21 @@ TEST_F(OutParamBase, ownReleaseSafeRelease) {
 
 TEST_F(OutParamBase, ownAddRefAssign) {
   std::string code = R"C++(
-    void foo(T** ppt, T* t) {
+    void foo(T** ppt, T*& pt, T* t) {
       t->AddRef();
       *ppt = t;
+
+      t->AddRef();
+      pt = t;
     }
   )C++",
               expected_changed_code = R"C++(
-    void foo(gpos::owner<T*>* ppt, T* t) {
+    void foo(gpos::owner<T*>* ppt, gpos::owner<T*>& pt, T* t) {
       t->AddRef();
       *ppt = t;
+
+      t->AddRef();
+      pt = t;
     }
   )C++";
 
@@ -46,18 +54,24 @@ TEST_F(OutParamBase, ownFuncAddRefAssign) {
     struct R {
       T* GetT();
     };
-    void foo(T** ppt, R* r) {
+    void foo(T** ppt, T*& pt, R* r) {
       r->GetT()->AddRef();
       *ppt = r->GetT();
+
+      r->GetT()->AddRef();
+      pt = r->GetT();
     }
   )C++",
               expected_changed_code = R"C++(
     struct R {
       T* GetT();
     };
-    void foo(gpos::owner<T*>* ppt, R* r) {
+    void foo(gpos::owner<T*>* ppt, gpos::owner<T*>& pt, R* r) {
       r->GetT()->AddRef();
       *ppt = r->GetT();
+
+      r->GetT()->AddRef();
+      pt = r->GetT();
     }
   )C++";
 
@@ -68,11 +82,15 @@ TEST_F(OutParamBase, ownFuncAddRefAssign) {
 
 TEST_F(OutParamProp, ownNew) {
   std::string code = R"C++(
-    void MakeT(T** ppt) { *ppt = new T; }
+    void MakeT(T** ppt, T*& pt) {
+      *ppt = new T;
+      pt = new T;
+    }
   )C++",
               expected_changed_code = R"C++(
-    void MakeT(gpos::owner<T*>* ppt) {
+    void MakeT(gpos::owner<T*>* ppt, gpos::owner<T*>& pt) {
       *ppt = new T;
+      pt = new T;
     }
   )C++";
 
@@ -84,11 +102,17 @@ TEST_F(OutParamProp, ownNew) {
 TEST_F(OutParamProp, ownFunc) {
   std::string code = R"C++(
     gpos::owner<T*> NewT();
-    void MakeT(T** ppt) { *ppt = NewT(); }
+    void MakeT(T** ppt, T*& pt) {
+      *ppt = NewT();
+      pt = NewT();
+    }
   )C++",
               expected_changed_code = R"C++(
     gpos::owner<T*> NewT();
-    void MakeT(gpos::owner<T*>* ppt) { *ppt = NewT(); }
+    void MakeT(gpos::owner<T*>* ppt, gpos::owner<T*>& pt) {
+      *ppt = NewT();
+      pt = NewT();
+    }
   )C++";
 
   auto changed_code = annotateAndFormat(std::move(code));
@@ -129,14 +153,25 @@ TEST_F(OutParamProp, ownNewNegativeCases) {
 
 TEST_F(OutParamProp, pointAssignPoint) {
   std::string code = R"C++(
-    void f(T** pp, gpos::pointer<T*> t) { (*pp) = t; }
-    void g(const T** pp, gpos::pointer<T*> t) { *pp = t; }
+    void f(T** pp, T*& p, gpos::pointer<T*> t) {
+      (*pp) = t;
+      p = t;
+    }
+    void g(const T** pp, const T*& p, gpos::pointer<T*> t) {
+      *pp = t;
+      p = t;
+    }
   )C++",
               expected_changed_code = R"C++(
-    void f(gpos::pointer<T*>* pp, gpos::pointer<T*> t) {
+    void f(gpos::pointer<T*>* pp, gpos::pointer<T*>& p, gpos::pointer<T*> t) {
       (*pp) = t;
+      p = t;
     }
-    void g(gpos::pointer<const T*>* pp, gpos::pointer<T*> t) { *pp = t; }
+    void g(gpos::pointer<const T*>* pp, gpos::pointer<const T*>& p,
+           gpos::pointer<T*> t) {
+      *pp = t;
+      p = t;
+    }
   )C++";
 
   auto changed_code = annotateAndFormat(std::move(code));
@@ -160,13 +195,19 @@ TEST_F(OutParamProp, pointAssignPointFunc) {
     struct R {
       gpos::pointer<T*> GetT();
     };
-    void f(T** pp, R* r) { (*pp) = r->GetT(); }
+    void f(T** pp, T*& p, R* r) {
+      (*pp) = r->GetT();
+      p = r->GetT();
+    }
   )C++",
               expected_changed_code = R"C++(
     struct R {
       gpos::pointer<T*> GetT();
     };
-    void f(gpos::pointer<T*>* pp, R* r) { (*pp) = r->GetT(); }
+    void f(gpos::pointer<T*>* pp, gpos::pointer<T*>& p, R* r) {
+      (*pp) = r->GetT();
+      p = r->GetT();
+    }
   )C++";
 
   auto changed_code = annotateAndFormat(std::move(code));

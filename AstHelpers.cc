@@ -222,7 +222,12 @@ StatementMatcher AddrOf(const ExpressionMatcher& expr) {
 }
 
 TypeMatcher RefCountPointerPointerType() {
-  return pointsTo(RefCountPointerType());
+  return pointsTo(qualType(RefCountPointerType(), unless(isConstQualified())));
+}
+
+TypeMatcher RefCountPointerReferenceType() {
+  return references(
+      qualType(RefCountPointerType(), unless(isConstQualified())));
 }
 
 LastUseStmts LastUseStatementsOfFunc(const clang::FunctionDecl* f) {

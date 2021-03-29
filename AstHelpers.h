@@ -36,6 +36,7 @@ __attribute__((const)) TypeMatcher AnnotatedType();
 
 __attribute__((const)) TypeMatcher RefCountPointerType();
 __attribute__((const)) TypeMatcher RefCountPointerPointerType();
+__attribute__((const)) TypeMatcher RefCountPointerReferenceType();
 
 __attribute__((const)) StatementMatcher
 CallCcacheAccessorMethodsReturningOwner();

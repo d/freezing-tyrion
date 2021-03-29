@@ -1029,9 +1029,9 @@ void Annotator::InferOwnerVars() const {
   // 3. But hopefully with the introduction of smart pointers, SafeRelease
   // will disappear...
   for (const auto* owner_var : NodesFromMatchAST<clang::VarDecl>(
-           ReleaseCallExpr(
-               declRefExpr(to(varDecl().bind("owner_var")),
-                           unless(forFunction(hasName("SafeRelease"))))),
+           ReleaseCallExpr(declRefExpr(
+               to(varDecl(unless(hasType(referenceType()))).bind("owner_var")),
+               unless(forFunction(hasName("SafeRelease"))))),
            "owner_var")) {
     AnnotateVarOwner(owner_var);
   }
@@ -1440,21 +1440,28 @@ void Annotator::AnnotateFirstVar(const clang::DeclStmt* decl_stmt,
 }
 
 void Annotator::InferOutputParams() const {
-  auto deref = Deref(declRefExpr(to(equalsBoundNode("out_param"))));
+  auto is_output_param =
+      Switch()
+          .Case(hasType(RefCountPointerPointerType()), decl().bind("star_star"))
+          .Case(hasType(RefCountPointerReferenceType()),
+                decl().bind("star_ref"));
+  auto ref_to_out_param =
+      anyOf(Deref(declRefExpr(to(equalsBoundNode("star_star")))),
+            declRefExpr(to(equalsBoundNode("star_ref"))));
   auto getter_added_ref = cxxMemberCallExpr(CallGetterAddedRef());
   for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
            parmVarDecl(
-               unless(isInstantiated()), hasType(RefCountPointerPointerType()),
+               unless(isInstantiated()), is_output_param,
                decl().bind("out_param"),
                hasDeclContext(functionDecl(hasBody(stmt(hasDescendant(stmt(
-                   anyOf(ReleaseCallExpr(deref),
-                         stmt(AssignTo(IgnoringParenCastFuncs(deref),
+                   anyOf(ReleaseCallExpr(ref_to_out_param),
+                         stmt(AssignTo(IgnoringParenCastFuncs(ref_to_out_param),
                                        IgnoringParenCastFuncs(declRefExpr(
                                            to(varDecl().bind("var"))))),
                               StmtIsImmediatelyAfter(AddRefOn(
                                   declRefExpr(to(equalsBoundNode("var")))))),
                          AssignTo(
-                             IgnoringParenCastFuncs(deref),
+                             IgnoringParenCastFuncs(ref_to_out_param),
                              IgnoringParenCastFuncs(getter_added_ref)))))))))),
            "out_param")) {
     AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
@@ -1471,9 +1478,15 @@ void Annotator::AnnotateOutputParam(const clang::ParmVarDecl* param,
     auto pointer_loc = p->getTypeSourceInfo()
                            ->getTypeLoc()
                            .getAsAdjusted<clang::PointerTypeLoc>();
-    // Not spelled as a pointer?
-    if (!pointer_loc) continue;
-    auto pointee_loc = pointer_loc.getPointeeLoc();
+    auto reference_loc = p->getTypeSourceInfo()
+                             ->getTypeLoc()
+                             .getAsAdjusted<clang::ReferenceTypeLoc>();
+    // Not spelled as a pointer nor a reference?
+    if (!pointer_loc && !reference_loc) continue;
+
+    auto pointee_loc = pointer_loc ? pointer_loc.getPointeeLoc()
+                                   : reference_loc.getPointeeLoc();
+
     if (Match(annotation_matcher, pointee_loc.getType())) continue;
     auto range = pointee_loc.getSourceRange();
     // If we're spelled as star-star, and the pointee of the pointee is const
@@ -1495,36 +1508,42 @@ void Annotator::PropagateOutputParams() const {
   // base rule time.
   //
   // FIXME: what if we also run this at "base" time? What will we find out?
-  auto deref = Deref(declRefExpr(to(equalsBoundNode("out_param"))));
+  auto is_output_param =
+      Switch()
+          .Case(hasType(RefCountPointerPointerType()), decl().bind("star_star"))
+          .Case(hasType(RefCountPointerReferenceType()),
+                decl().bind("star_ref"));
+  auto ref_to_out_param =
+      anyOf(Deref(declRefExpr(to(equalsBoundNode("star_star")))),
+            declRefExpr(to(equalsBoundNode("star_ref"))));
   for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
-           parmVarDecl(unless(isInstantiated()),
-                       hasType(RefCountPointerPointerType()),
+           parmVarDecl(unless(isInstantiated()), is_output_param,
                        decl().bind("out_param"),
                        hasDeclContext(functionDecl(hasBody(stmt(
                            hasDescendant(AssignTo(
-                               ignoringParenCasts(deref),
+                               ignoringParenCasts(ref_to_out_param),
                                IgnoringParenCastFuncs(anyOf(
                                    cxxNewExpr(), CallReturningOwner(),
                                    declRefExpr(to(varDecl(OwnerVar()))))))),
-                           unless(hasDescendant(expr(
-                               unless(ReleaseCallExpr(deref)),
-                               PassedAsArgumentToNonPointerParam(deref))))))))),
+                           unless(hasDescendant(
+                               expr(unless(ReleaseCallExpr(ref_to_out_param)),
+                                    PassedAsArgumentToNonPointerParam(
+                                        ref_to_out_param))))))))),
            "out_param")) {
     AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
   }
 
   auto assign_pointer_var =
-      stmt(AssignTo(IgnoringParenCastFuncs(deref),
+      stmt(AssignTo(IgnoringParenCastFuncs(ref_to_out_param),
                     IgnoringParenCastFuncs(
                         declRefExpr(to(varDecl(PointerVar()).bind("var"))))),
            unless(StmtIsImmediatelyAfter(
                AddRefOn(declRefExpr(to(equalsBoundNode("var")))))));
   auto assign_getter =
-      AssignTo(IgnoringParenCastFuncs(deref),
+      AssignTo(IgnoringParenCastFuncs(ref_to_out_param),
                cxxMemberCallExpr(CallGetter(), CallGetterNeverAddedRef()));
   for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
-           parmVarDecl(unless(isInstantiated()),
-                       hasType(RefCountPointerPointerType()),
+           parmVarDecl(unless(isInstantiated()), is_output_param,
                        decl().bind("out_param"),
                        hasDeclContext(functionDecl(hasBody(stmt(hasDescendant(
                            stmt(anyOf(assign_pointer_var, assign_getter)))))))),
@@ -1536,22 +1555,22 @@ void Annotator::PropagateOutputParams() const {
   // single star, but oh well, we DO have those in ORCA:
   for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
            parmVarDecl(
-               unless(isInstantiated()), hasType(RefCountPointerPointerType()),
+               unless(isInstantiated()), is_output_param,
                decl().bind("out_param"),
-               hasDeclContext(functionDecl(hasBody(unless(hasDescendant(
-                   stmt(anyOf(AssignTo(IgnoringParenCastFuncs(deref)),
-                              callExpr(ForEachArgumentWithParamType(
-                                  declRefExpr(to(equalsBoundNode("out_param"))),
-                                  RefCountPointerPointerType())))))))))),
+               hasDeclContext(functionDecl(hasBody(unless(hasDescendant(stmt(
+                   anyOf(AssignTo(IgnoringParenCastFuncs(ref_to_out_param)),
+                         callExpr(ForEachArgumentWithParamType(
+                             declRefExpr(to(equalsBoundNode("out_param"))),
+                             RefCountPointerPointerType())))))))))),
            "out_param")) {
     AnnotateOutputParam(param, PointerType(), kPointerAnnotation);
   }
 
   for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
            callExpr(ForEachArgumentWithParamType(
-               declRefExpr(to(parmVarDecl(unless(isInstantiated()),
-                                          hasType(RefCountPointerPointerType()))
-                                  .bind("out_param"))),
+               declRefExpr(
+                   to(parmVarDecl(unless(isInstantiated()), is_output_param)
+                          .bind("out_param"))),
                pointsTo(qualType(OwnerType())))),
            "out_param")) {
     AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
