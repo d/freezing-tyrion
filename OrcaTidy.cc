@@ -333,6 +333,9 @@ class Annotator : public AstHelperMixin<Annotator> {
       auto rt = f->getReturnType();
       if (Match(annotation_matcher, rt)) continue;
       if (IsCast(rt)) continue;
+      // You can't put auto between angle brackets:
+      if (Match(qualType(anyOf(autoType(), pointsTo(autoType()))), rt))
+        continue;
       if (IsAnnotated(rt)) std::terminate();
 
       AnnotateFunctionReturnType(f, annotation);
