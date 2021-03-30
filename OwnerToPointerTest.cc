@@ -92,6 +92,27 @@ TEST_F(OwnerToPointer, funcArg) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(OwnerToPointer, conditionalOp) {
+  std::string code = R"C++(
+    gpos::pointer<T*> f();
+    class R {
+      gpos::owner<T*> t_;
+      gpos::pointer<T*> g(bool b) { return b ? t_ : f(); }
+    };
+  )C++",
+              expected_changed_code = R"C++(
+    T* f();
+    class R {
+      gpos::Ref<T> t_;
+      T* g(bool b) { return b ? t_.get() : f(); }
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 TEST_F(OwnerToPointer, ctorInitializer) {
   std::string code = R"C++(
     struct Q {

@@ -406,8 +406,14 @@ void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
       anyOf(hasType(qualType(anyOf(OwnerType(), LeakedType()))),
             CallRefArraySubscript(), CallCcacheAccessorMethodsReturningOwner());
   auto owner_expr = expr(has_owner_type).bind("owner");
+  auto conditional_mismatch =
+      conditionalOperator(Switch()
+                              .Case(hasTrueExpression(owner_expr),
+                                    hasFalseExpression(unless(has_owner_type)))
+                              .Default(hasFalseExpression(owner_expr)));
   auto return_owner_as_pointer =
-      returnStmt(hasReturnValue(ignoringParenImpCasts(owner_expr)),
+      returnStmt(hasReturnValue(ignoringParenImpCasts(
+                     expr(unless(conditional_mismatch), owner_expr))),
                  forFunction(returns(PointerType())));
   auto init_pointer_vars = declStmt(ForEachDeclaration(
       varDecl(hasType(PointerType()),
@@ -430,8 +436,9 @@ void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
                           .Default(ForEachArgumentWithParamType(
                               owner_expr, PointerType())))));
   for (const auto* owner : NodesFromMatchAST<clang::Expr>(
-           stmt(anyOf(return_owner_as_pointer, init_pointer_vars,
-                      assign_to_pointer_vars, pass_owner_arg_to_pointer_param)),
+           stmt(anyOf(conditional_mismatch, return_owner_as_pointer,
+                      init_pointer_vars, assign_to_pointer_vars,
+                      pass_owner_arg_to_pointer_param)),
            "owner")) {
     DotGet(owner);
   }
