@@ -1301,8 +1301,6 @@ void Annotator::PropagatePointerVars() const {
   for (const auto* var : NodesFromMatchAST<clang::VarDecl>(
            varDecl(
                hasLocalStorage(), hasType(RefCountPointerType()),
-               unless(hasInitializer(ignoringParenImpCasts(
-                   CallCcacheAccessorMethodsReturningOwner()))),
                unless(IsImmediatelyBeforeAddRef()), unless(isInstantiated()),
                decl().bind("var"),
                hasDeclContext(functionDecl(hasBody(stmt()))),
@@ -1646,8 +1644,7 @@ StatementMatcher Annotator::CallReturningOwner() const {
       anyOf(hasType(OwnerType()), callee(functionDecl(returns_owner)),
             callee(expr(ignoringParenImpCasts(
                 anyOf(hasType(typedefNameDecl(returns_owner)),
-                      hasType(pointsTo(typedefNameDecl(returns_owner))))))),
-            CallCcacheAccessorMethodsReturningOwner()));
+                      hasType(pointsTo(typedefNameDecl(returns_owner)))))))));
 }
 
 StatementMatcher Annotator::PassedAsArgumentToNonPointerParam(

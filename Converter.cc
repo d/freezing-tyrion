@@ -404,7 +404,7 @@ void orca_tidy::ConverterAstConsumer::ConvertHashSetTypedefs() const {
 void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
   auto has_owner_type =
       anyOf(hasType(qualType(anyOf(OwnerType(), LeakedType()))),
-            CallRefArraySubscript());
+            CallRefArraySubscript(), CallCcacheAccessorMethodsReturningOwner());
   auto owner_expr = expr(has_owner_type).bind("owner");
   auto return_owner_as_pointer =
       returnStmt(hasReturnValue(ignoringParenImpCasts(owner_expr)),
