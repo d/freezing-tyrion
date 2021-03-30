@@ -128,7 +128,7 @@ static StatementMatcher VarInitWithTypedefFunctionPointers(
 static StatementMatcher CallPassingFunctionToTypedefFunctionPointer(
     const DeclarationMatcher& typedef_matcher,
     const FunctionMatcher& function_matcher) {
-  return callExpr(forEachArgumentWithParamType(
+  return CallOrConstruct(ForEachArgumentWithParamType(
       ExprInitializingFunctionPointer(function_matcher),
       TypeContainingTypedefFunctionPointer(typedef_matcher)));
 }

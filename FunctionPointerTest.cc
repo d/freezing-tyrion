@@ -246,6 +246,31 @@ TEST_F(PropagateTest, pfParamRet) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(PropagateTest, fParamRet) {
+  std::string code = R"C++(
+    typedef gpos::owner<T*> FOwn(gpos::pointer<S*>);
+    struct R {
+      R(FOwn fown);
+    };
+    T* F(S*);
+
+    void f() { R r(F); }
+  )C++",
+              expected_changed_code = R"C++(
+    typedef gpos::owner<T*> FOwn(gpos::pointer<S*>);
+    struct R {
+      R(FOwn fown);
+    };
+    gpos::owner<T*> F(gpos::pointer<S*>);
+
+    void f() { R r(F); }
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 TEST_F(PropagateTest, retOwnPf) {
   std::string code = R"C++(
     using FOwn = gpos::owner<T*>(S*);
