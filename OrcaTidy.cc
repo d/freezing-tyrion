@@ -1762,6 +1762,27 @@ void Annotator::CovertCallsToCastFuncs() const {
     CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
   }
 
+  std::vector<int> f(int, int);
+
+  for (const auto* cast : NodesFromMatchAST<clang::CXXDynamicCastExpr>(
+           cxxDynamicCastExpr(hasSourceExpression(
+                                  IgnoringParenCastFuncs(hasType(OwnerType()))))
+               .bind("cast"),
+           "cast")) {
+    auto dest_type_loc = cast->getTypeInfoAsWritten()
+                             ->getTypeLoc()
+                             .getAs<clang::PointerTypeLoc>()
+                             .getPointeeLoc();
+    auto pointee_spelling = GetSourceText(dest_type_loc.getSourceRange());
+    auto range = clang::CharSourceRange::getTokenRange(
+        cast->getOperatorLoc(), cast->getAngleBrackets().getEnd());
+    tooling::Replacement r{
+        SourceManager(), range,
+        llvm::formatv("gpos::dyn_cast<{0}>", pointee_spelling).str(),
+        LangOpts()};
+    CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
+  }
+
   for (const auto* cast : NodesFromMatchAST<clang::CStyleCastExpr>(
            cStyleCastExpr(hasCastKind(clang::CK_BaseToDerived),
                           hasDestinationType(RefCountPointerType()))

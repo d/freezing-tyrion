@@ -166,6 +166,7 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
     struct std::hash<gpos::Ref<T>>;
 
     struct T : gpos::CRefCount<T> {
+      virtual ~T();
       static gpos::ULONG UlHash(const T*);
       static gpos::BOOL FEquals(const T*, const T*);
     };

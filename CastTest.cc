@@ -222,4 +222,27 @@ TEST_F(CastTest, rewriteCStyleCastToUniversal) {
 
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
+
+TEST_F(CastTest, rewriteDynCastOwnerToUniversal) {
+  std::string code = R"C++(
+    struct R : T {};
+    gpos::owner<T*> MakeR();
+    void f() {
+      gpos::owner<R*> p = dynamic_cast<R*>(MakeR());
+      Sink(std::move(p));
+    }
+  )C++",
+              expected_changed_code = R"C++(
+    struct R : T {};
+    gpos::owner<T*> MakeR();
+    void f() {
+      gpos::owner<R*> p = gpos::dyn_cast<R>(MakeR());
+      Sink(std::move(p));
+    }
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
 }  // namespace orca_tidy

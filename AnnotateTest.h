@@ -55,7 +55,9 @@ class AnnotateTest : public OrcaTidyTest<AnnotateTest> {
 
     }  // namespace gpos
 
-    struct T : gpos::CRefCount<T> {};
+    struct T : gpos::CRefCount<T> {
+      virtual ~T();
+    };
     using U = T;
     struct S : U {};
 
