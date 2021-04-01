@@ -110,9 +110,9 @@ convert() {
 	build_dir=$1
 
 	sanity_check
+	remove_previous_fixes
 
 	echo Converting gpopt
-	remove_previous_fixes
 	time gpopt_files | do_convert "${GPDB_PATH}" -n1 gpopt
 
 	echo Converting gporca
