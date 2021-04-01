@@ -227,16 +227,16 @@ TEST_F(PropagateTest, pmfRet) {
 
 TEST_F(PropagateTest, pfParamRet) {
   std::string code = R"C++(
-    typedef T* FOwn(S*);
+    typedef T* FOwn(S*, S**);
     void G(FOwn fown);
-    gpos::owner<T*> F(gpos::pointer<S*>);
+    gpos::owner<T*> F(gpos::pointer<S*>, gpos::owner<S*>*);
 
     void f() { G(F); }
   )C++",
               expected_changed_code = R"C++(
-    typedef gpos::owner<T*> FOwn(gpos::pointer<S*>);
+    typedef gpos::owner<T*> FOwn(gpos::pointer<S*>, gpos::owner<S*>*);
     void G(FOwn fown);
-    gpos::owner<T*> F(gpos::pointer<S*>);
+    gpos::owner<T*> F(gpos::pointer<S*>, gpos::owner<S*>*);
 
     void f() { G(F); }
   )C++";
@@ -248,20 +248,20 @@ TEST_F(PropagateTest, pfParamRet) {
 
 TEST_F(PropagateTest, fParamRet) {
   std::string code = R"C++(
-    typedef gpos::owner<T*> FOwn(gpos::pointer<S*>);
+    typedef gpos::owner<T*> FOwn(gpos::pointer<S*>, gpos::owner<S*>*);
     struct R {
       R(FOwn fown);
     };
-    T* F(S*);
+    T* F(S*, S**);
 
     void f() { R r(F); }
   )C++",
               expected_changed_code = R"C++(
-    typedef gpos::owner<T*> FOwn(gpos::pointer<S*>);
+    typedef gpos::owner<T*> FOwn(gpos::pointer<S*>, gpos::owner<S*>*);
     struct R {
       R(FOwn fown);
     };
-    gpos::owner<T*> F(gpos::pointer<S*>);
+    gpos::owner<T*> F(gpos::pointer<S*>, gpos::owner<S*>*);
 
     void f() { R r(F); }
   )C++";

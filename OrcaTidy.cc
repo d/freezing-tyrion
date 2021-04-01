@@ -600,6 +600,8 @@ class Annotator : public AstHelperMixin<Annotator> {
   void AnnotateFirstVar(const clang::DeclStmt* decl_stmt,
                         llvm::StringRef annotation) const;
   void RemoveStarFromVar(const clang::VarDecl* var) const;
+  void AnnotateOutputParamOwner(const clang::ParmVarDecl* param) const;
+  void AnnotateOutputParamPointer(const clang::ParmVarDecl* param) const;
   void AnnotateOutputParam(const clang::ParmVarDecl* param,
                            const TypeMatcher& annotation_matcher,
                            llvm::StringRef annotation) const;
@@ -1235,6 +1237,7 @@ void Annotator::AnnotateTypedefFunctionProtoTypeParams(
 
   for (auto [f_param, typedef_param] :
        llvm::zip(f->parameters(), function_type_loc.getParams())) {
+    if (!f_param->getType()->isPointerType()) continue;
     if (IsAnnotated(f_param)) {
       // Propagate annotation from function to the typedef
       if (IsOwner(f_param))
@@ -1247,8 +1250,31 @@ void Annotator::AnnotateTypedefFunctionProtoTypeParams(
         AnnotateVarOwner(f_param);
       else if (IsPointer(typedef_param))
         AnnotateVarPointer(f_param);
+    } else if (auto f_pointee = f_param->getType()->getPointeeType();
+               IsAnnotated(f_pointee)) {
+      if (IsOwner(f_pointee))
+        AnnotateOutputParamOwner(typedef_param);
+      else if (IsPointer(f_pointee))
+        AnnotateOutputParamPointer(typedef_param);
+    } else if (auto typedef_pointee =
+                   typedef_param->getType()->getPointeeType();
+               IsAnnotated(typedef_pointee)) {
+      if (IsOwner(typedef_pointee))
+        AnnotateOutputParamOwner(f_param);
+      else if (IsPointer(typedef_pointee))
+        AnnotateOutputParamPointer(f_param);
     }
   }
+}
+
+void Annotator::AnnotateOutputParamOwner(
+    const clang::ParmVarDecl* param) const {
+  AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
+}
+
+void Annotator::AnnotateOutputParamPointer(
+    const clang::ParmVarDecl* param) const {
+  AnnotateOutputParam(param, PointerType(), kPointerAnnotation);
 }
 
 void Annotator::AnnotateTypedefFunctionProtoTypeReturnOwner(
@@ -1465,7 +1491,7 @@ void Annotator::InferOutputParams() const {
                              IgnoringParenCastFuncs(ref_to_out_param),
                              IgnoringParenCastFuncs(getter_added_ref)))))))))),
            "out_param")) {
-    AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
+    AnnotateOutputParamOwner(param);
   }
 }
 
@@ -1473,9 +1499,16 @@ void Annotator::AnnotateOutputParam(const clang::ParmVarDecl* param,
                                     const TypeMatcher& annotation_matcher,
                                     llvm::StringRef annotation) const {
   auto scope_index = param->getFunctionScopeIndex();
-  for (const auto* f :
-       llvm::cast<clang::FunctionDecl>(param->getDeclContext())->redecls()) {
-    const auto* p = f->getParamDecl(scope_index);
+  const auto* decl_context = param->getDeclContext();
+  auto params_among_redecls =
+      decl_context->isFunctionOrMethod()
+          ? MakeVector(llvm::map_range(
+                llvm::cast<clang::FunctionDecl>(decl_context)->redecls(),
+                [scope_index](const clang::FunctionDecl* f) {
+                  return f->getParamDecl(scope_index);
+                }))
+          : llvm::SmallVector{param};
+  for (const auto* p : params_among_redecls) {
     auto pointer_loc = p->getTypeSourceInfo()
                            ->getTypeLoc()
                            .getAsAdjusted<clang::PointerTypeLoc>();
@@ -1531,7 +1564,7 @@ void Annotator::PropagateOutputParams() const {
                                     PassedAsArgumentToNonPointerParam(
                                         ref_to_out_param))))))))),
            "out_param")) {
-    AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
+    AnnotateOutputParamOwner(param);
   }
 
   auto assign_pointer_var =
@@ -1549,7 +1582,7 @@ void Annotator::PropagateOutputParams() const {
                        hasDeclContext(functionDecl(hasBody(stmt(hasDescendant(
                            stmt(anyOf(assign_pointer_var, assign_getter)))))))),
            "out_param")) {
-    AnnotateOutputParam(param, PointerType(), kPointerAnnotation);
+    AnnotateOutputParamPointer(param);
   }
 
   // The following is really code smell: the star-star really should have been a
@@ -1564,7 +1597,7 @@ void Annotator::PropagateOutputParams() const {
                              declRefExpr(to(equalsBoundNode("out_param"))),
                              RefCountPointerPointerType())))))))))),
            "out_param")) {
-    AnnotateOutputParam(param, PointerType(), kPointerAnnotation);
+    AnnotateOutputParamPointer(param);
   }
 
   for (const auto* param : NodesFromMatchAST<clang::ParmVarDecl>(
@@ -1574,7 +1607,7 @@ void Annotator::PropagateOutputParams() const {
                           .bind("out_param"))),
                pointsTo(qualType(OwnerType())))),
            "out_param")) {
-    AnnotateOutputParam(param, OwnerType(), kOwnerAnnotation);
+    AnnotateOutputParamOwner(param);
   }
 
   for (auto [var, pointee_type] :
