@@ -111,6 +111,41 @@ TEST_F(PropagateTest, varPointInitAssignAnotherPointerVar) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(PropagateTest, varPointAddRefAssignedToOwnerField) {
+  std::string code = R"C++(
+    class R {
+      gpos::owner<T*> t_;
+      gpos::owner<S*> s_;
+      void SetT(T* t) {
+        t_ = t;
+        t_->AddRef();
+      }
+      void SetS(S* s) {
+        s->AddRef();
+        s_ = s;
+      }
+    };
+  )C++",
+              expected_changed_code = R"C++(
+    class R {
+      gpos::owner<T*> t_;
+      gpos::owner<S*> s_;
+      void SetT(gpos::pointer<T*> t) {
+        t_ = t;
+        t_->AddRef();
+      }
+      void SetS(gpos::pointer<S*> s) {
+        s->AddRef();
+        s_ = s;
+      }
+    };
+  )C++";
+
+  auto changed_code = annotateAndFormat(code);
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 TEST_F(PropagateTest, varPointNegativeCases) {
   std::string func_without_def = R"C++(
     void f(T* t);

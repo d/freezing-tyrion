@@ -611,7 +611,7 @@ class Annotator : public AstHelperMixin<Annotator> {
       const clang::FunctionDecl* f) const;
   VarMatcher AddRefdIn(const clang::FunctionDecl* f) const;
   StatementMatcher InitOrAssignNonPointerVarWith(
-      const ExpressionMatcher& expr) const;
+      const ExpressionMatcher& inner_matcher) const;
   CXXMemberCallMatcher CallGetter() const;
 };
 
@@ -1706,12 +1706,29 @@ StatementMatcher Annotator::PassedAsArgumentToNonPointerParam(
 }
 
 StatementMatcher Annotator::InitOrAssignNonPointerVarWith(
-    const ExpressionMatcher& expr) const {
+    const ExpressionMatcher& inner_matcher) const {
   return anyOf(
-      declStmt(has(varDecl(unless(PointerVar()),
-                           hasInitializer(IgnoringParenCastFuncs(expr))))),
-      AssignTo(unless(declRefExpr(to(varDecl(PointerVar())))),
-               IgnoringParenCastFuncs(expr)));
+      declStmt(
+          has(varDecl(unless(PointerVar()),
+                      hasInitializer(IgnoringParenCastFuncs(inner_matcher))))),
+      expr(
+          expr().bind("assign"),
+          AssignTo(
+              ignoringParenImpCasts(
+                  Switch()
+                      .Case(memberExpr(),
+                            memberExpr(
+                                member(fieldDecl(hasType(OwnerType()))
+                                           .bind("field")),
+                                unless(hasAncestor(expr(
+                                    equalsBoundNode("assign"),
+                                    anyOf(StmtIsImmediatelyBefore(AddRefOn(
+                                              memberExpr(member(fieldDecl(
+                                                  equalsBoundNode("field")))))),
+                                          StmtIsImmediatelyAfter(
+                                              AddRefOn(inner_matcher))))))))
+                      .Default(unless(declRefExpr(to(varDecl(PointerVar())))))),
+              IgnoringParenCastFuncs(inner_matcher))));
 }
 
 CXXMemberCallMatcher Annotator::CallGetter() const {
