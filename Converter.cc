@@ -476,11 +476,19 @@ void ConverterAstConsumer::EraseAddRefs() const {
 }
 
 void ConverterAstConsumer::ConvertAutoRef() const {
-  for (const auto* v : NodesFromMatchAST<clang::VarDecl>(
+  for (auto is_immediately_before_assign =
+           allOf(decl().bind("var"),
+                 hasParent(declStmt(StmtIsImmediatelyBefore(
+                     AssignTo(declRefExpr(to(equalsBoundNode("var"))))))));
+       const auto* v : NodesFromMatchAST<clang::VarDecl>(
            varDecl(
                hasType(AutoRefDecl()),
-               hasInitializer(cxxConstructExpr(hasArgument(
-                   0, ignoringParenImpCasts(anyOf(callExpr(), cxxNewExpr()))))))
+               Switch()
+                   .Case(hasInitializer(cxxConstructExpr(argumentCountIs(0))),
+                         varDecl(is_immediately_before_assign))
+                   .Default(hasInitializer(cxxConstructExpr(
+                       hasArgument(0, ignoringParenImpCasts(
+                                          anyOf(callExpr(), cxxNewExpr())))))))
                .bind("v"),
            "v")) {
     auto type_loc = v->getTypeSourceInfo()->getTypeLoc();

@@ -87,12 +87,14 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
      public:
       T* Value();
       CAutoP const& operator=(T*);
+      T* operator->() const;
     };
 
     template <class T>
     class CAutoRef : public CAutoP<T> {
      public:
-      explicit CAutoRef(T* = nullptr);
+      explicit CAutoRef();
+      explicit CAutoRef(T*);
       const CAutoRef& operator=(T*);
     };
 

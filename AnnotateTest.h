@@ -39,7 +39,8 @@ class AnnotateTest : public OrcaTidyTest<AnnotateTest> {
     template <class T>
     class CAutoRef {
      public:
-      explicit CAutoRef(T * = nullptr);
+      explicit CAutoRef();
+      explicit CAutoRef(T *);
       const CAutoRef &operator=(T *);
     };
 
