@@ -477,9 +477,10 @@ void ConverterAstConsumer::EraseAddRefs() const {
 
 void ConverterAstConsumer::ConvertAutoRef() const {
   for (const auto* v : NodesFromMatchAST<clang::VarDecl>(
-           varDecl(hasType(AutoRefDecl()),
-                   hasInitializer(cxxConstructExpr(
-                       hasArgument(0, ignoringParenImpCasts(callExpr())))))
+           varDecl(
+               hasType(AutoRefDecl()),
+               hasInitializer(cxxConstructExpr(hasArgument(
+                   0, ignoringParenImpCasts(anyOf(callExpr(), cxxNewExpr()))))))
                .bind("v"),
            "v")) {
     auto type_loc = v->getTypeSourceInfo()->getTypeLoc();

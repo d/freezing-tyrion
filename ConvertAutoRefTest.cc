@@ -24,6 +24,19 @@ TEST_F(ConvertAutoRefTest, autoRefInitFunc) {
   ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
 }
 
+TEST_F(ConvertAutoRefTest, autoRefInitNew) {
+  std::string code = R"C++(
+    void f() { gpos::CAutoRef<T> t(new T); }
+  )C++",
+              expected_changed_code = R"C++(
+    void f() { gpos::Ref<T> t(new T); }
+  )C++";
+
+  auto changed_code = annotateAndFormat(std::move(code));
+
+  ASSERT_EQ(format(kPreamble + expected_changed_code), changed_code);
+}
+
 TEST_F(ConvertAutoRefTest, eraseUnusedAutoRef) {
   std::string code = R"C++(
     void f() {
