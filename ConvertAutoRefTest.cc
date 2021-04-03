@@ -6,11 +6,17 @@ struct ConvertAutoRefTest : ConverterTest {};
 TEST_F(ConvertAutoRefTest, autoRefInitFunc) {
   std::string code = R"C++(
     T* F();
-    void f() { gpos::CAutoRef<T> t(F()); }
+    void f() {
+      gpos::CAutoRef<T> t(F());
+      Assert(t.Value());
+    }
   )C++",
               expected_changed_code = R"C++(
     T* F();
-    void f() { gpos::Ref<T> t(F()); }
+    void f() {
+      gpos::Ref<T> t(F());
+      Assert(t.get());
+    }
   )C++";
 
   auto changed_code = annotateAndFormat(std::move(code));

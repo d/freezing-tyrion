@@ -85,7 +85,15 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
     template <class T>
     class CAutoP {
      public:
+      T* Value();
       CAutoP const& operator=(T*);
+    };
+
+    template <class T>
+    class CAutoRef : public CAutoP<T> {
+     public:
+      explicit CAutoRef(T* = nullptr);
+      const CAutoRef& operator=(T*);
     };
 
     template <class T, class K>
@@ -138,13 +146,6 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
     };
 
     template <class T>
-    class CAutoRef {
-     public:
-      explicit CAutoRef(T* = nullptr);
-      const CAutoRef& operator=(T*);
-    };
-
-    template <class T>
     ULONG HashValue(const T*);
 
     template <class T>
@@ -170,6 +171,8 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
       static gpos::ULONG UlHash(const T*);
       static gpos::BOOL FEquals(const T*, const T*);
     };
+
+    void Assert(bool);
   )C++";
 
   static std::string runToolOverCode(std::string code);

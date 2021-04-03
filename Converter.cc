@@ -495,6 +495,19 @@ void ConverterAstConsumer::ConvertAutoRef() const {
     CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
   }
 
+  for (const auto* m : NodesFromMatchAST<clang::MemberExpr>(
+           cxxMemberCallExpr(
+               on(hasType(cxxRecordDecl(hasName("CAutoRef")))),
+               callee(memberExpr(member(cxxMethodDecl(hasName("Value"))))
+                          .bind("m"))),
+           "m")) {
+    tooling::Replacement r{
+        SourceManager(),
+        clang::CharSourceRange::getTokenRange(m->getMemberLoc()), "get",
+        LangOpts()};
+    CantFail(file_to_replaces_[r.getFilePath().str()].add(r));
+  }
+
   for (auto [auto_ref, assign, dre] :
        NodesFromMatchAST<clang::VarDecl, clang::Expr, clang::Expr>(
            VarSandwiching(
