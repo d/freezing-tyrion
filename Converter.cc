@@ -404,7 +404,9 @@ void orca_tidy::ConverterAstConsumer::ConvertHashSetTypedefs() const {
 void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
   auto has_owner_type =
       anyOf(hasType(qualType(anyOf(OwnerType(), LeakedType()))),
-            CallRefArraySubscript(), CallCcacheAccessorMethodsReturningOwner());
+            CallRefArraySubscript(), CallCcacheAccessorMethodsReturningOwner(),
+            CallHashMapIterMethodReturningOwner(),
+            CallHashSetIterMethodReturningOwner());
   auto owner_expr = expr(has_owner_type).bind("owner");
   auto conditional_mismatch =
       conditionalOperator(Switch()

@@ -1,4 +1,5 @@
 #include "AstHelpers.h"
+#include "SwitchMatcher.h"
 #include "clang/AST/IgnoreExpr.h"
 #include "clang/Analysis/CFG.h"
 #include "clang/Lex/Lexer.h"
@@ -398,8 +399,25 @@ DeclarationMatcher HashMapRefKRefTDecl() {
 DeclarationMatcher HashMapIterRefKRefTDecl() {
   return HashMapIterDecl({HMRefK(), HMRefT()});
 }
+StatementMatcher CallHashMapIterMethodReturningOwner() {
+  return callExpr(callee(cxxMethodDecl(
+      Switch()
+          .Case(hasName("Value"),
+                ofClass(HashMapIterDecl(
+                    {HMRefT(), HMK(unless(RefersToCleanupDelete()))})))
+          .Case(hasName("Key"),
+                ofClass(HashMapIterDecl(
+                    {HMRefK(), HMT(unless(RefersToCleanupDelete()))}))))));
+}
+
 TemplateArgumentMatcher RefersToCleanupRelease() {
   return refersToDeclaration(functionDecl(hasName("CleanupRelease")));
+}
+TemplateArgumentMatcher RefersToCleanupNull() {
+  return refersToDeclaration(functionDecl(hasName("CleanupNULL")));
+}
+TemplateArgumentMatcher RefersToCleanupDelete() {
+  return refersToDeclaration(functionDecl(hasName("CleanupDelete")));
 }
 
 StatementMatcher CallRefArraySubscript() {
@@ -501,6 +519,11 @@ DeclarationMatcher RefHashSetDecl() {
 
 DeclarationMatcher RefHashSetIterDecl() {
   return HashSetIterDecl({hasTemplateArgument(3, RefersToCleanupRelease())});
+}
+
+StatementMatcher CallHashSetIterMethodReturningOwner() {
+  return callExpr(
+      callee(cxxMethodDecl(ofClass(RefHashSetIterDecl()), hasName("Get"))));
 }
 
 DeclarationMatcher HashSetIterDecl(

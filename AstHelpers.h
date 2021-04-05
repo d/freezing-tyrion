@@ -388,7 +388,11 @@ __attribute__((const)) DeclarationMatcher HashMapIterDecl(
     llvm::ArrayRef<ClassTemplateSpecializationMatcher> args = {});
 __attribute__((const)) DeclarationMatcher HashMapRefKRefTDecl();
 __attribute__((const)) DeclarationMatcher HashMapIterRefKRefTDecl();
+__attribute__((const)) StatementMatcher CallHashMapIterMethodReturningOwner();
+
 __attribute__((const)) TemplateArgumentMatcher RefersToCleanupRelease();
+__attribute__((const)) TemplateArgumentMatcher RefersToCleanupNull();
+__attribute__((const)) TemplateArgumentMatcher RefersToCleanupDelete();
 
 __attribute__((const)) DeclarationMatcher HashSetDecl(
     llvm::ArrayRef<ClassTemplateSpecializationMatcher> matchers = {});
@@ -396,6 +400,7 @@ __attribute__((const)) DeclarationMatcher HashSetIterDecl(
     llvm::ArrayRef<ClassTemplateSpecializationMatcher> matchers = {});
 __attribute__((const)) DeclarationMatcher RefHashSetDecl();
 __attribute__((const)) DeclarationMatcher RefHashSetIterDecl();
+__attribute__((const)) StatementMatcher CallHashSetIterMethodReturningOwner();
 __attribute__((const)) DeclarationMatcher MethodOfHashSet();
 __attribute__((const)) DeclarationMatcher AddRefAppendMethod();
 
