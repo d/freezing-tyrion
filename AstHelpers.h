@@ -384,13 +384,17 @@ using CXXMethodMatcher = decltype(clang::ast_matchers::isOverride());
 __attribute__((const)) DeclarationMatcher MethodOfHashMap();
 __attribute__((const)) DeclarationMatcher HashMapDecl(
     llvm::ArrayRef<ClassTemplateSpecializationMatcher> args = {});
+bool IsHashMap(const clang::ClassTemplateSpecializationDecl* d);
 __attribute__((const)) DeclarationMatcher HashMapIterDecl(
     llvm::ArrayRef<ClassTemplateSpecializationMatcher> args = {});
 __attribute__((const)) DeclarationMatcher HashMapRefKRefTDecl();
+__attribute__((const)) DeclarationMatcher HashMapConvertibleDecl();
 __attribute__((const)) DeclarationMatcher HashMapIterRefKRefTDecl();
+__attribute__((const)) DeclarationMatcher HashMapIterConvertibleDecl();
 __attribute__((const)) StatementMatcher CallHashMapIterMethodReturningOwner();
 
 __attribute__((const)) TemplateArgumentMatcher RefersToCleanupRelease();
+bool RefersToCleanupRelease(const clang::TemplateArgument& argument);
 __attribute__((const)) TemplateArgumentMatcher RefersToCleanupNull();
 __attribute__((const)) TemplateArgumentMatcher RefersToCleanupDelete();
 

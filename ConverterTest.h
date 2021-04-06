@@ -107,6 +107,10 @@ struct ConverterTest : OrcaTidyTest<ConverterTest> {
 
     template <class T>
     void CleanupRelease(T* elem);
+    template <class T>
+    void CleanupNULL(T* elem);
+    template <class T>
+    void CleanupDelete(T* elem);
 
     template <class T, void (*CleanupFn)(T*)>
     class CDynamicPtrArray : public CRefCount<CDynamicPtrArray<T, CleanupFn>> {

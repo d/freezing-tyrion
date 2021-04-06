@@ -396,8 +396,16 @@ static auto HMNotRefT() { return unless(HMRefT()); }
 DeclarationMatcher HashMapRefKRefTDecl() {
   return HashMapDecl({HMRefK(), HMRefT()});
 }
+DeclarationMatcher HashMapConvertibleDecl() {
+  return HashMapDecl({HMK(unless(RefersToCleanupDelete())),
+                      HMT(unless(RefersToCleanupDelete()))});
+}
 DeclarationMatcher HashMapIterRefKRefTDecl() {
   return HashMapIterDecl({HMRefK(), HMRefT()});
+}
+DeclarationMatcher HashMapIterConvertibleDecl() {
+  return HashMapIterDecl({HMK(unless(RefersToCleanupDelete())),
+                          HMT(unless(RefersToCleanupDelete()))});
 }
 StatementMatcher CallHashMapIterMethodReturningOwner() {
   return callExpr(callee(cxxMethodDecl(
@@ -418,6 +426,31 @@ TemplateArgumentMatcher RefersToCleanupNull() {
 }
 TemplateArgumentMatcher RefersToCleanupDelete() {
   return refersToDeclaration(functionDecl(hasName("CleanupDelete")));
+}
+bool RefersToCleanupRelease(const clang::TemplateArgument& argument) {
+  const clang::FunctionDecl* f;
+  switch (argument.getKind()) {
+    default:
+      return false;
+    case clang::TemplateArgument::Declaration: {
+      const auto* func =
+          llvm::dyn_cast<clang::FunctionDecl>(argument.getAsDecl());
+      if (!func) return false;
+      f = func;
+      break;
+    }
+    case clang::TemplateArgument::Expression: {
+      const auto* dre =
+          llvm::dyn_cast<clang::DeclRefExpr>(argument.getAsExpr());
+      if (!dre) return false;
+      const auto* func = llvm::dyn_cast<clang::FunctionDecl>(dre->getDecl());
+      if (!func) return false;
+      f = func;
+      break;
+    }
+  }
+  const auto* ii = f->getIdentifier();
+  return ii && ii->isStr("CleanupRelease");
 }
 
 StatementMatcher CallRefArraySubscript() {
@@ -465,6 +498,12 @@ DeclarationMatcher HashMapDecl(
     llvm::ArrayRef<ClassTemplateSpecializationMatcher> args) {
   return classTemplateSpecializationDecl(hasName("::gpos::CHashMap"),
                                          classTemplateSpecializationDecl(args));
+}
+bool IsHashMap(const clang::ClassTemplateSpecializationDecl* d) {
+  if (!IsGpos(d->getDeclContext())) return false;
+
+  const auto* ii = d->getIdentifier();
+  return ii && ii->isStr("CHashMap");
 }
 
 DeclarationMatcher HashMapIterDecl(

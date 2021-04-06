@@ -312,22 +312,27 @@ void ConverterAstConsumer::ConvertRefArrayTypedefs() const {
 }
 
 void ConverterAstConsumer::ConvertHashMap() const {
-  auto ExtractTemplateArgs =
-      [this](clang::TemplateSpecializationTypeLoc specialization_type_loc) {
-        return std::tuple{
-            GetSourceTextOfTemplateArg(specialization_type_loc, 0),
-            GetSourceTextOfTemplateArg(specialization_type_loc, 1),
-            GetSourceTextOfTemplateArg(specialization_type_loc, 2),
-            GetSourceTextOfTemplateArg(specialization_type_loc, 3),
-        };
-      };
+  auto ExtractTemplateArgs = [this](clang::TemplateSpecializationTypeLoc
+                                        specialization_type_loc) {
+    return std::tuple{
+        GetSourceTextOfTemplateArg(specialization_type_loc, 0),
+        GetSourceTextOfTemplateArg(specialization_type_loc, 1),
+        GetSourceTextOfTemplateArg(specialization_type_loc, 2),
+        GetSourceTextOfTemplateArg(specialization_type_loc, 3),
+        RefersToCleanupRelease(specialization_type_loc.getTypePtr()->getArg(4)),
+        RefersToCleanupRelease(specialization_type_loc.getTypePtr()->getArg(5)),
+    };
+  };
   for (auto [typedef_decl, v, hm] :
-       NodesFromMatchAST<clang::TypedefNameDecl, clang::VarDecl, clang::Decl>(
+       NodesFromMatchAST<clang::TypedefNameDecl, clang::VarDecl,
+                         clang::ClassTemplateSpecializationDecl>(
            mapAnyOf(typedefNameDecl, varDecl)
                .with(unless(isInstantiated()),
-                     hasType(qualType(hasDeclaration(
-                         anyOf(decl(HashMapRefKRefTDecl()).bind("hm"),
-                               HashMapIterRefKRefTDecl())))),
+                     hasType(qualType(
+                         hasDeclaration(classTemplateSpecializationDecl(
+                                            anyOf(HashMapConvertibleDecl(),
+                                                  HashMapIterConvertibleDecl()))
+                                            .bind("hm")))),
                      unless(hasDeclContext(
                          classTemplateDecl(hasName("gpos::CHashMapIter")))),
                      anyOf(typedefNameDecl().bind("typedef_decl"),
@@ -342,19 +347,20 @@ void ConverterAstConsumer::ConvertHashMap() const {
             .getAsAdjusted<clang::TemplateSpecializationTypeLoc>();
     auto range = clang::CharSourceRange::getTokenRange(
         underlying_type_loc.getSourceRange());
-    auto [k_spelling, t_spelling, hash_spelling, eq_spelling] =
-        ExtractTemplateArgs(specialization_type_loc);
-    const char* const
-        fmtHM = R"C++(gpos::UnorderedMap<gpos::Ref<{0}>, gpos::Ref<{1}>,
-                                         gpos::RefHash<{0}, {2}>,
-                                         gpos::RefEq<{0}, {3}>>)C++";
-    const char* const fmtHMI =
-        R"C++(gpos::UnorderedMap<gpos::Ref<{0}>, gpos::Ref<{1}>,
-                                 gpos::RefHash<{0}, {2}>,
-                                 gpos::RefEq<{0}, {3}>>::LegacyIterator)C++";
+    const auto [k_spelling, t_spelling, hash_spelling, eq_spelling, refK,
+                refT] = ExtractTemplateArgs(specialization_type_loc);
+    auto k = llvm::formatv(refK ? "gpos::Ref<{0}>" : "const {0}*", k_spelling);
+    auto t = llvm::formatv(refT ? "gpos::Ref<{0}>" : "{0}*", t_spelling);
+    auto hash = llvm::formatv(
+        refK ? "gpos::RefHash<{0}, {1}>" : "gpos::PtrHash<{0}, {1}>",
+        k_spelling, hash_spelling);
+    auto eq =
+        llvm::formatv(refK ? "gpos::RefEq<{0},{1}>" : "gpos::PtrEqual<{0},{1}>",
+                      k_spelling, eq_spelling);
+
     std::string new_type_spelling =
-        llvm::formatv(hm ? fmtHM : fmtHMI, k_spelling, t_spelling,
-                      hash_spelling, eq_spelling)
+        llvm::formatv("gpos::UnorderedMap<{1}, {2}, {3}, {4}>{0}",
+                      IsHashMap(hm) ? "" : "::LegacyIterator", k, t, hash, eq)
             .str();
     tooling::Replacement r{SourceManager(), range, new_type_spelling,
                            LangOpts()};

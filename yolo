@@ -84,10 +84,6 @@ sanity_check() {
 		echo >&2 WTF Xerces
 		return 2
 	fi
-	if grep -Fw XMLCh tidy-fixes/fix*.yaml; then
-		echo >&2 WTF XMLCh
-		return 3
-	fi
 	if grep -F 'const K' tidy-fixes/fix*.yaml; then
 		echo >&2 WTF template
 		return 4
