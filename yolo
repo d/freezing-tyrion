@@ -20,7 +20,7 @@ gpopt_files() {
 }
 
 gporca_files() {
-	git ls-files 'src/backend/gporca/*.cpp'
+	git ls-files 'src/backend/gporca/*.cpp' | grep -vF -e CAutoRefTest.cpp -e CRefCountTest.cpp
 }
 
 annotate() {
