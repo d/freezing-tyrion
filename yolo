@@ -119,6 +119,32 @@ convert() {
 	git_add_all_src "Converted."
 }
 
+generate_debug_compdb() {
+	configure --enable-cassert
+	record_compile_commands
+}
+
+generate_release_compdb() {
+	configure --disable-cassert
+	record_compile_commands
+}
+
+record_compile_commands() {
+	rm -vf compile_commands.json
+	bear --append -- make -s -j8 -l16 -C src/include
+	bear --append -- make -s -j8 -l16 -C src/common
+	find src/backend/gpopt -name '*.o' -delete
+	bear --append -- make -s -j8 -l16 -C src/backend/gpopt
+	fix_relative_include_paths_in_compdb
+}
+
+configure() {
+	local flag
+	flag=$1
+
+	LD_LIBRARY_PATH="$HOME/.opt/xerces/lib" ./configure --cache-file clang11.cache --quiet --enable-depend --enable-debug "${flag}" --enable-orca --with-openssl --disable-gpfdist --disable-gpcloud --disable-pxf --without-libcurl --with-libs=$HOME/.opt/xerces/lib --with-includes=$HOME/.opt/xerces/include CC='ccache clang-11' CXX='ccache clang++-11' CFLAGS='-O0' CXXFLAGS='-O0' LDFLAGS='-fuse-ld=lld' PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig
+}
+
 propagate() {
 	local gporca_build_dir_release gporca_build_dir_debug
 	gporca_build_dir_release=$1
@@ -131,6 +157,13 @@ propagate() {
 		sanity_check
 
 		echo Iteration \#$i
+		generate_release_compdb
+		remove_previous_fixes
+		time gpopt_files | annotate "${GPDB_PATH}" -n1 propagate
+		apply_fixes
+		fix_all_includes "${gporca_build_dir_debug}"
+
+		generate_debug_compdb
 		remove_previous_fixes
 		time gpopt_files | annotate "${GPDB_PATH}" -n1 propagate
 		apply_fixes
@@ -159,12 +192,15 @@ propagate() {
 }
 
 gpopt_base() {
+	local annex
+	annex=$1
+
 	remove_previous_fixes
 	time gpopt_files | annotate "${GPDB_PATH}" -n1 base
 	apply_fixes
 	fix_all_includes "${GPDB_PATH}"
 	sanity_check
-	git_add_all_src "Apply base rules over gpopt translator."
+	git_add_all_src "Apply base rules over gpopt translator ${annex}."
 }
 
 gporca_base() {
@@ -185,11 +221,12 @@ _main() {
 	GPORCA_BUILD_DIR_RELEASE=$1
 	GPORCA_BUILD_DIR_DEBUG=$2
 
-	fix_relative_include_paths_in_compdb
-
 	HEAD_COMMIT=$(git rev-parse HEAD)
 
-	gpopt_base
+	generate_release_compdb
+	gpopt_base release
+	generate_debug_compdb
+	gpopt_base debug
 
 	gporca_base "${GPORCA_BUILD_DIR_RELEASE}" release
 	gporca_base "${GPORCA_BUILD_DIR_DEBUG}" debug
