@@ -57,7 +57,7 @@ sponge() {
 }
 
 fix_relative_include_paths_in_compdb() {
-	jq --from-file ~/src/d/freezing-tyrion/fix-include-path.jq compile_commands.json | sponge compile_commands.json
+	~/src/d/freezing-tyrion/fix-include-path.py
 }
 
 git_add_all_src() {
