@@ -120,13 +120,21 @@ convert() {
 }
 
 generate_debug_compdb() {
-	configure --enable-cassert
+	configure_debug
 	record_compile_commands
 }
 
 generate_release_compdb() {
-	configure --disable-cassert
+	configure_release
 	record_compile_commands
+}
+
+configure_debug() {
+	configure --enable-cassert
+}
+
+configure_release() {
+	configure --disable-cassert
 }
 
 record_compile_commands() {
@@ -157,13 +165,15 @@ propagate() {
 		sanity_check
 
 		echo Iteration \#$i
-		generate_release_compdb
+		configure_release
+		cp "${COMPDB_REL}" compile_commands.json
 		remove_previous_fixes
 		time gpopt_files | annotate "${GPDB_PATH}" -n1 propagate
 		apply_fixes
 		fix_all_includes "${gporca_build_dir_debug}"
 
-		generate_debug_compdb
+		configure_debug
+		cp "${COMPDB_DBG}" compile_commands.json
 		remove_previous_fixes
 		time gpopt_files | annotate "${GPDB_PATH}" -n1 propagate
 		apply_fixes
@@ -223,9 +233,15 @@ _main() {
 
 	HEAD_COMMIT=$(git rev-parse HEAD)
 
+	COMPDB_REL=$(mktemp compile_commands.release.json.XXX)
+	COMPDB_DBG=$(mktemp compile_commands.debug.json.XXX)
+
 	generate_release_compdb
+	cp compile_commands.json "${COMPDB_REL}"
 	gpopt_base release
+
 	generate_debug_compdb
+	cp compile_commands.json "${COMPDB_DBG}"
 	gpopt_base debug
 
 	gporca_base "${GPORCA_BUILD_DIR_RELEASE}" release
@@ -236,6 +252,8 @@ _main() {
 	convert "${GPORCA_BUILD_DIR_DEBUG}"
 
 	git diff "${HEAD_COMMIT}" -- '*.cpp' '*.h' | md5sum
+
+	rm -f "${COMPDB_REL}" "${COMPDB_DBG}"
 }
 
 _main "$@"
