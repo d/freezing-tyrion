@@ -465,6 +465,9 @@ class Annotator : public AstHelperMixin<Annotator> {
               anyOf(ForEachArgumentToUlongToExprArrayMapWithOwnerParam(
                         arg_matcher),
                     ForEachArgumentToHashMapMethodWithOwnerParam(arg_matcher)))
+        .Case(hasDeclaration(cxxConstructorDecl(
+                  ofClass(anyOf(HashMapIterDecl(), HashSetIterDecl())))),
+              unless(expr()))
         .Case(hasDeclaration(AddRefAppendMethod()), unless(expr()))
         .Case(hasDeclaration(functionDecl()),
               ForEachArgumentWithParam(arg_matcher, unless(PointerVar())))
@@ -480,6 +483,9 @@ class Annotator : public AstHelperMixin<Annotator> {
               ForEachArgumentToHashMapMethodWithPointerParam(arg_matcher))
         .Case(hasDeclaration(MethodOfHashSet()),
               ForEachArgumentToHashSetMethodWithPointerParam(arg_matcher))
+        .Case(hasDeclaration(cxxConstructorDecl(
+                  ofClass(anyOf(HashMapIterDecl(), HashSetIterDecl())))),
+              hasArgument(0, arg_matcher))
         .Case(hasDeclaration(AddRefAppendMethod()),
               ForEachArgumentWithParam(arg_matcher, decl()))
         .Case(hasDeclaration(functionDecl()),
