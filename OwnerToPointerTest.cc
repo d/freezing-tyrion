@@ -68,10 +68,14 @@ TEST_F(OwnerToPointer, funcArg) {
       Q(gpos::pointer<T*>);
     };
 
+    template <class U>
+    void e(const U* u);
+
     class R {
       gpos::owner<T*> t_;
       bool g() { return f(t_); }
       void h() { Q q(t_); }
+      void i() { e(t_); }
     };
   )C++",
               expected_changed_code = R"C++(
@@ -80,10 +84,14 @@ TEST_F(OwnerToPointer, funcArg) {
       Q(T*);
     };
 
+    template <class U>
+    void e(const U* u);
+
     class R {
       gpos::Ref<T> t_;
       bool g() { return f(t_.get()); }
       void h() { Q q(t_.get()); }
+      void i() { e(t_.get()); }
     };
   )C++";
 

@@ -1643,7 +1643,11 @@ VarMatcher Annotator::OwnerVar() const {
 }
 
 VarMatcher Annotator::PointerVar() const {
-  return anyOf(hasType(PointerType()), IsInSet(pointer_vars_));
+  return anyOf(hasType(PointerType()),
+               parmVarDecl(isInstantiated(),
+                           hasType(qualType(RefCountPointerType(),
+                                            pointsTo(isConstQualified())))),
+               IsInSet(pointer_vars_));
 }
 
 bool Annotator::IsOwner(const clang::Decl* d) const {

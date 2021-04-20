@@ -428,21 +428,28 @@ void ConverterAstConsumer::ConvertOwnerToPointerImpCastToGet() const {
               hasInitializer(IgnoringParenCastFuncs(owner_expr)))));
   auto assign_to_pointer_vars = AssignTo(expr(hasType(PointerType())),
                                          IgnoringParenCastFuncs(owner_expr));
-  auto pass_owner_arg_to_pointer_param = expr(IgnoringParenCastFuncs(
-      CallOrConstruct(Switch()
-                          .Case(hasDeclaration(cxxConstructorDecl(
-                                    ofClass(HashMapIterDecl()))),
-                                hasArgument(0, owner_expr))
-                          .Case(hasDeclaration(cxxConstructorDecl(
-                                    ofClass(HashSetIterDecl()))),
-                                hasArgument(0, owner_expr))
-                          .Case(hasDeclaration(cxxMethodDecl(
-                                    hasName("::gpdxl::CDXLUtils::Serialize"))),
-                                hasArgument(1, owner_expr))
-                          .Case(hasDeclaration(AddRefAppendMethod()),
-                                ForEachArgumentWithParam(owner_expr, decl()))
-                          .Default(ForEachArgumentWithParamType(
-                              owner_expr, PointerType())))));
+  auto pass_owner_arg_to_pointer_param =
+      expr(IgnoringParenCastFuncs(CallOrConstruct(
+          Switch()
+              .Case(hasDeclaration(
+                        cxxConstructorDecl(ofClass(HashMapIterDecl()))),
+                    hasArgument(0, owner_expr))
+              .Case(hasDeclaration(
+                        cxxConstructorDecl(ofClass(HashSetIterDecl()))),
+                    hasArgument(0, owner_expr))
+              .Case(hasDeclaration(cxxMethodDecl(
+                        hasName("::gpdxl::CDXLUtils::Serialize"))),
+                    hasArgument(1, owner_expr))
+              .Case(hasDeclaration(AddRefAppendMethod()),
+                    ForEachArgumentWithParam(owner_expr, decl()))
+              .Case(hasDeclaration(isInstantiated()),
+                    ForEachArgumentWithParamType(
+                        owner_expr,
+                        anyOf(PointerType(),
+                              qualType(RefCountPointerType(),
+                                       pointsTo(isConstQualified())))))
+              .Default(
+                  ForEachArgumentWithParamType(owner_expr, PointerType())))));
   for (const auto* owner : NodesFromMatchAST<clang::Expr>(
            stmt(anyOf(conditional_mismatch, return_owner_as_pointer,
                       init_pointer_vars, assign_to_pointer_vars,
