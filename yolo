@@ -5,7 +5,6 @@ set -e -u -o pipefail
 : "${CLANG_FORMAT:=clang-format}"
 
 readonly BUILD_DIR="$(dirname "$0")"/build.release
-readonly GPDB_PATH=$PWD
 
 apply_fixes() {
 	clang-apply-replacements-13 -format -style file -style-config src/backend/gporca tidy-fixes
@@ -48,7 +47,7 @@ fix_all_includes() {
 	local build_dir
 	build_dir=$1
 
-	fix_includes "${GPDB_PATH}" ':/src/'{backend,include}'/gpopt/*'.{cpp,h}
+	fix_includes "${build_dir}" ':/src/'{backend,include}'/gpopt/*'.{cpp,h}
 	fix_includes "${build_dir}" ':/src/backend/gporca/*'.{cpp,h}
 }
 
@@ -102,14 +101,15 @@ do_convert() {
 }
 
 convert() {
-	local build_dir
-	build_dir=$1
+	local vpath build_dir
+	vpath=$1
+	build_dir=$2
 
 	sanity_check
 	remove_previous_fixes
 
 	echo Converting gpopt
-	time gpopt_files | do_convert "${GPDB_PATH}" -n1 gpopt
+	time gpopt_files | do_convert "${vpath}" -n1 gpopt
 
 	echo Converting gporca
 	time gporca_files | do_convert "${build_dir}" -n8 gporca
@@ -119,44 +119,12 @@ convert() {
 	git_add_all_src "Converted."
 }
 
-generate_debug_compdb() {
-	configure_debug
-	record_compile_commands
-}
-
-generate_release_compdb() {
-	configure_release
-	record_compile_commands
-}
-
-configure_debug() {
-	configure --enable-cassert
-}
-
-configure_release() {
-	configure --disable-cassert
-}
-
-record_compile_commands() {
-	rm -vf compile_commands.json
-	bear --append -- make -s -j8 -l16 -C src/include
-	bear --append -- make -s -j8 -l16 -C src/common
-	find src/backend/gpopt -name '*.o' -delete
-	bear --append -- make -s -j8 -l16 -C src/backend/gpopt
-	fix_relative_include_paths_in_compdb
-}
-
-configure() {
-	local flag
-	flag=$1
-
-	LD_LIBRARY_PATH="$HOME/.opt/xerces/lib" ./configure --cache-file clang11.cache --quiet --enable-depend --enable-debug "${flag}" --enable-orca --with-openssl --disable-gpfdist --disable-gpcloud --disable-pxf --without-libcurl --with-libs=$HOME/.opt/xerces/lib --with-includes=$HOME/.opt/xerces/include CC='ccache clang-11' CXX='ccache clang++-11' CFLAGS='-O0' CXXFLAGS='-O0' LDFLAGS='-fuse-ld=lld' PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig
-}
-
 propagate() {
-	local gporca_build_dir_release gporca_build_dir_debug
-	gporca_build_dir_release=$1
-	gporca_build_dir_debug=$2
+	local vpath_release vpath_debug gporca_build_dir_release gporca_build_dir_debug
+	vpath_release=$1
+	vpath_debug=$2
+	gporca_build_dir_release=$3
+	gporca_build_dir_debug=$4
 
 	local prev_diff diff
 	prev_diff=$(diff_all_src)
@@ -165,24 +133,20 @@ propagate() {
 		sanity_check
 
 		echo Iteration \#$i
-		configure_release
-		cp "${COMPDB_REL}" compile_commands.json
 		remove_previous_fixes
-		time gpopt_files | annotate "${GPDB_PATH}" -n1 propagate
+		time gpopt_files | annotate "${vpath_release}" -n1 propagate
 		apply_fixes
-		fix_all_includes "${gporca_build_dir_debug}"
+		fix_all_includes "${vpath_release}"
 
-		configure_debug
-		cp "${COMPDB_DBG}" compile_commands.json
 		remove_previous_fixes
-		time gpopt_files | annotate "${GPDB_PATH}" -n1 propagate
+		time gpopt_files | annotate "${vpath_debug}" -n1 propagate
 		apply_fixes
-		fix_all_includes "${gporca_build_dir_debug}"
+		fix_all_includes "${vpath_debug}"
 
 		remove_previous_fixes
 		time gporca_files | annotate "${gporca_build_dir_release}" -n8 propagate
 		apply_fixes
-		fix_all_includes "${gporca_build_dir_debug}"
+		fix_all_includes "${gporca_build_dir_release}"
 
 		remove_previous_fixes
 		time gporca_files | annotate "${gporca_build_dir_debug}" -n8 propagate
@@ -202,13 +166,14 @@ propagate() {
 }
 
 gpopt_base() {
-	local annex
-	annex=$1
+	local build_dir annex
+	build_dir=$1
+	annex=$2
 
 	remove_previous_fixes
-	time gpopt_files | annotate "${GPDB_PATH}" -n1 base
+	time gpopt_files | annotate "${build_dir}" -n1 base
 	apply_fixes
-	fix_all_includes "${GPDB_PATH}"
+	fix_all_includes "${build_dir}"
 	sanity_check
 	git_add_all_src "Apply base rules over gpopt translator ${annex}."
 }
@@ -227,33 +192,26 @@ gporca_base() {
 }
 
 _main() {
-	local GPORCA_BUILD_DIR_RELEASE GPORCA_BUILD_DIR_DEBUG
-	GPORCA_BUILD_DIR_RELEASE=$1
-	GPORCA_BUILD_DIR_DEBUG=$2
+	local VPATH_RELEASE VPATH_DEBUG GPORCA_BUILD_DIR_RELEASE GPORCA_BUILD_DIR_DEBUG
+	VPATH_RELEASE=$1
+	VPATH_DEBUG=$2
+	GPORCA_BUILD_DIR_RELEASE=$3
+	GPORCA_BUILD_DIR_DEBUG=$4
 
 	HEAD_COMMIT=$(git rev-parse HEAD)
 
-	COMPDB_REL=$(mktemp compile_commands.release.json.XXX)
-	COMPDB_DBG=$(mktemp compile_commands.debug.json.XXX)
+	gpopt_base "${VPATH_RELEASE}" release
 
-	generate_release_compdb
-	cp compile_commands.json "${COMPDB_REL}"
-	gpopt_base release
-
-	generate_debug_compdb
-	cp compile_commands.json "${COMPDB_DBG}"
-	gpopt_base debug
+	gpopt_base "${VPATH_DEBUG}" debug
 
 	gporca_base "${GPORCA_BUILD_DIR_RELEASE}" release
 	gporca_base "${GPORCA_BUILD_DIR_DEBUG}" debug
 
-	propagate "${GPORCA_BUILD_DIR_RELEASE}" "${GPORCA_BUILD_DIR_DEBUG}"
+	propagate "${VPATH_RELEASE}" "${VPATH_DEBUG}" "${GPORCA_BUILD_DIR_RELEASE}" "${GPORCA_BUILD_DIR_DEBUG}"
 
-	convert "${GPORCA_BUILD_DIR_DEBUG}"
+	convert "${VPATH_DEBUG}" "${GPORCA_BUILD_DIR_DEBUG}"
 
 	git diff "${HEAD_COMMIT}" -- '*.cpp' '*.h' | md5sum
-
-	rm -f "${COMPDB_REL}" "${COMPDB_DBG}"
 }
 
 _main "$@"
