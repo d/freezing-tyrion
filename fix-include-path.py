@@ -10,6 +10,7 @@ def fix(compdb):
     for compile in filter(lambda c: c["file"].endswith(".cpp"), compdb):
         dir = compile["directory"]
         args = compile["arguments"]
+        compile["file"] = str(pathlib.Path(dir, compile["file"]).resolve())
         for i in range(1, len(args)):
             if args[i].startswith("-I"):
                 args[i] = "-I" + str(pathlib.Path(dir, args[i][2:]).resolve())
